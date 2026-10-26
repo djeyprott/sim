@@ -5,7 +5,8 @@ demographics, languages and cultures, goods and trade, technology, polities and
 climate, all interacting so that history emerges rather than being scripted.
 
 The project is at **milestone M0 (foundations)**: a deterministic simulation
-core, a geodesic world grid, a generated test world and a headless runner. The
+core, a geodesic world grid, a generated test world, a headless runner and a
+simple Godot map viewer. The
 forager systems in M0 are placeholders that exercise the machinery; real
 demography, culture and economy come in later milestones.
 
@@ -46,6 +47,9 @@ ctest --test-dir build --output-on-failure
 # Simulate 1,000 years, reporting every 100
 ./build/cli/histsim run --seed 1 --level 5 --years 1000 --report-every 100
 
+# Render every map mode to PNG after 300 years (writes map-terrain.png, ...)
+./build/cli/histsim map --seed 1 --level 6 --years 300 --out map
+
 # Save after 400 years, then resume for 600 more (same result as one run)
 ./build/cli/histsim run --seed 1 --years 400 --save run.hsim
 ./build/cli/histsim resume run.hsim --years 600
@@ -60,15 +64,19 @@ began; the sim has no calendar years.
 | Path | Contents |
 | --- | --- |
 | `libsim/` | The simulation core: grid, world, RNG, scheduler, state, systems, snapshots. No engine or UI code. |
+| `view/` | Display layer: map modes, color scales and legends, map rasterizing, PNG output. |
+| `godot/` | The [Godot 4 viewer](godot/README.md): a GDExtension over `view/` and the Sim API, plus the UI project. |
 | `cli/` | `histsim`, the headless runner for batch runs and CI. |
 | `tests/` | Unit, determinism and replay tests. |
 | `tools/` | Offline tools (Earth importer, procedural generator) — from M4. |
 | `data/` | Content packs (goods, techs, diseases) — from M2. |
 | `docs/` | [Architecture and determinism rules](docs/ARCHITECTURE.md). |
 
-The Godot 4 front end (map modes, inspectors, timeline) will live in `godot/`
-and talk to the core only through the Sim API in
+The viewer talks to the core only through the Sim API in
 [`libsim/include/histsim/simulation.hpp`](libsim/include/histsim/simulation.hpp).
+Download a Windows build from
+[Actions > Viewer](https://github.com/djeyprott/sim/actions/workflows/viewer.yml)
+(latest run, **Artifacts**), or see [godot/README.md](godot/README.md) to build it.
 
 ## Determinism
 

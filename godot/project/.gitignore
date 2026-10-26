@@ -1,0 +1,8 @@
+# Godot editor cache and imports
+.godot/
+*.import
+# Built extension libraries (made by CMake with -DHISTSIM_BUILD_GODOT=ON)
+bin/*
+!bin/.gitkeep
+# Exports
+/export/

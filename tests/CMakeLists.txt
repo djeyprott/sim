@@ -3,9 +3,10 @@ add_executable(histsim_tests
     test_grid.cpp
     test_rng.cpp
     test_simulation.cpp
+    test_view.cpp
     test_world.cpp
 )
-target_link_libraries(histsim_tests PRIVATE histsim::histsim histsim_flags)
+target_link_libraries(histsim_tests PRIVATE histsim::histsim histsim::view histsim_flags)
 
 add_test(NAME unit COMMAND histsim_tests)
 

@@ -25,9 +25,9 @@ covers how the code is organized and the rules that keep runs reproducible.
 ## Components
 
 ```
-cli (histsim) ─┐
-               ├── Sim API (simulation.hpp) ── Scheduler ── Systems
-godot (later) ─┘                                   │
+cli (histsim) ──────────┐
+                        ├── Sim API (simulation.hpp) ── Scheduler ── Systems
+godot viewer ── view ───┘                                   │
                                                    ├── SimState (dynamic, saved, hashed)
                                                    └── World (static terrain + climate)
                                                          └── Grid (geodesic cells)
@@ -42,6 +42,16 @@ godot (later) ─┘                                   │
 | `scheduler.hpp` | Phases, the `System` interface, and the per-tick loop. |
 | `simulation.hpp` | The Sim API: create, step, save, load, read state, hash. |
 | `systems/` | Simulation systems. M0 has placeholder forager demography and migration. |
+| `view/` (separate library) | Map modes, color scales, legends, pixel-to-cell rasterizing and PNG output. Display only: it reads state and never writes it, so the determinism rules do not apply to it. |
+| `godot/extension/` | GDExtension class `HistSimWorld`: the Sim API plus `view/`, exposed to GDScript. |
+
+### Map modes
+
+A map mode (view/src/map_modes.cpp) reads one value per cell and maps it to a
+color, with a legend. Magnitudes use one hue from light to dark; signed
+quantities (temperature) use a blue-red diverging scale with a neutral
+midpoint; ocean and empty land are neutral grays so they never read as data.
+Every mode added there shows up in the viewer and `histsim map` automatically.
 
 ### Systems
 

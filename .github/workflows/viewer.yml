@@ -1,0 +1,139 @@
+name: Viewer
+
+# Builds the Godot viewer: the GDExtension for Windows and Linux, a headless
+# smoke test, and an exported Windows executable you can download from the
+# run's Artifacts.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: 4.7.2
+
+jobs:
+  extension:
+    name: extension-${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            os: windows-latest
+          - name: linux
+            os: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: >
+          cmake -S . -B build-godot -DCMAKE_BUILD_TYPE=Release
+          -DHISTSIM_BUILD_GODOT=ON -DHISTSIM_BUILD_TESTS=OFF -DHISTSIM_BUILD_CLI=OFF
+
+      - name: Build
+        run: cmake --build build-godot --config Release --target histsim_godot --parallel
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-${{ matrix.name }}
+          path: |
+            godot/project/bin/*.dll
+            godot/project/bin/*.so
+          if-no-files-found: error
+
+  export:
+    name: smoke test and export
+    needs: extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: extension-*
+          path: godot/project/bin
+          merge-multiple: true
+
+      - name: Cache Godot
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot
+            ~/.local/share/godot/export_templates
+          key: godot-${{ env.GODOT_VERSION }}
+
+      - name: Install Godot and export templates
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          mkdir -p ~/godot
+          curl -sSfL -o /tmp/godot.zip "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q /tmp/godot.zip -d ~/godot
+          mv ~/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64 ~/godot/godot
+          curl -sSfL -o /tmp/templates.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          dest=~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          mkdir -p "$dest"
+          # Only the templates this project exports with.
+          unzip -j -q /tmp/templates.tpz 'templates/version.txt' \
+            'templates/windows_release_x86_64.exe' 'templates/windows_debug_x86_64.exe' \
+            'templates/linux_release.x86_64' 'templates/linux_debug.x86_64' -d "$dest"
+          ls -la "$dest"
+
+      - name: Import project
+        run: ~/godot/godot --headless --path godot/project --import 2>&1 | tail -20
+
+      - name: Smoke test
+        run: |
+          set -o pipefail
+          ~/godot/godot --headless --path godot/project --script res://tests/smoke.gd 2>&1 | tee smoke.log
+          if grep -q "SMOKE OK" smoke.log && ! grep -qE "SCRIPT ERROR|Parse Error" smoke.log; then
+            echo "::notice title=viewer smoke test::passed"
+          else
+            echo "::error title=viewer smoke test::$(grep -E 'SMOKE FAIL|SCRIPT ERROR|Parse Error|ERROR' smoke.log | head -5 | tr '\n' ' ')"
+            exit 1
+          fi
+
+      - name: Export Windows and Linux
+        run: |
+          mkdir -p godot/project/export/windows godot/project/export/linux
+          ~/godot/godot --headless --path godot/project --export-release "Windows Desktop" export/windows/histsim-viewer.exe 2>&1 | tail -20
+          ~/godot/godot --headless --path godot/project --export-release "Linux" export/linux/histsim-viewer.x86_64 2>&1 | tail -20
+          ls -la godot/project/export/windows godot/project/export/linux
+          test -f godot/project/export/windows/histsim-viewer.exe
+          test -f godot/project/export/windows/histsim_godot.windows.x86_64.dll
+          echo "::notice title=viewer export::$(ls godot/project/export/windows | tr '\n' ' ')"
+
+      - name: Package Windows viewer
+        run: |
+          pkg=histsim-viewer-windows
+          mkdir "$pkg"
+          cp godot/project/export/windows/* "$pkg/"
+          cp LICENSE "$pkg/"
+          cat > "$pkg/README.txt" <<'EOF'
+          histsim viewer (milestone M0)
+
+          Double-click histsim-viewer.exe. Keep histsim_godot.windows.x86_64.dll in
+          the same folder: it is the simulation library.
+
+          Controls
+            Play / Pause (Space)   run the simulation
+            1-5                    switch map mode
+            .                      step one year while paused
+            Hover the map          inspect a cell
+            New world              generate a new planet from the seed
+
+          Windows may show a SmartScreen warning because the files are not
+          code-signed: choose "More info", then "Run anyway".
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: histsim-viewer-windows
+          path: histsim-viewer-windows/
+          retention-days: 30

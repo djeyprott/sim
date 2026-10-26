@@ -1,0 +1,488 @@
+extends Control
+## histsim viewer: a flat world map with switchable map modes, a legend,
+## playback controls and a hover inspector.
+##
+## All simulation and map rendering happens in C++ (the HistSimWorld class from
+## the histsim GDExtension). This script only lays out the UI and forwards input.
+
+const MAP_WIDTH := 2048
+const MAP_HEIGHT := 1024
+const SPEEDS := [1, 10, 100, 1000]  # simulated years per real second
+const LEVELS := [4, 5, 6, 7]
+const LEVEL_NAMES := ["Coarse (2.6k cells)", "Normal (10k cells)", "Fine (41k cells)", "Detailed (164k cells)"]
+const STEP_BUDGET_MSEC := 12.0  # max time per frame spent simulating
+const RENDER_INTERVAL := 1.0 / 15.0  # max map redraws per second while playing
+
+var world: Object  # HistSimWorld; untyped so a missing extension gives a clear message
+var mode_id := "terrain"
+var playing := false
+var speed_index := 1
+var years_due := 0.0
+var map_dirty := true
+var render_cooldown := 0.0
+var hover_cell := -1
+var map_texture: ImageTexture
+var rate_years := 0  # years simulated since the last speed sample
+var rate_time := 0.0
+
+# UI nodes
+var map_rect: TextureRect
+var year_label: Label
+var population_label: Label
+var play_button: Button
+var speed_option: OptionButton
+var actual_speed_label: Label
+var seed_spin: SpinBox
+var level_option: OptionButton
+var coastline_check: CheckBox
+var mode_buttons := {}
+var legend_title: Label
+var legend_bar: TextureRect
+var legend_ticks: HBoxContainer
+var legend_swatches: VBoxContainer
+var cell_grid: GridContainer
+var cell_hint: Label
+var status_label: Label
+
+
+func _ready() -> void:
+	_build_ui()
+	if not ClassDB.class_exists("HistSimWorld"):
+		status_label.text = "The simulation library (histsim_godot) did not load. Check that it sits next to the executable."
+		push_error("HistSimWorld class not found: GDExtension failed to load")
+		return
+	world = ClassDB.instantiate("HistSimWorld")
+	world.set_map_size(MAP_WIDTH, MAP_HEIGHT)
+	_new_world()
+
+
+# ---------------------------------------------------------------- simulation
+
+func _new_world() -> void:
+	var level: int = LEVELS[level_option.selected]
+	if not world.create_world(int(seed_spin.value), level, 0.7):
+		status_label.text = "Could not create world: " + world.get_last_error()
+		return
+	world.set_map_size(MAP_WIDTH, MAP_HEIGHT)
+	years_due = 0.0
+	hover_cell = -1
+	_clear_cell_info()
+	_update_legend()
+	map_dirty = true
+	render_cooldown = 0.0
+	_update_summary()
+	status_label.text = "New world: seed %d, %s cells, forager capacity %s people." % [
+		world.get_seed(), _commas(world.get_cell_count()), _commas(int(world.get_forager_capacity()))]
+
+
+func _process(delta: float) -> void:
+	if world == null:
+		return
+	if playing:
+		var speed: int = SPEEDS[speed_index]
+		# Cap the backlog so a slow machine falls behind gracefully instead of stalling.
+		years_due = minf(years_due + delta * speed, speed * 0.5 + 1.0)
+		var wanted := int(years_due)
+		if wanted > 0:
+			var done: int = world.step_for_budget(wanted, STEP_BUDGET_MSEC)
+			years_due -= done
+			rate_years += done
+			if done > 0:
+				map_dirty = true
+				_update_summary()
+		# Show the real speed when the machine cannot keep up with the setting.
+		rate_time += delta
+		if rate_time >= 0.5:
+			var actual := rate_years / rate_time
+			actual_speed_label.text = "running at %s years/s" % _commas(int(actual)) if actual < speed * 0.9 else ""
+			rate_years = 0
+			rate_time = 0.0
+	render_cooldown -= delta
+	if map_dirty and render_cooldown <= 0.0:
+		_render_map()
+
+
+func _render_map() -> void:
+	var image: Image = world.render_map(mode_id, coastline_check.button_pressed)
+	if image == null:
+		status_label.text = "Map render failed: " + world.get_last_error()
+		return
+	if map_texture == null or map_texture.get_size() != Vector2(image.get_size()):
+		map_texture = ImageTexture.create_from_image(image)
+		map_rect.texture = map_texture
+	else:
+		map_texture.update(image)
+	map_dirty = false
+	render_cooldown = RENDER_INTERVAL
+	if hover_cell >= 0:
+		_show_cell(hover_cell)
+
+
+func _update_summary() -> void:
+	year_label.text = "Year %s" % _commas(world.get_year())
+	population_label.text = "Population %s  ·  %s inhabited cells" % [
+		_commas(world.get_population()), _commas(world.get_inhabited_cells())]
+
+
+func _set_playing(value: bool) -> void:
+	playing = value
+	play_button.text = "Pause" if playing else "Play"
+	years_due = 0.0
+	rate_years = 0
+	rate_time = 0.0
+	actual_speed_label.text = ""
+
+
+func _set_mode(id: String) -> void:
+	mode_id = id
+	if mode_buttons.has(id):
+		mode_buttons[id].button_pressed = true
+	_update_legend()
+	map_dirty = true
+	render_cooldown = 0.0
+
+
+# ---------------------------------------------------------------- input
+
+func _unhandled_input(event: InputEvent) -> void:
+	if world == null or not (event is InputEventKey) or not event.pressed or event.echo:
+		return
+	var key: int = event.keycode
+	if key == KEY_SPACE:
+		_set_playing(not playing)
+	elif key >= KEY_1 and key <= KEY_9:
+		var modes: Array = world.get_modes()
+		var index := key - KEY_1
+		if index < modes.size():
+			_set_mode(modes[index]["id"])
+	elif key == KEY_PERIOD and not playing:
+		world.step_years(1)
+		map_dirty = true
+		_update_summary()
+	else:
+		return
+	get_viewport().set_input_as_handled()
+
+
+func _on_map_input(event: InputEvent) -> void:
+	if world == null or map_texture == null or not (event is InputEventMouseMotion):
+		return
+	var cell := _cell_under(event.position)
+	if cell != hover_cell:
+		hover_cell = cell
+		if cell >= 0:
+			_show_cell(cell)
+		else:
+			_clear_cell_info()
+
+
+func _on_map_mouse_exited() -> void:
+	hover_cell = -1
+	_clear_cell_info()
+
+
+# Map a point in the TextureRect to a map pixel, accounting for the
+# keep-aspect-centered scaling, then ask the extension which cell is there.
+func _cell_under(local: Vector2) -> int:
+	var tex_size := Vector2(MAP_WIDTH, MAP_HEIGHT)
+	var scale := minf(map_rect.size.x / tex_size.x, map_rect.size.y / tex_size.y)
+	if scale <= 0.0:
+		return -1
+	var offset := (map_rect.size - tex_size * scale) * 0.5
+	var pixel := (local - offset) / scale
+	if pixel.x < 0 or pixel.y < 0 or pixel.x >= tex_size.x or pixel.y >= tex_size.y:
+		return -1
+	return world.cell_at(int(pixel.x), int(pixel.y))
+
+
+# ---------------------------------------------------------------- panels
+
+func _update_legend() -> void:
+	var legend: Dictionary = world.get_legend(mode_id)
+	legend_title.text = legend.get("title", "")
+	var ramp: Array = legend.get("ramp", [])
+
+	var gradient := Gradient.new()
+	var offsets := PackedFloat32Array()
+	var colors := PackedColorArray()
+	for i in ramp.size():
+		offsets.append(float(i) / maxf(1.0, ramp.size() - 1))
+		colors.append(ramp[i]["color"])
+	gradient.offsets = offsets
+	gradient.colors = colors
+	var texture := GradientTexture1D.new()
+	texture.gradient = gradient
+	legend_bar.texture = texture
+
+	for child in legend_ticks.get_children():
+		child.queue_free()
+	for i in ramp.size():
+		var tick := Label.new()
+		tick.text = ramp[i]["label"]
+		tick.add_theme_font_size_override("font_size", 11)
+		tick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		if i == 0:
+			tick.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		elif i == ramp.size() - 1:
+			tick.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		else:
+			tick.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		legend_ticks.add_child(tick)
+
+	for child in legend_swatches.get_children():
+		child.queue_free()
+	for swatch in legend.get("swatches", []):
+		var row := HBoxContainer.new()
+		var chip := ColorRect.new()
+		chip.color = swatch["color"]
+		chip.custom_minimum_size = Vector2(14, 14)
+		chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		row.add_child(chip)
+		var label := Label.new()
+		label.text = swatch["label"]
+		label.add_theme_font_size_override("font_size", 12)
+		row.add_child(label)
+		legend_swatches.add_child(row)
+
+
+func _show_cell(cell: int) -> void:
+	_clear_cell_info()
+	cell_hint.visible = false
+	for pair in world.describe_cell(cell):
+		var key := Label.new()
+		key.text = pair[0]
+		key.add_theme_color_override("font_color", Color(0.76, 0.76, 0.72))
+		cell_grid.add_child(key)
+		var value := Label.new()
+		value.text = pair[1]
+		cell_grid.add_child(value)
+
+
+func _clear_cell_info() -> void:
+	for child in cell_grid.get_children():
+		cell_grid.remove_child(child)
+		child.queue_free()
+	cell_hint.visible = true
+
+
+# ---------------------------------------------------------------- layout
+
+func _build_ui() -> void:
+	var background := ColorRect.new()
+	background.color = Color("#1a1a19")
+	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(background)
+
+	var outer := MarginContainer.new()
+	outer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	for side in ["left", "right", "top", "bottom"]:
+		outer.add_theme_constant_override("margin_" + side, 10)
+	add_child(outer)
+
+	var root := VBoxContainer.new()
+	root.add_theme_constant_override("separation", 8)
+	outer.add_child(root)
+
+	root.add_child(_build_top_bar())
+
+	var body := HBoxContainer.new()
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_theme_constant_override("separation", 12)
+	root.add_child(body)
+	body.add_child(_build_side_panel())
+
+	map_rect = TextureRect.new()
+	map_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	map_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	map_rect.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	map_rect.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	map_rect.mouse_filter = Control.MOUSE_FILTER_STOP
+	map_rect.gui_input.connect(_on_map_input)
+	map_rect.mouse_exited.connect(_on_map_mouse_exited)
+	body.add_child(map_rect)
+
+	status_label = Label.new()
+	status_label.add_theme_font_size_override("font_size", 12)
+	status_label.add_theme_color_override("font_color", Color(0.76, 0.76, 0.72))
+	root.add_child(status_label)
+
+
+func _build_top_bar() -> Control:
+	var bar := HBoxContainer.new()
+	bar.add_theme_constant_override("separation", 10)
+
+	var title := Label.new()
+	title.text = "histsim"
+	title.add_theme_font_size_override("font_size", 20)
+	bar.add_child(title)
+	bar.add_child(VSeparator.new())
+
+	bar.add_child(_label("Seed"))
+	seed_spin = SpinBox.new()
+	seed_spin.min_value = 1
+	seed_spin.max_value = 999999
+	seed_spin.step = 1
+	seed_spin.value = 1
+	seed_spin.custom_minimum_size.x = 110
+	bar.add_child(seed_spin)
+
+	level_option = OptionButton.new()
+	for name in LEVEL_NAMES:
+		level_option.add_item(name)
+	level_option.selected = 1
+	level_option.tooltip_text = "Grid detail. Finer grids look better but run slower."
+	bar.add_child(level_option)
+
+	var new_button := Button.new()
+	new_button.text = "New world"
+	new_button.pressed.connect(_new_world)
+	bar.add_child(new_button)
+
+	var random_button := Button.new()
+	random_button.text = "Random seed"
+	random_button.pressed.connect(func() -> void:
+		seed_spin.value = randi_range(1, 999999)
+		_new_world())
+	bar.add_child(random_button)
+	bar.add_child(VSeparator.new())
+
+	play_button = Button.new()
+	play_button.text = "Play"
+	play_button.custom_minimum_size.x = 70
+	play_button.tooltip_text = "Space"
+	play_button.pressed.connect(func() -> void: _set_playing(not playing))
+	bar.add_child(play_button)
+
+	var step_button := Button.new()
+	step_button.text = "+1 year"
+	step_button.tooltip_text = "Period key, while paused"
+	step_button.pressed.connect(func() -> void:
+		world.step_years(1)
+		map_dirty = true
+		_update_summary())
+	bar.add_child(step_button)
+
+	speed_option = OptionButton.new()
+	for s in SPEEDS:
+		speed_option.add_item("%s years/s" % _commas(s))
+	speed_option.selected = speed_index
+	speed_option.item_selected.connect(func(i: int) -> void:
+		speed_index = i
+		years_due = 0.0)
+	bar.add_child(speed_option)
+	actual_speed_label = Label.new()
+	actual_speed_label.add_theme_font_size_override("font_size", 12)
+	actual_speed_label.add_theme_color_override("font_color", Color(0.98, 0.70, 0.10))
+	actual_speed_label.tooltip_text = "This grid is too detailed to simulate at the chosen speed on this machine."
+	bar.add_child(actual_speed_label)
+	bar.add_child(VSeparator.new())
+
+	year_label = Label.new()
+	year_label.add_theme_font_size_override("font_size", 18)
+	year_label.custom_minimum_size.x = 130
+	bar.add_child(year_label)
+
+	population_label = Label.new()
+	bar.add_child(population_label)
+	return bar
+
+
+func _build_side_panel() -> Control:
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size.x = 330
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+
+	var panel := VBoxContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.add_theme_constant_override("separation", 6)
+	scroll.add_child(panel)
+
+	panel.add_child(_heading("Map mode"))
+	var group := ButtonGroup.new()
+	var modes: Array = world.get_modes() if world != null else _fallback_modes()
+	var number := 1
+	for mode in modes:
+		var button := Button.new()
+		button.text = "%d  %s" % [number, mode["name"]]
+		button.tooltip_text = mode["description"]
+		button.toggle_mode = true
+		button.button_group = group
+		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		button.button_pressed = mode["id"] == mode_id
+		button.pressed.connect(_set_mode.bind(mode["id"]))
+		panel.add_child(button)
+		mode_buttons[mode["id"]] = button
+		number += 1
+
+	coastline_check = CheckBox.new()
+	coastline_check.text = "Coastlines"
+	coastline_check.button_pressed = true
+	coastline_check.toggled.connect(func(_on: bool) -> void:
+		map_dirty = true
+		render_cooldown = 0.0)
+	panel.add_child(coastline_check)
+
+	panel.add_child(HSeparator.new())
+	legend_title = Label.new()
+	legend_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	panel.add_child(legend_title)
+	legend_bar = TextureRect.new()
+	legend_bar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	legend_bar.stretch_mode = TextureRect.STRETCH_SCALE
+	legend_bar.custom_minimum_size = Vector2(0, 16)
+	panel.add_child(legend_bar)
+	legend_ticks = HBoxContainer.new()
+	panel.add_child(legend_ticks)
+	legend_swatches = VBoxContainer.new()
+	panel.add_child(legend_swatches)
+
+	panel.add_child(HSeparator.new())
+	panel.add_child(_heading("Cell"))
+	cell_hint = _label("Hover over the map to inspect a cell.")
+	cell_hint.add_theme_color_override("font_color", Color(0.54, 0.53, 0.51))
+	panel.add_child(cell_hint)
+	cell_grid = GridContainer.new()
+	cell_grid.columns = 2
+	cell_grid.add_theme_constant_override("h_separation", 12)
+	panel.add_child(cell_grid)
+
+	panel.add_child(HSeparator.new())
+	var keys := _label("Space play/pause  ·  1-5 map modes  ·  . step a year")
+	keys.add_theme_font_size_override("font_size", 11)
+	keys.add_theme_color_override("font_color", Color(0.54, 0.53, 0.51))
+	keys.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	panel.add_child(keys)
+	return scroll
+
+
+# Mode buttons are built before the world exists; this mirrors the C++ list
+# only for the case where the extension failed to load.
+func _fallback_modes() -> Array:
+	if ClassDB.class_exists("HistSimWorld"):
+		return ClassDB.instantiate("HistSimWorld").get_modes()
+	return []
+
+
+func _heading(text: String) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_font_size_override("font_size", 15)
+	return label
+
+
+func _label(text: String) -> Label:
+	var label := Label.new()
+	label.text = text
+	return label
+
+
+func _commas(n: int) -> String:
+	var digits := str(absi(n))
+	var out := ""
+	var count := 0
+	for i in range(digits.length() - 1, -1, -1):
+		out = digits[i] + out
+		count += 1
+		if count % 3 == 0 and i > 0:
+			out = "," + out
+	return ("-" + out) if n < 0 else out

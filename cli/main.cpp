@@ -27,6 +27,9 @@
 #endif
 
 #include "histsim/simulation.hpp"
+#include "histsim/view/map_modes.hpp"
+#include "histsim/view/png.hpp"
+#include "histsim/view/raster.hpp"
 
 namespace {
 
@@ -38,6 +41,11 @@ struct Options {
     std::int64_t report_every = 0;
     std::string save_path;
     bool hash_only = false;
+    // map command
+    std::string mode = "all";
+    std::string out = "map";
+    int width = 2048;
+    bool coastlines = true;
 };
 
 [[noreturn]] void usage(const char* message = nullptr) {
@@ -50,6 +58,10 @@ struct Options {
                  "                 [--report-every Y] [--save FILE] [--hash-only]\n"
                  "  histsim resume FILE [--years Y] [--report-every Y] [--save FILE] [--hash-only]\n"
                  "  histsim world  [--seed N] [--level L] [--ocean F]\n"
+                 "  histsim map    [--seed N] [--level L] [--ocean F] [--years Y] [--mode M|all]\n"
+                 "                 [--width W] [--out PREFIX] [--no-coastlines]\n"
+                 "                 writes PREFIX-<mode>.png; modes: terrain temperature\n"
+                 "                 rainfall capacity population\n"
                  "  histsim --version\n"
                  "\n"
                  "With no arguments, runs a 1,000-year demo.\n");
@@ -91,6 +103,10 @@ Options parse(const std::vector<std::string_view>& args, std::size_t first) {
         else if (a == "--report-every") o.report_every = parse_int(value());
         else if (a == "--save") o.save_path = std::string(value());
         else if (a == "--hash-only") o.hash_only = true;
+        else if (a == "--mode") o.mode = std::string(value());
+        else if (a == "--out") o.out = std::string(value());
+        else if (a == "--width") o.width = static_cast<int>(parse_int(value()));
+        else if (a == "--no-coastlines") o.coastlines = false;
         else usage("unknown option");
     }
     if (o.years < 0) usage("--years must be >= 0");
@@ -126,6 +142,32 @@ int run(Simulation sim, const Options& o) {
     }
     if (o.hash_only) {
         std::printf("%016llx\n", static_cast<unsigned long long>(sim.state_hash()));
+    }
+    return 0;
+}
+
+int map_images(const Options& o) {
+    Simulation sim = Simulation::create(o.params);
+    sim.step_years(o.years);
+    const int height = o.width / 2;
+    const auto raster = histsim::view::MapRaster::build(sim.world().grid, o.width, height);
+
+    std::vector<std::string> modes;
+    if (o.mode == "all") {
+        for (const auto& m : histsim::view::map_modes()) modes.push_back(m.id);
+    } else {
+        modes.push_back(histsim::view::map_mode(o.mode).id);  // throws if unknown
+    }
+    std::vector<histsim::view::Rgba> colors;
+    std::vector<std::uint8_t> rgba;
+    histsim::view::RenderOptions ro;
+    ro.coastlines = o.coastlines;
+    for (const auto& id : modes) {
+        histsim::view::color_cells(sim, id, colors);
+        histsim::view::render(raster, sim.world(), colors, rgba, ro);
+        const std::string path = o.out + "-" + id + ".png";
+        histsim::view::write_png(path, o.width, height, rgba);
+        std::printf("wrote %s (year %lld)\n", path.c_str(), static_cast<long long>(sim.year()));
     }
     return 0;
 }
@@ -209,6 +251,11 @@ int main(int argc, char** argv) {
         }
         if (cmd == "world") {
             return world_info(parse(args, 2));
+        }
+        if (cmd == "map") {
+            Options o = parse(args, 2);
+            if (o.width < 64 || o.width > 16384) usage("--width must be between 64 and 16384");
+            return map_images(o);
         }
         usage("unknown command");
     } catch (const std::exception& e) {

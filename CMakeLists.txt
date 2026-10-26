@@ -23,6 +23,7 @@ endif()
 option(HISTSIM_BUILD_TESTS "Build unit and determinism tests" ON)
 option(HISTSIM_BUILD_CLI "Build the headless command-line runner" ON)
 option(HISTSIM_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+option(HISTSIM_BUILD_GODOT "Build the Godot viewer's GDExtension (downloads godot-cpp)" OFF)
 
 # ---------------------------------------------------------------------------
 # Determinism flags.
@@ -58,9 +59,14 @@ else()
 endif()
 
 add_subdirectory(libsim)
+add_subdirectory(view)
 
 if(HISTSIM_BUILD_CLI)
     add_subdirectory(cli)
+endif()
+
+if(HISTSIM_BUILD_GODOT)
+    add_subdirectory(godot/extension)
 endif()
 
 if(HISTSIM_BUILD_TESTS)

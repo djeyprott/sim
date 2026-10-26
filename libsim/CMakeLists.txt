@@ -15,3 +15,5 @@ target_include_directories(histsim PUBLIC
 
 target_compile_features(histsim PUBLIC cxx_std_20)
 target_link_libraries(histsim PRIVATE histsim_flags)
+# The Godot extension is a shared library that links this one.
+set_target_properties(histsim PROPERTIES POSITION_INDEPENDENT_CODE ON)

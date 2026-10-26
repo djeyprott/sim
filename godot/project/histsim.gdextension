@@ -1,0 +1,12 @@
+[configuration]
+
+entry_symbol = "histsim_library_init"
+compatibility_minimum = "4.5"
+reloadable = false
+
+[libraries]
+
+windows.x86_64 = "res://bin/histsim_godot.windows.x86_64.dll"
+linux.x86_64 = "res://bin/libhistsim_godot.linux.x86_64.so"
+linux.arm64 = "res://bin/libhistsim_godot.linux.arm64.so"
+macos = "res://bin/libhistsim_godot.macos.arm64.dylib"
