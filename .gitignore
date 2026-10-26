@@ -1,0 +1,10 @@
+/build*/
+/out/
+/.cache/
+compile_commands.json
+*.hsim
+.vs/
+.vscode/
+.idea/
+CMakeUserPresets.json
+.DS_Store

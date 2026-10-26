@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-gcc
+            os: ubuntu-latest
+            cxx: g++
+            werror: ON
+          - name: linux-clang
+            os: ubuntu-latest
+            cxx: clang++
+            werror: ON
+          - name: macos-arm64-clang
+            os: macos-latest
+            cxx: clang++
+            werror: ON
+          - name: windows-msvc
+            os: windows-latest
+            cxx: ''   # default Visual Studio generator picks MSVC
+            werror: OFF
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        shell: bash
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          ${{ matrix.cxx != '' && format('-DCMAKE_CXX_COMPILER={0}', matrix.cxx) || '' }}
+          -DHISTSIM_WARNINGS_AS_ERRORS=${{ matrix.werror }}
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      # A longer run than the golden-hash unit test, compared across all
+      # platforms in the determinism job below.
+      - name: Record determinism hash
+        shell: bash
+        run: |
+          exe=build/cli/histsim
+          [ -f build/cli/Release/histsim.exe ] && exe=build/cli/Release/histsim.exe
+          "$exe" run --seed 1 --level 6 --years 500 --hash-only > hash-${{ matrix.name }}.txt
+          cat hash-${{ matrix.name }}.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hash-${{ matrix.name }}
+          path: hash-${{ matrix.name }}.txt
+
+  determinism:
+    name: cross-platform determinism
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: hash-*
+          merge-multiple: true
+      - name: All platforms must produce the same hash
+        run: |
+          for f in hash-*.txt; do printf '%-28s %s\n' "$f" "$(cat "$f")"; done
+          if [ "$(cat hash-*.txt | sort -u | wc -l)" -ne 1 ]; then
+            echo "::error::Simulation results differ between platforms"
+            exit 1
+          fi
+
+  sanitizers:
+    name: linux-sanitizers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
+      - name: Build
+        run: cmake --build build --parallel
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
