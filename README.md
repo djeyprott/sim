@@ -11,15 +11,20 @@ demography, culture and economy come in later milestones.
 
 ## Download
 
-Prebuilt executables for Windows, macOS and Linux are on the
-[Releases page](https://github.com/djeyprott/sim/releases). Unzip and
-double-click `histsim` to run a 1,000-year demo. Windows may show a SmartScreen
-warning because the executable is not code-signed; choose **More info**, then
-**Run anyway**.
+Prebuilt executables for Windows, macOS and Linux are attached to each
+release on the [Releases page](https://github.com/djeyprott/sim/releases).
+Every push to `main` also produces tested builds: open
+[Actions > CI](https://github.com/djeyprott/sim/actions/workflows/ci.yml), pick
+the latest run, and download `histsim-windows-msvc` (or the macOS/Linux one)
+under **Artifacts**.
 
-To publish a new release, push a version tag (for example `git tag v0.2.0 &&
-git push origin v0.2.0`); the Release workflow builds, tests and uploads the
-executables.
+Unzip and double-click `histsim` to run a 1,000-year demo. Windows may show a
+SmartScreen warning because the executable is not code-signed; choose
+**More info**, then **Run anyway**.
+
+To publish a release, use **Releases > Draft a new release** on GitHub, create
+a tag such as `v0.1.0`, and publish. The Release workflow then builds, tests
+and attaches executables for all three platforms.
 
 ## Building
 

@@ -65,6 +65,22 @@ jobs:
           name: hash-${{ matrix.name }}
           path: hash-${{ matrix.name }}.txt
 
+      # A tested, ready-to-run build of this commit, downloadable from the run
+      # page (Actions > CI > the run > Artifacts).
+      - name: Package executable
+        if: matrix.name != 'linux-clang'
+        shell: bash
+        env:
+          PACKAGE_NO_ZIP: '1'
+        run: bash tools/package.sh build "dev-${GITHUB_SHA::7}" ${{ matrix.name }}
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.name != 'linux-clang'
+        with:
+          name: histsim-${{ matrix.name }}
+          path: histsim-dev-*/
+          retention-days: 30
+
   determinism:
     name: cross-platform determinism
     needs: build
