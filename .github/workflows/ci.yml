@@ -56,8 +56,9 @@ jobs:
         run: |
           exe=build/cli/histsim
           [ -f build/cli/Release/histsim.exe ] && exe=build/cli/Release/histsim.exe
-          "$exe" run --seed 1 --level 6 --years 500 --hash-only > hash-${{ matrix.name }}.txt
-          cat hash-${{ matrix.name }}.txt
+          # Strip CR: on Windows the C runtime writes text output with CRLF.
+          "$exe" run --seed 1 --level 6 --years 500 --hash-only | tr -d '\r' > hash-${{ matrix.name }}.txt
+          echo "::notice title=determinism hash::${{ matrix.name }} $(cat hash-${{ matrix.name }}.txt)"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -75,11 +76,17 @@ jobs:
           merge-multiple: true
       - name: All platforms must produce the same hash
         run: |
-          for f in hash-*.txt; do printf '%-28s %s\n' "$f" "$(cat "$f")"; done
-          if [ "$(cat hash-*.txt | sort -u | wc -l)" -ne 1 ]; then
-            echo "::error::Simulation results differ between platforms"
+          summary=""
+          for f in hash-*.txt; do
+            name="${f#hash-}"; name="${name%.txt}"
+            summary="$summary $name=$(tr -d '\r\n' < "$f")"
+          done
+          echo "$summary"
+          if [ "$(cat hash-*.txt | tr -d '\r' | sort -u | wc -l)" -ne 1 ]; then
+            echo "::error title=determinism::Simulation results differ between platforms:$summary"
             exit 1
           fi
+          echo "::notice title=determinism::All platforms agree:$summary"
 
   sanitizers:
     name: linux-sanitizers
