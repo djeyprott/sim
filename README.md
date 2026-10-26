@@ -9,6 +9,18 @@ core, a geodesic world grid, a generated test world and a headless runner. The
 forager systems in M0 are placeholders that exercise the machinery; real
 demography, culture and economy come in later milestones.
 
+## Download
+
+Prebuilt executables for Windows, macOS and Linux are on the
+[Releases page](https://github.com/djeyprott/sim/releases). Unzip and
+double-click `histsim` to run a 1,000-year demo. Windows may show a SmartScreen
+warning because the executable is not code-signed; choose **More info**, then
+**Run anyway**.
+
+To publish a new release, push a version tag (for example `git tag v0.2.0 &&
+git push origin v0.2.0`); the Release workflow builds, tests and uploads the
+executables.
+
 ## Building
 
 Requires CMake 3.21+ and a C++20 compiler (GCC 11+, Clang 14+, MSVC 2022 or

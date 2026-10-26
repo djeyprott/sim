@@ -1,0 +1,100 @@
+name: Release
+
+# Builds tested executables for Windows, macOS and Linux and attaches them to a
+# GitHub release. Runs when a version tag (v0.1.0, v0.2.0, ...) is pushed.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-latest
+          - name: macos-arm64
+            os: macos-latest
+          - name: linux-x64
+            os: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Package
+        shell: bash
+        run: |
+          pkg="histsim-${GITHUB_REF_NAME}-${{ matrix.name }}"
+          mkdir "$pkg"
+          if [ -f build/cli/Release/histsim.exe ]; then
+            cp build/cli/Release/histsim.exe "$pkg/"
+          else
+            cp build/cli/histsim "$pkg/"
+          fi
+          cp LICENSE README.md "$pkg/"
+          cat > "$pkg/QUICKSTART.txt" <<'EOF'
+          histsim - human history simulator (milestone M0, foundations)
+
+          Double-click histsim (histsim.exe on Windows) to run a 1,000-year demo.
+
+          From a terminal you can run your own worlds:
+
+            histsim run --seed 7 --level 6 --years 2000 --report-every 200
+            histsim run --years 500 --save run.hsim
+            histsim resume run.hsim --years 500
+            histsim world --seed 7
+            histsim --help
+
+          --seed   picks the world and its history (same seed = same result)
+          --level  grid detail: 5 = 10,242 cells (fast), 7 = 163,842 cells
+          --years  how long to simulate, in years since the run began
+
+          This build is a headless runner for the simulation core. The map
+          interface arrives in later milestones.
+          EOF
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            7z a -tzip "$pkg.zip" "$pkg" > /dev/null
+          else
+            zip -qr "$pkg.zip" "$pkg"
+          fi
+          ls -l "$pkg.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.name }}
+          path: histsim-*.zip
+
+  release:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: package-*
+          merge-multiple: true
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" histsim-*.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "histsim $GITHUB_REF_NAME" \
+            --prerelease \
+            --notes "Milestone M0 (foundations): deterministic simulation core and headless runner. Download the zip for your system, unzip it, and double-click histsim to run a 1,000-year demo. See QUICKSTART.txt inside for options. Windows builds may show a SmartScreen warning because the executable is not code-signed; choose More info, then Run anyway."

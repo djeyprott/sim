@@ -4,15 +4,27 @@
 //                [--report-every Y] [--save FILE] [--hash-only]
 //   histsim resume FILE [--years Y] [--report-every Y] [--save FILE] [--hash-only]
 //   histsim world [--seed N] [--level L] [--ocean F]
+//
+// With no arguments (for example, double-clicked in Explorer) it runs a short
+// demo and waits for Enter so the window stays open.
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <algorithm>
 #include <exception>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
+
+#ifdef _WIN32
+#include <io.h>
+#define HISTSIM_ISATTY _isatty
+#define HISTSIM_FILENO _fileno
+#else
+#include <unistd.h>
+#define HISTSIM_ISATTY isatty
+#define HISTSIM_FILENO fileno
+#endif
 
 #include "histsim/simulation.hpp"
 
@@ -37,7 +49,10 @@ struct Options {
                  "  histsim run    [--seed N] [--level L] [--ocean F] [--years Y]\n"
                  "                 [--report-every Y] [--save FILE] [--hash-only]\n"
                  "  histsim resume FILE [--years Y] [--report-every Y] [--save FILE] [--hash-only]\n"
-                 "  histsim world  [--seed N] [--level L] [--ocean F]\n");
+                 "  histsim world  [--seed N] [--level L] [--ocean F]\n"
+                 "  histsim --version\n"
+                 "\n"
+                 "With no arguments, runs a 1,000-year demo.\n");
     std::exit(2);
 }
 
@@ -137,11 +152,48 @@ int world_info(const Options& o) {
     return 0;
 }
 
+// No arguments: show the world and 1,000 years of history, then explain usage.
+int demo() {
+    std::printf("histsim %s: human history simulator (milestone M0, foundations)\n\n", HISTSIM_VERSION);
+    Options o;
+    o.years = 1000;
+    o.report_every = 100;
+    world_info(o);
+    std::printf("\nSimulating %lld years of placeholder foragers on this world...\n\n",
+                static_cast<long long>(o.years));
+    const int rc = run(Simulation::create(o.params), o);
+    std::printf(
+        "\nThis is a headless runner; the map interface comes in later milestones.\n"
+        "Run it from a terminal for more options, for example:\n"
+        "  histsim run --seed 7 --level 6 --years 2000 --report-every 200\n"
+        "  histsim run --years 500 --save run.hsim\n"
+        "  histsim resume run.hsim --years 500\n"
+        "  histsim world --seed 7\n");
+    if (HISTSIM_ISATTY(HISTSIM_FILENO(stdin))) {
+        std::printf("\nPress Enter to close.");
+        std::fflush(stdout);
+        (void)std::getchar();
+    }
+    return rc;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
     const std::vector<std::string_view> args(argv, argv + argc);
     if (args.size() < 2) {
+        try {
+            return demo();
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "error: %s\n", e.what());
+            return 1;
+        }
+    }
+    if (args[1] == "--version" || args[1] == "version") {
+        std::printf("histsim %s\n", HISTSIM_VERSION);
+        return 0;
+    }
+    if (args[1] == "--help" || args[1] == "-h" || args[1] == "help") {
         usage();
     }
     try {

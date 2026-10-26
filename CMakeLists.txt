@@ -14,6 +14,12 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
+# Link the MSVC C++ runtime statically so the Windows executable runs on any
+# machine without the Visual C++ Redistributable installed.
+if(NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 option(HISTSIM_BUILD_TESTS "Build unit and determinism tests" ON)
 option(HISTSIM_BUILD_CLI "Build the headless command-line runner" ON)
 option(HISTSIM_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
