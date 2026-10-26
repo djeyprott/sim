@@ -36,7 +36,7 @@ jobs:
           -DHISTSIM_BUILD_GODOT=ON -DHISTSIM_BUILD_TESTS=OFF -DHISTSIM_BUILD_CLI=OFF
 
       - name: Build
-        run: cmake --build build-godot --config Release --target histsim_godot --parallel
+        run: cmake --build build-godot --config Release --target histsim_godot --parallel 4
 
       - uses: actions/upload-artifact@v4
         with:
