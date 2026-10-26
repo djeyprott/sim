@@ -60,6 +60,10 @@ public:
     void step(StepContext& ctx) override;
 };
 
+// A cohort of n people in the stationary age structure of the life table,
+// split between the sexes by the sex ratio at birth. Integer-exact.
+Cohort make_stable_cohort(CellId cell, std::uint32_t group, std::uint32_t n);
+
 // Life-table helpers exposed for tests and the inspector.
 double forager_death_probability(int age_bin);
 double forager_fertility(int age_bin);

@@ -139,8 +139,16 @@ void serialize(Ar& ar, SimState& s) {
     ar.f64(s.climate.global_anomaly_c);
     ar.f64(s.climate.volcanic_forcing);
     ar.f64(s.climate.solar_forcing);
+    ar.f64(s.climate.imposed_forcing);
     doubles(ar, s.climate.regional_temp_anomaly);
     doubles(ar, s.climate.regional_precip_anomaly);
+    vec(ar, s.climate.modifiers, [&](ClimateModifier& m) {
+        ar.u32(m.center);
+        ar.f64(m.radius_km);
+        ar.f64(m.temp_c);
+        ar.f64(m.precip_frac);
+        ar.i64(m.years_left);
+    });
 
     doubles(ar, s.env.temperature_c);
     doubles(ar, s.env.precipitation_mm);
@@ -151,6 +159,7 @@ void serialize(Ar& ar, SimState& s) {
     ar.i64(s.ledger.births);
     ar.i64(s.ledger.deaths);
     ar.i64(s.ledger.migrants);
+    ar.i64(s.ledger.added);
 
     vec(ar, s.events, [&](Event& e) {
         ar.i64(e.tick);
@@ -160,6 +169,18 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(e.cell);
         ar.i64(e.value);
     });
+    vec(ar, s.commands, [&](Command& c) {
+        ar.i64(c.tick);
+        std::uint32_t type = static_cast<std::uint32_t>(c.type);
+        ar.u32(type);
+        if constexpr (Ar::kReading) c.type = static_cast<CommandType>(type);
+        ar.u32(c.cell);
+        ar.f64(c.radius_km);
+        ar.f64(c.amount);
+        ar.f64(c.amount2);
+        ar.i64(c.years);
+    });
+    ar.u32(s.next_group);
     vec(ar, s.history, [&](YearRecord& r) {
         ar.i64(r.year);
         ar.i64(r.population);

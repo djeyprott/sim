@@ -10,6 +10,9 @@ extends SceneTree
 var main: Control
 var frames := 0
 var failures: Array[String] = []
+var god_killed := 0
+var quicksave_year := -1
+var globe_ok := false
 
 
 func _initialize() -> void:
@@ -38,6 +41,21 @@ func _process(_delta: float) -> bool:
 		main._set_view(true)  # globe
 	if frames == 30:
 		main._show_cell(main.world.cell_at(1024, 400))
+	if frames == 31:
+		globe_ok = main.showing_globe and main.globe.visible
+	if frames == 32:
+		main._set_view(false)
+		main._set_god_mode(true)
+		main.god_panel.set_tool("plague")
+		var cell := _populated_cell()
+		var before: int = main.world.get_population()
+		main._apply_tool(cell)
+		god_killed = before - main.world.get_population()
+		main._on_global_action("eruption", 6.0)
+		main._quicksave()
+		quicksave_year = main.world.get_year()
+		main.world.step_years(3)
+		main._quickload()
 	if frames == 40:
 		_check_scene()
 		_finish(failures)
@@ -84,12 +102,32 @@ func _check_api() -> void:
 			break
 	_expect(populated >= 0 and w.get_cell_pyramid(populated)["male"].size() == 21, "cell pyramid has 21 bins")
 
+	# Interventions
+	var r: Dictionary = w.apply_intervention("eruption", -1, 0.0, 8.0, 0.0, 0)
+	_expect(r["ok"], "eruption intervention")
+	r = w.apply_intervention("plague", populated, 800.0, 0.5, 0.0, 0)
+	_expect(r["ok"] and r["people"] > 0, "plague intervention kills people")
+	r = w.apply_intervention("settlers", populated, 0.0, 1000.0, 0.0, 0)
+	_expect(r["ok"] and r["people"] == 1000, "settlers intervention")
+	r = w.apply_intervention("climate", populated, 1000.0, -3.0, -0.5, 10)
+	_expect(r["ok"] and r["cells"] > 1, "regional climate intervention")
+	r = w.apply_intervention("forcing", -1, 0.0, 2.5, 0.0, 0)
+	_expect(r["ok"] and is_equal_approx(w.get_imposed_forcing(), 2.5), "forcing intervention")
+	r = w.apply_intervention("settlers", -1, 0.0, 10.0, 0.0, 0)
+	_expect(not r["ok"], "intervention without a cell is refused")
+	_expect(w.get_intervention_count() == 5, "five interventions recorded")
+	_expect(w.get_event_years("eruption").size() >= 1, "eruption event years")
+	w.set_highlight(populated, 800.0)
+	_expect(w.render_map("terrain", true) != null, "render with highlight")
+	w.set_highlight(-1, 0.0)
+
 	var path := OS.get_user_data_dir().path_join("smoke.hsim")
 	var hash_before: String = w.get_state_hash()
 	_expect(w.save_snapshot(path), "save_snapshot")
 	var w2: Object = ClassDB.instantiate("HistSimWorld")
 	_expect(w2.load_snapshot(path), "load_snapshot")
 	_expect(w2.get_state_hash() == hash_before, "snapshot round trip keeps the state hash")
+	_expect(w2.get_intervention_count() == 5, "snapshot keeps the interventions")
 	_expect(not w2.load_snapshot(path + ".missing"), "load_snapshot fails cleanly on a missing file")
 	DirAccess.remove_absolute(path)
 
@@ -100,8 +138,28 @@ func _check_scene() -> void:
 	_expect(main.map_texture != null, "main scene rendered the map")
 	_expect(main.mode_id == "population", "mode switch")
 	_expect(main.legend_ticks.get_child_count() >= 2, "legend ticks shown")
-	_expect(main.showing_globe and main.globe.visible, "globe view switch")
+	_expect(globe_ok, "globe view switch")
 	_expect(main.population_chart._x.size() > 1, "population chart has history")
+	_expect(god_killed > 0, "god-mode plague click killed people")
+	_expect(main.world.get_intervention_count() >= 2, "god-mode actions recorded")
+	_expect(main.world.get_year() == quicksave_year, "quickload restored the saved year")
+	_expect(main.god_panel.visible, "god panel shown")
+
+
+func _populated_cell() -> int:
+	var best := -1
+	var best_people := 0
+	for y in range(200, 800, 32):
+		for x in range(0, 2048, 32):
+			var c: int = main.world.cell_at(x, y)
+			var p: Dictionary = main.world.get_cell_pyramid(c)
+			var people := 0
+			for n in p["female"]:
+				people += n
+			if people > best_people:
+				best_people = people
+				best = c
+	return best
 
 
 func _expect(condition: bool, what: String) -> void:

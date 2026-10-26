@@ -51,6 +51,10 @@ public:
     static constexpr double kGameShareOfCapacity = 0.6;  // capacity = climate x (0.4 + 0.6 game)
 };
 
+// Foraging capacity of a land cell from this year's climate and its game
+// stock (used by the environment system and by interventions).
+double environment_capacity(const World& world, const SimState& state, CellId cell);
+
 // Orbital forcing in W/m^2 at a given year of the run, for a world seed.
 double orbital_forcing(std::uint64_t seed, std::int64_t year);
 

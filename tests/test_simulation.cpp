@@ -59,7 +59,7 @@ TEST(sim_people_are_conserved) {
     for (int i = 0; i < 20; ++i) {
         sim.step_years(5);
         const Ledger& l = sim.state().ledger;
-        CHECK_EQ(sim.state().total_population(), l.initial_population + l.births - l.deaths);
+        CHECK_EQ(sim.state().total_population(), l.initial_population + l.births - l.deaths + l.added);
     }
     CHECK(sim.state().ledger.migrants > 0);
 }
@@ -155,5 +155,5 @@ TEST(sim_golden_hash) {
     p.grid_level = 5;
     Simulation sim = Simulation::create(p);
     sim.step_years(200);
-    CHECK_EQ(sim.state_hash(), 0x0e2ae299e956c29bull);
+    CHECK_EQ(sim.state_hash(), 0x5ff426085499134full);
 }

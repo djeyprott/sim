@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "histsim/interventions.hpp"
 #include "histsim/portable_math.hpp"
 
 namespace histsim {
@@ -47,16 +48,20 @@ void ClimateSystem::step(StepContext& ctx) {
     const std::int64_t year = ctx.tick / kTicksPerYear;
 
     // ---- Global energy balance
+    // volcanic_forcing holds aerosols still to act: this year's eruption (or
+    // one forced by an intervention since the last step) acts at full
+    // strength now, and what remains decays before next year.
     RngStream rng = ctx.rng(Stream::Climate, 0);
-    cl.volcanic_forcing *= kVolcanicDecay;
     if (rng.uniform() < kEruptionChance) {
         const double hit = -(1.0 + 3.0 * rng.uniform());  // -1 to -4 W/m^2
         cl.volcanic_forcing += hit;
         s.events.push_back({ctx.tick, EventType::Eruption, kInvalidCell, static_cast<std::int64_t>(hit * 1000.0)});
     }
     cl.solar_forcing = 0.95 * cl.solar_forcing + 0.047 * normal(rng);  // sd ~0.15 W/m^2
-    const double forcing = orbital_forcing(w.params.seed, year) + cl.volcanic_forcing + cl.solar_forcing;
+    const double forcing =
+        orbital_forcing(w.params.seed, year) + cl.volcanic_forcing + cl.solar_forcing + cl.imposed_forcing;
     cl.global_anomaly_c += (forcing - kFeedback * cl.global_anomaly_c) / kHeatCapacity + kInternalNoiseC * normal(rng);
+    cl.volcanic_forcing *= kVolcanicDecay;
 
     // ---- Regional anomalies (AR(1) on the coarse grid)
     const double t_innov = kRegionalTempSd * std::sqrt(1.0 - kRegionalTempPersistence * kRegionalTempPersistence);
@@ -83,6 +88,24 @@ void ClimateSystem::step(StepContext& ctx) {
         s.env.precipitation_mm[c] =
             w.precipitation_mm[c] * std::max(0.05, (1.0 + kPrecipPerDegree * cl.global_anomaly_c) * (1.0 + pa));
     }
+
+    // ---- Regional events imposed by interventions
+    for (ClimateModifier& m : cl.modifiers) {
+        for (const WeightedCell& wc : cells_within(w, m.center, m.radius_km, /*taper=*/true)) {
+            s.env.temperature_c[wc.cell] += wc.weight * m.temp_c;
+            s.env.precipitation_mm[wc.cell] *= std::max(0.0, 1.0 + wc.weight * m.precip_frac);
+        }
+        --m.years_left;
+    }
+    std::erase_if(cl.modifiers, [](const ClimateModifier& m) { return m.years_left <= 0; });
+}
+
+double environment_capacity(const World& w, const SimState& s, CellId c) {
+    if (!w.is_land[c]) return 0.0;
+    const double climate_capacity =
+        forager_density(s.env.temperature_c[c], s.env.precipitation_mm[c]) * w.grid.area_km2(c);
+    constexpr double kShare = EnvironmentSystem::kGameShareOfCapacity;
+    return climate_capacity * ((1.0 - kShare) + kShare * s.env.game[c]);
 }
 
 void EnvironmentSystem::step(StepContext& ctx) {
@@ -101,7 +124,7 @@ void EnvironmentSystem::step(StepContext& ctx) {
         g += kGameRegrowth * g * (1.0 - g) + kGameInflow * (1.0 - g) -
              kHuntingPressure * std::max(0.0, crowding - kSustainableCrowding) * g;
         g = std::clamp(g, 0.02, 1.0);
-        s.env.capacity[c] = climate_capacity * ((1.0 - kGameShareOfCapacity) + kGameShareOfCapacity * g);
+        s.env.capacity[c] = environment_capacity(w, s, c);
     }
 }
 

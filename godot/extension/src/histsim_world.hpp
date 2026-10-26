@@ -65,6 +65,20 @@ public:
     // {female, male}: PackedInt64Array of 21 five-year age bins each.
     godot::Dictionary get_cell_pyramid(int64_t cell) const;
 
+    // Interventions. type: "eruption", "forcing", "climate", "plague",
+    // "wipeout", "settlers" or "game" (see libsim interventions.hpp for what
+    // the numbers mean). Returns {ok, message, people, cells}.
+    godot::Dictionary apply_intervention(const godot::String& type, int64_t cell, double radius_km, double amount,
+                                         double amount2, int64_t years);
+    double get_imposed_forcing() const;
+    int64_t get_intervention_count() const;
+    // Years (since the run began) of events of a kind: "eruption" or "intervention".
+    godot::PackedInt64Array get_event_years(const godot::String& kind) const;
+
+    // Outline the cells within radius_km of a cell on the next render_map
+    // (cell < 0 clears it).
+    void set_highlight(int64_t cell, double radius_km);
+
 protected:
     static void _bind_methods();
 
@@ -79,4 +93,6 @@ private:
     std::string last_error_;
     std::vector<histsim::view::Rgba> colors_;
     std::vector<std::uint8_t> rgba_;
+    std::vector<std::uint8_t> highlight_;
+    bool highlight_on_ = false;
 };

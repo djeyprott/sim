@@ -44,13 +44,26 @@ struct Cohort {
 
 // ---------------------------------------------------------------- climate
 
+// A regional climate event imposed by an intervention: a temperature and
+// rainfall shift over a disc, fading out over its outer 30%, for a number of
+// years.
+struct ClimateModifier {
+    CellId center = kInvalidCell;
+    double radius_km = 0.0;
+    double temp_c = 0.0;         // added to this year's temperature
+    double precip_frac = 0.0;    // rainfall multiplied by (1 + precip_frac)
+    std::int64_t years_left = 0;
+};
+
 // Global and regional climate state carried from year to year.
 struct ClimateState {
     double global_anomaly_c = 0.0;   // global mean temperature minus baseline
     double volcanic_forcing = 0.0;   // W/m^2, negative after eruptions, decays
     double solar_forcing = 0.0;      // W/m^2, slow random wander
+    double imposed_forcing = 0.0;    // W/m^2, set by interventions, persistent
     std::vector<double> regional_temp_anomaly;    // per coarse climate cell, degrees C
     std::vector<double> regional_precip_anomaly;  // per coarse climate cell, fraction
+    std::vector<ClimateModifier> modifiers;       // active regional events
 };
 
 // This year's conditions on every cell, written by the climate and environment
@@ -69,6 +82,7 @@ enum class EventType : std::uint32_t {
     CellSettled = 1,      // people reach a cell that was never inhabited; value = arrivals
     WorldPopulation = 2,  // world population crossed a power of ten; value = new total
     Eruption = 3,         // large volcanic eruption; value = forcing in mW/m^2 (negative)
+    Intervention = 4,     // a command applied by the user; value = CommandType
 };
 
 struct Event {
@@ -79,12 +93,38 @@ struct Event {
 };
 
 // Running totals that make conservation checkable: at any tick,
-// population == initial_population + births - deaths.
+// population == initial_population + births - deaths + added.
 struct Ledger {
     std::int64_t initial_population = 0;
     std::int64_t births = 0;
-    std::int64_t deaths = 0;
+    std::int64_t deaths = 0;    // includes deaths caused by interventions
     std::int64_t migrants = 0;  // moves between cells; does not change the total
+    std::int64_t added = 0;     // people placed by interventions
+};
+
+// ---------------------------------------------------------------- commands
+
+// Interventions ("god mode"). Every command applied to a run is kept in the
+// state with the tick it was applied at, so a run with interventions still
+// saves, hashes and replays exactly. Append new types; never renumber.
+enum class CommandType : std::uint32_t {
+    Eruption = 1,         // amount = forcing in W/m^2 (negative cools)
+    ClimateForcing = 2,   // amount = persistent forcing in W/m^2 (replaces the previous value)
+    RegionalClimate = 3,  // cell, radius; amount = degrees C; amount2 = rainfall change (fraction); years
+    Plague = 4,           // cell, radius; amount = share of people who die (0-1)
+    Settlers = 5,         // cell; amount = number of people (a new group)
+    WipeOut = 6,          // cell, radius; everyone there dies
+    SetGame = 7,          // cell, radius; amount = game abundance (0-1)
+};
+
+struct Command {
+    Tick tick = 0;  // set when applied
+    CommandType type = CommandType::Eruption;
+    CellId cell = kInvalidCell;
+    double radius_km = 0.0;
+    double amount = 0.0;
+    double amount2 = 0.0;
+    std::int64_t years = 0;
 };
 
 // One row per simulated year, for charts and analysis. Births, deaths and
@@ -116,6 +156,8 @@ struct SimState {
     Ledger ledger;
     std::vector<Event> events;         // append-only, in tick order
     std::vector<YearRecord> history;   // one per completed year
+    std::vector<Command> commands;     // interventions, in the order applied
+    std::uint32_t next_group = 0;      // id for the next new group (settlers)
 
     // ---- Derived data: rebuilt by refresh(), never saved or hashed.
     std::vector<std::uint32_t> cell_population;

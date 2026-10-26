@@ -8,6 +8,7 @@
 // With no arguments (for example, double-clicked in Explorer) it runs a short
 // demo and waits for Enter so the window stays open.
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -46,6 +47,8 @@ struct Options {
     std::string out = "map";
     int width = 2048;
     bool coastlines = true;
+    // --at YEAR:ACTION:...: interventions, applied when the run reaches YEAR
+    std::vector<std::pair<std::int64_t, std::string>> at;
 };
 
 [[noreturn]] void usage(const char* message = nullptr) {
@@ -61,8 +64,20 @@ struct Options {
                  "  histsim map    [--seed N] [--level L] [--ocean F] [--years Y] [--mode M|all]\n"
                  "                 [--width W] [--out PREFIX] [--no-coastlines]\n"
                  "                 writes PREFIX-<mode>.png; modes: terrain temperature\n"
-                 "                 rainfall capacity population\n"
+                 "                 temp_anomaly rainfall capacity game population crowding\n"
+                 "                 median_age\n"
                  "  histsim --version\n"
+                 "\n"
+                 "run, resume and map accept interventions, applied when the run reaches YEAR\n"
+                 "(years since it began). CELL is a cell id or LAT,LON in degrees.\n"
+                 "  --at YEAR:eruption:W            volcanic eruption, W/m^2 of cooling (Pinatubo ~3)\n"
+                 "  --at YEAR:forcing:W             set a persistent forcing, W/m^2 (CO2 x2 ~ +3.7)\n"
+                 "  --at YEAR:climate:CELL:KM:DEG:RAIN:YEARS\n"
+                 "                                  regional event, e.g. drought 0:-0.5:20\n"
+                 "  --at YEAR:plague:CELL:KM:SHARE  share (0-1) of people there die\n"
+                 "  --at YEAR:wipeout:CELL:KM       everyone there dies\n"
+                 "  --at YEAR:settlers:CELL:COUNT   place a new group\n"
+                 "  --at YEAR:game:CELL:KM:LEVEL    set game abundance (0-1)\n"
                  "\n"
                  "With no arguments, runs a 1,000-year demo.\n");
     std::exit(2);
@@ -107,10 +122,137 @@ Options parse(const std::vector<std::string_view>& args, std::size_t first) {
         else if (a == "--out") o.out = std::string(value());
         else if (a == "--width") o.width = static_cast<int>(parse_int(value()));
         else if (a == "--no-coastlines") o.coastlines = false;
+        else if (a == "--at") {
+            const std::string spec(value());
+            const auto colon = spec.find(':');
+            if (colon == std::string::npos) usage("--at needs YEAR:ACTION...");
+            o.at.emplace_back(parse_int(std::string_view(spec).substr(0, colon)), spec.substr(colon + 1));
+        }
         else usage("unknown option");
     }
     if (o.years < 0) usage("--years must be >= 0");
     return o;
+}
+
+std::vector<std::string> split(const std::string& s, char sep) {
+    std::vector<std::string> out;
+    std::size_t start = 0;
+    for (;;) {
+        const auto pos = s.find(sep, start);
+        out.push_back(s.substr(start, pos - start));
+        if (pos == std::string::npos) return out;
+        start = pos + 1;
+    }
+}
+
+// A cell id, or "LAT,LON" in degrees resolved to the nearest cell center.
+histsim::CellId resolve_cell(const histsim::World& w, const std::string& token) {
+    const auto comma = token.find(',');
+    if (comma == std::string::npos) {
+        const auto id = parse_int(token);
+        if (id < 0 || static_cast<std::size_t>(id) >= w.cell_count()) usage("cell id out of range");
+        return static_cast<histsim::CellId>(id);
+    }
+    // Input only: the chosen id is what gets recorded, so libm here is fine.
+    const double lat = parse_double(token.substr(0, comma)) * histsim::kPi / 180.0;
+    const double lon = parse_double(token.substr(comma + 1)) * histsim::kPi / 180.0;
+    const histsim::Vec3 p{std::cos(lat) * std::cos(lon), std::cos(lat) * std::sin(lon), std::sin(lat)};
+    histsim::CellId best = 0;
+    double best_dot = -2.0;
+    for (histsim::CellId c = 0; c < w.cell_count(); ++c) {
+        const auto& v = w.grid.center(c);
+        const double d = v.x * p.x + v.y * p.y + v.z * p.z;
+        if (d > best_dot) {
+            best_dot = d;
+            best = c;
+        }
+    }
+    return best;
+}
+
+histsim::Command parse_command(const histsim::World& w, const std::string& spec) {
+    using histsim::CommandType;
+    const auto parts = split(spec, ':');
+    const std::string& action = parts[0];
+    auto need = [&](std::size_t n) {
+        if (parts.size() != n + 1) usage(("wrong number of values for --at ...:" + action).c_str());
+    };
+    histsim::Command c;
+    if (action == "eruption") {
+        need(1);
+        c.type = CommandType::Eruption;
+        c.amount = parse_double(parts[1]);
+    } else if (action == "forcing") {
+        need(1);
+        c.type = CommandType::ClimateForcing;
+        c.amount = parse_double(parts[1]);
+    } else if (action == "climate") {
+        need(5);
+        c.type = CommandType::RegionalClimate;
+        c.cell = resolve_cell(w, parts[1]);
+        c.radius_km = parse_double(parts[2]);
+        c.amount = parse_double(parts[3]);
+        c.amount2 = parse_double(parts[4]);
+        c.years = parse_int(parts[5]);
+    } else if (action == "plague") {
+        need(3);
+        c.type = CommandType::Plague;
+        c.cell = resolve_cell(w, parts[1]);
+        c.radius_km = parse_double(parts[2]);
+        c.amount = parse_double(parts[3]);
+    } else if (action == "wipeout") {
+        need(2);
+        c.type = CommandType::WipeOut;
+        c.cell = resolve_cell(w, parts[1]);
+        c.radius_km = parse_double(parts[2]);
+    } else if (action == "settlers") {
+        need(2);
+        c.type = CommandType::Settlers;
+        c.cell = resolve_cell(w, parts[1]);
+        c.amount = parse_double(parts[2]);
+    } else if (action == "game") {
+        need(3);
+        c.type = CommandType::SetGame;
+        c.cell = resolve_cell(w, parts[1]);
+        c.radius_km = parse_double(parts[2]);
+        c.amount = parse_double(parts[3]);
+    } else {
+        usage(("unknown intervention: " + action).c_str());
+    }
+    return c;
+}
+
+// Step to `target` year, applying any interventions scheduled on the way.
+void advance(Simulation& sim, std::int64_t target, const Options& o, bool quiet) {
+    while (sim.year() < target) {
+        std::int64_t next = target;
+        for (const auto& [year, spec] : o.at) {
+            if (year > sim.year() && year < next) next = year;
+        }
+        sim.step_years(next - sim.year());
+        for (const auto& [year, spec] : o.at) {
+            if (year != sim.year()) continue;
+            const histsim::InterventionResult r = sim.apply(parse_command(sim.world(), spec));
+            if (!r.ok) {
+                std::fprintf(stderr, "error: year %lld: %s\n", static_cast<long long>(year), r.message.c_str());
+                std::exit(1);
+            }
+            if (!quiet) std::printf("year %6lld  %s\n", static_cast<long long>(year), r.message.c_str());
+        }
+    }
+}
+
+// Interventions scheduled at the current year (e.g. year 0) apply before stepping.
+void apply_due_now(Simulation& sim, const Options& o, bool quiet) {
+    for (const auto& [year, spec] : o.at) {
+        if (year != sim.year()) continue;
+        const histsim::InterventionResult r = sim.apply(parse_command(sim.world(), spec));
+        if (!r.ok) {
+            std::fprintf(stderr, "error: year %lld: %s\n", static_cast<long long>(year), r.message.c_str());
+            std::exit(1);
+        }
+        if (!quiet) std::printf("year %6lld  %s\n", static_cast<long long>(year), r.message.c_str());
+    }
 }
 
 void print_report(const Simulation& sim) {
@@ -129,10 +271,12 @@ int run(Simulation sim, const Options& o) {
     if (!o.hash_only) {
         print_report(sim);
     }
+    const std::int64_t start = sim.year();
+    apply_due_now(sim, o, o.hash_only);
     std::int64_t done = 0;
     while (done < o.years) {
         const std::int64_t chunk = o.report_every > 0 ? std::min(o.report_every, o.years - done) : o.years - done;
-        sim.step_years(chunk);
+        advance(sim, start + done + chunk, o, o.hash_only);
         done += chunk;
         if (!o.hash_only && (o.report_every > 0 || done == o.years)) {
             print_report(sim);
@@ -152,7 +296,8 @@ int run(Simulation sim, const Options& o) {
 
 int map_images(const Options& o) {
     Simulation sim = Simulation::create(o.params);
-    sim.step_years(o.years);
+    apply_due_now(sim, o, false);
+    advance(sim, o.years, o, false);
     const int height = o.width / 2;
     const auto raster = histsim::view::MapRaster::build(sim.world().grid, o.width, height);
 

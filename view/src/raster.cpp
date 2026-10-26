@@ -75,6 +75,9 @@ void render(const MapRaster& raster, const World& world, const std::vector<Rgba>
     rgba.resize(static_cast<std::size_t>(w) * h * 4);
     const auto& cells = raster.cells();
     const Rgba coast = coastline_color();
+    const Rgba outline = hex("#eda100");
+    const std::vector<std::uint8_t>* hl = options.highlight;
+    auto lit = [&](CellId c) { return hl != nullptr && (*hl)[c] != 0; };
 
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
@@ -89,6 +92,16 @@ void render(const MapRaster& raster, const World& world, const std::vector<Rgba>
                 const std::uint8_t land = world.is_land[c];
                 if (world.is_land[right] != land || world.is_land[down] != land) {
                     color = coast;
+                }
+            }
+            if (hl != nullptr) {
+                const CellId right = cells[static_cast<std::size_t>(y) * w + (x + 1) % w];
+                const CellId down = y + 1 < h ? cells[i + w] : c;
+                if (lit(c) != lit(right) || lit(c) != lit(down)) {
+                    color = outline;
+                } else if (lit(c)) {
+                    color = {static_cast<std::uint8_t>((color.r + 255) / 2), static_cast<std::uint8_t>((color.g + 255) / 2),
+                             static_cast<std::uint8_t>((color.b + 255) / 2), color.a};
                 }
             }
             std::uint8_t* px = &rgba[i * 4];

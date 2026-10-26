@@ -36,6 +36,9 @@ private:
 
 struct RenderOptions {
     bool coastlines = true;  // dark line where land meets ocean
+    // Optional per-cell flags (size = cell count): flagged cells are lightened
+    // and outlined, e.g. to preview the area an intervention will touch.
+    const std::vector<std::uint8_t>* highlight = nullptr;
 };
 
 // Fill `rgba` (width * height * 4 bytes) from one color per cell.

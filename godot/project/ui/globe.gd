@@ -5,6 +5,8 @@ extends SubViewportContainer
 ## viewer can look up the cell exactly as it does on the flat map.
 
 signal pixel_hovered(pixel: Vector2i)
+## A click (press and release without dragging) on the globe.
+signal pixel_clicked(pixel: Vector2i)
 
 var map_size := Vector2i(2048, 1024)
 
@@ -16,6 +18,7 @@ var _yaw := 0.0
 var _pitch := 0.35
 var _distance := 3.2
 var _dragging := false
+var _press_position := Vector2.ZERO
 
 
 func _ready() -> void:
@@ -62,6 +65,12 @@ func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			_dragging = event.pressed
+			if event.pressed:
+				_press_position = event.position
+			elif event.position.distance_to(_press_position) < 5.0:
+				var pixel := pixel_at(event.position)
+				if pixel.x >= 0:
+					pixel_clicked.emit(pixel)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
 			_distance = maxf(1.4, _distance * 0.9)
 			_update_camera()

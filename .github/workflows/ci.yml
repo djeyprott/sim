@@ -57,7 +57,13 @@ jobs:
           exe=build/cli/histsim
           [ -f build/cli/Release/histsim.exe ] && exe=build/cli/Release/histsim.exe
           # Strip CR: on Windows the C runtime writes text output with CRLF.
-          "$exe" run --seed 1 --level 6 --years 500 --hash-only | tr -d '\r' > hash-${{ matrix.name }}.txt
+          plain=$("$exe" run --seed 1 --level 6 --years 500 --hash-only | tr -d '\r')
+          # The same check with every kind of intervention applied.
+          meddled=$("$exe" run --seed 2 --level 4 --years 300 --hash-only \
+            --at 50:eruption:12 --at 80:plague:1439:2000:0.5 --at 100:forcing:3 \
+            --at 120:climate:1439:1500:-3:-0.4:25 --at 130:settlers:1439:3000 \
+            --at 140:game:1439:900:0.1 --at 150:wipeout:1439:300 | tr -d '\r')
+          echo "$plain $meddled" > hash-${{ matrix.name }}.txt
           echo "::notice title=determinism hash::${{ matrix.name }} $(cat hash-${{ matrix.name }}.txt)"
 
       - uses: actions/upload-artifact@v4

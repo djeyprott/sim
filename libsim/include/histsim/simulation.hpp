@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <string>
 
+#include "histsim/interventions.hpp"
 #include "histsim/scheduler.hpp"
 #include "histsim/state.hpp"
 #include "histsim/world.hpp"
@@ -37,6 +38,10 @@ public:
     void step_ticks(Tick ticks);
     void step_years(std::int64_t years) { step_ticks(years * kTicksPerYear); }
 
+    // Apply an intervention now (see interventions.hpp). It is recorded in the
+    // state, so saves and replays include it.
+    InterventionResult apply(const Command& command);
+
     [[nodiscard]] const World& world() const noexcept { return world_; }
     [[nodiscard]] const SimState& state() const noexcept { return state_; }
     [[nodiscard]] Tick tick() const noexcept { return state_.tick; }
@@ -47,7 +52,7 @@ public:
     [[nodiscard]] RunSummary summary() const;
 
     // Format version written by save(). Bump it when the layout changes.
-    static constexpr std::uint32_t kSnapshotVersion = 2;
+    static constexpr std::uint32_t kSnapshotVersion = 3;
 
 private:
     Simulation() = default;

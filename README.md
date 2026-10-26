@@ -51,6 +51,12 @@ ctest --test-dir build --output-on-failure
 # Render every map mode to PNG after 300 years (writes map-terrain.png, ...)
 ./build/cli/histsim map --seed 1 --level 6 --years 300 --out map
 
+# Meddle: an eruption at year 100, a plague near 2.4°N 27.7°E at year 150,
+# and a 20-year drought there at year 200 (see `histsim --help` for all)
+./build/cli/histsim run --seed 1 --years 300 --report-every 50 \
+    --at 100:eruption:10 --at 150:plague:2.4,27.7:800:0.4 \
+    --at 200:climate:2.4,27.7:1000:0:-0.5:20
+
 # Save after 400 years, then resume for 600 more (same result as one run)
 ./build/cli/histsim run --seed 1 --years 400 --save run.hsim
 ./build/cli/histsim resume run.hsim --years 600

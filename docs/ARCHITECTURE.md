@@ -92,6 +92,24 @@ Typical behavior: a world starting at half capacity grows for two or three
 centuries, then holds near 90% of capacity, dipping after eruptions and in cold
 spells.
 
+### Interventions
+
+`Simulation::apply(Command)` changes a running world: a volcanic eruption, a
+persistent climate forcing, a regional climate event lasting some years, a
+plague, a wipe-out, settlers of a new group, or setting game abundance
+(`interventions.hpp`). Each command takes effect immediately, uses only
+deterministic arithmetic and its own random stream (`Stream::Intervention`,
+keyed by its position in the log), and is appended to `SimState::commands`
+with the tick it was applied at. Commands, active regional events and the
+imposed forcing are saved and hashed like everything else, so a run with
+interventions replays exactly: same seed + same commands at the same ticks =
+same history. People added by settlers are counted in `Ledger::added`, so
+conservation reads `population == initial + births - deaths + added`.
+
+The viewer's god-mode panel and the CLI's `--at YEAR:ACTION:...` option both
+go through this one call. CI checks a scripted run using every intervention
+type across all platforms.
+
 ### Snapshots
 
 `Simulation::save()` writes a little-endian binary file: magic, format version,

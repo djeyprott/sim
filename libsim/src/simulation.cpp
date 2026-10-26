@@ -23,28 +23,6 @@ std::uint64_t checksum(const std::uint8_t* data, std::size_t size) {
     return h.digest();
 }
 
-// Split n people across age bins by the stationary age structure, then
-// between sexes by the sex ratio at birth. Integer-exact: the parts sum to n.
-Cohort starting_cohort(CellId cell, std::uint32_t group, std::uint32_t n) {
-    Cohort c;
-    c.cell = cell;
-    c.culture = group;
-    c.language = group;
-    std::uint32_t assigned = 0;
-    for (int b = 0; b < kAgeBins; ++b) {
-        const auto in_bin = static_cast<std::uint32_t>(static_cast<double>(n) * stable_age_share(b));
-        const auto f = static_cast<std::uint32_t>(static_cast<double>(in_bin) * female_share_of_births());
-        c.female[b] = f;
-        c.male[b] = in_bin - f;
-        assigned += in_bin;
-    }
-    // Rounding leftovers go to the youngest bin, alternating sexes.
-    for (std::uint32_t i = 0; assigned < n; ++i, ++assigned) {
-        (i % 2 == 0 ? c.female[0] : c.male[0]) += 1;
-    }
-    return c;
-}
-
 }  // namespace
 
 void Simulation::install_systems() {
@@ -80,14 +58,19 @@ Simulation Simulation::create(const WorldParams& params) {
     for (CellId c = 0; c < n; ++c) {
         const auto people = static_cast<std::uint32_t>(0.5 * w.forager_capacity[c]);
         if (people >= 2) {
-            s.cohorts.push_back(starting_cohort(c, w.initial_group[c], people));
+            s.cohorts.push_back(make_stable_cohort(c, w.initial_group[c], people));
             s.ever_settled[c] = 1;
         }
     }
     s.normalize_cohorts(n);
     s.ledger.initial_population = s.total_population();
+    s.next_group = w.group_count + 1;
     sim.install_systems();
     return sim;
+}
+
+InterventionResult Simulation::apply(const Command& command) {
+    return apply_command(world_, state_, world_.params.seed, command);
 }
 
 void Simulation::step_ticks(Tick ticks) {

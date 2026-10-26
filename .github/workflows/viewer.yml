@@ -126,6 +126,8 @@ jobs:
             1-9                    switch map mode
             G                      map / globe (drag to turn, scroll to zoom)
             .                      step one year while paused
+            F2                     god mode: eruptions, climate, plague, settlers...
+            F5 / F9                quicksave / quickload
             Hover the map          inspect a cell
             New world              generate a new planet from the seed
 

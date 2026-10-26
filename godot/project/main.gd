@@ -1,6 +1,7 @@
 extends Control
 ## histsim viewer: a flat map or globe with switchable map modes, a legend,
-## playback controls, world charts and a hover inspector with an age pyramid.
+## playback controls, world charts, a hover inspector with an age pyramid, and
+## a god-mode panel for meddling with the world.
 ##
 ## All simulation and map rendering happens in C++ (the HistSimWorld class from
 ## the histsim GDExtension). This script only lays out the UI and forwards input.
@@ -14,6 +15,7 @@ const STEP_BUDGET_MSEC := 12.0  # max time per frame spent simulating
 const RENDER_INTERVAL := 1.0 / 15.0  # max map redraws per second while playing
 const CHART_INTERVAL := 0.25  # chart refreshes per second while playing
 const CHART_POINTS := 400
+const QUICKSAVE_PATH := "user://quicksave.hsim"
 
 var world: Object  # HistSimWorld; untyped so a missing extension gives a clear message
 var mode_id := "terrain"
@@ -29,6 +31,7 @@ var rate_time := 0.0
 var chart_cooldown := 0.0
 var charts_dirty := true
 var showing_globe := false
+var highlight_cell := -1  # cell the god-mode preview outline is centred on
 
 # UI nodes
 var map_rect: TextureRect
@@ -54,6 +57,8 @@ var globe_button: Button
 var population_chart: LineChart
 var climate_chart: LineChart
 var pyramid: PyramidChart
+var god_panel: GodPanel
+var god_button: Button
 
 
 func _ready() -> void:
@@ -75,16 +80,24 @@ func _new_world() -> void:
 		status_label.text = "Could not create world: " + world.get_last_error()
 		return
 	world.set_map_size(MAP_WIDTH, MAP_HEIGHT)
+	_after_world_change()
+	status_label.text = "New world: seed %d, %s cells, forager capacity %s people." % [
+		world.get_seed(), _commas(world.get_cell_count()), _commas(int(world.get_forager_capacity()))]
+
+
+# Reset view state after the world is replaced (new world or quickload).
+func _after_world_change() -> void:
 	years_due = 0.0
 	hover_cell = -1
+	highlight_cell = -1
+	world.set_highlight(-1, 0.0)
+	god_panel.show_forcing(world.get_imposed_forcing())
 	_clear_cell_info()
 	_update_legend()
 	charts_dirty = true
 	map_dirty = true
 	render_cooldown = 0.0
 	_update_summary()
-	status_label.text = "New world: seed %d, %s cells, forager capacity %s people." % [
-		world.get_seed(), _commas(world.get_cell_count()), _commas(int(world.get_forager_capacity()))]
 
 
 func _process(delta: float) -> void:
@@ -149,6 +162,8 @@ func _update_charts() -> void:
 		{"name": "Population", "values": _to_floats(h["population"]), "color": Color("#3987e5")},
 		{"name": "Capacity", "values": h["capacity"], "color": Color("#898781"), "width": 1.0},
 	])
+	population_chart.markers = world.get_event_years("intervention")
+	climate_chart.markers = world.get_event_years("eruption")
 	climate_chart.set_data(h["year"], [
 		{"name": "Global", "values": h["anomaly"], "color": Color("#d95926")},
 	])
@@ -172,6 +187,7 @@ func _set_view(globe_view: bool) -> void:
 	globe_button.button_pressed = globe_view
 	hover_cell = -1
 	_clear_cell_info()
+	_update_preview(-1)
 
 
 func _set_playing(value: bool) -> void:
@@ -212,13 +228,28 @@ func _unhandled_input(event: InputEvent) -> void:
 		_update_summary()
 	elif key == KEY_G:
 		_set_view(not showing_globe)
+	elif key == KEY_F2:
+		_set_god_mode(not god_panel.visible)
+	elif key == KEY_F5:
+		_quicksave()
+	elif key == KEY_F9:
+		_quickload()
+	elif key == KEY_ESCAPE and god_panel.visible:
+		god_panel.set_tool("inspect")
 	else:
 		return
 	get_viewport().set_input_as_handled()
 
 
 func _on_map_input(event: InputEvent) -> void:
-	if world == null or map_texture == null or not (event is InputEventMouseMotion):
+	if world == null or map_texture == null:
+		return
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		var clicked := _cell_under(event.position)
+		if clicked >= 0:
+			_apply_tool(clicked)
+		return
+	if not (event is InputEventMouseMotion):
 		return
 	var cell := _cell_under(event.position)
 	if cell != hover_cell:
@@ -227,6 +258,7 @@ func _on_map_input(event: InputEvent) -> void:
 			_show_cell(cell)
 		else:
 			_clear_cell_info()
+		_update_preview(cell)
 
 
 func _on_globe_pixel(pixel: Vector2i) -> void:
@@ -239,11 +271,100 @@ func _on_globe_pixel(pixel: Vector2i) -> void:
 			_show_cell(cell)
 		else:
 			_clear_cell_info()
+		_update_preview(cell)
+
+
+func _on_globe_click(pixel: Vector2i) -> void:
+	if world != null and map_texture != null:
+		var cell: int = world.cell_at(pixel.x, pixel.y)
+		if cell >= 0:
+			_apply_tool(cell)
+
+
+# ---------------------------------------------------------------- god mode
+
+func _god_tool_active() -> bool:
+	return god_panel.visible and god_panel.current_tool() != "inspect"
+
+
+func _set_god_mode(on: bool) -> void:
+	god_panel.visible = on
+	god_button.button_pressed = on
+	_update_preview(hover_cell)
+
+
+# Outline the cells the current tool would touch around the hovered cell.
+func _update_preview(cell: int) -> void:
+	if world == null:
+		return
+	var target := cell if _god_tool_active() else -1
+	if target == highlight_cell and target < 0:
+		return
+	highlight_cell = target
+	world.set_highlight(target, god_panel.preview_radius())
+	map_dirty = true
+	render_cooldown = 0.0
+
+
+func _apply_tool(cell: int) -> void:
+	if not _god_tool_active():
+		return
+	var c: Dictionary = god_panel.command()
+	_report(world.apply_intervention(c["type"], cell, c["radius"], c["amount"], c["amount2"], c["years"]))
+
+
+func _on_global_action(type: String, amount: float) -> void:
+	_report(world.apply_intervention(type, -1, 0.0, amount, 0.0, 0))
+
+
+func _report(result: Dictionary) -> void:
+	god_panel.set_status(result["message"], result["ok"])
+	status_label.text = ("Year %s: " % _commas(world.get_year())) + result["message"]
+	if result["ok"]:
+		map_dirty = true
+		charts_dirty = true
+		render_cooldown = 0.0
+		chart_cooldown = 0.0
+		_update_summary()
+		if hover_cell >= 0:
+			_show_cell(hover_cell)
+
+
+func _quicksave() -> void:
+	var path := ProjectSettings.globalize_path(QUICKSAVE_PATH)
+	if world.save_snapshot(path):
+		god_panel.set_status("Saved year %s." % _commas(world.get_year()), true)
+		status_label.text = "Quicksaved year %s to %s" % [_commas(world.get_year()), path]
+	else:
+		god_panel.set_status("Save failed: " + world.get_last_error(), false)
+
+
+func _quickload() -> void:
+	var path := ProjectSettings.globalize_path(QUICKSAVE_PATH)
+	if not FileAccess.file_exists(QUICKSAVE_PATH):
+		god_panel.set_status("No quicksave yet: press F5 first.", false)
+		return
+	if not world.load_snapshot(path):
+		god_panel.set_status("Load failed: " + world.get_last_error(), false)
+		return
+	_set_playing(false)
+	seed_spin.set_value_no_signal(world.get_seed())
+	level_option.selected = maxi(0, LEVELS.find(world.get_level()))
+	_after_world_change()
+	_clear_cell_info()
+	map_dirty = true
+	charts_dirty = true
+	render_cooldown = 0.0
+	chart_cooldown = 0.0
+	_update_summary()
+	god_panel.set_status("Loaded year %s." % _commas(world.get_year()), true)
+	status_label.text = "Quickloaded year %s." % _commas(world.get_year())
 
 
 func _on_map_mouse_exited() -> void:
 	hover_cell = -1
 	_clear_cell_info()
+	_update_preview(-1)
 
 
 # Map a point in the TextureRect to a map pixel, accounting for the
@@ -388,6 +509,12 @@ func _build_ui() -> void:
 	globe_button.button_group = view_group
 	globe_button.pressed.connect(_set_view.bind(true))
 	view_bar.add_child(globe_button)
+	god_button = Button.new()
+	god_button.text = "God mode"
+	god_button.tooltip_text = "F2. Eruptions, climate, plague, settlers and more."
+	god_button.toggle_mode = true
+	god_button.toggled.connect(_set_god_mode)
+	view_bar.add_child(god_button)
 	view_bar.add_child(VSeparator.new())
 	population_label = Label.new()
 	population_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -415,8 +542,22 @@ func _build_ui() -> void:
 	globe.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	globe.visible = false
 	globe.pixel_hovered.connect(_on_globe_pixel)
+	globe.pixel_clicked.connect(_on_globe_click)
 	globe.mouse_exited.connect(_on_map_mouse_exited)
 	stack.add_child(globe)
+
+	god_panel = GodPanel.new()
+	god_panel.visible = false
+	god_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	god_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	god_panel.position = Vector2(-8, 8)
+	god_panel.global_action.connect(_on_global_action)
+	god_panel.tool_changed.connect(func() -> void:
+		highlight_cell = -2  # force a refresh
+		_update_preview(hover_cell))
+	god_panel.quicksave_requested.connect(_quicksave)
+	god_panel.quickload_requested.connect(_quickload)
+	stack.add_child(god_panel)
 
 	var charts := HBoxContainer.new()
 	charts.custom_minimum_size = Vector2(0, 150)
@@ -598,7 +739,7 @@ func _build_side_panel() -> Control:
 	panel.add_child(cell_grid)
 
 	panel.add_child(HSeparator.new())
-	var keys := _label("Space play/pause  ·  1-9 map modes  ·  . step a year  ·  G globe")
+	var keys := _label("Space play/pause  ·  1-9 map modes  ·  . step a year  ·  G globe  ·  F2 god mode  ·  F5/F9 quicksave/load")
 	keys.add_theme_font_size_override("font_size", 11)
 	keys.add_theme_color_override("font_color", Color(0.54, 0.53, 0.51))
 	keys.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

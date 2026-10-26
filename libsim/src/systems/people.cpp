@@ -36,6 +36,26 @@ double stable_age_share(int b) { return vital::kStableAgeShare[b]; }
 double female_share_of_births() { return vital::kFemaleShareOfBirths; }
 double replacement_fertility_multiplier() { return vital::kReplacementFertilityMultiplier; }
 
+Cohort make_stable_cohort(CellId cell, std::uint32_t group, std::uint32_t n) {
+    Cohort c;
+    c.cell = cell;
+    c.culture = group;
+    c.language = group;
+    std::uint32_t assigned = 0;
+    for (int b = 0; b < kAgeBins; ++b) {
+        const auto in_bin = static_cast<std::uint32_t>(static_cast<double>(n) * vital::kStableAgeShare[b]);
+        const auto f = static_cast<std::uint32_t>(static_cast<double>(in_bin) * vital::kFemaleShareOfBirths);
+        c.female[b] = f;
+        c.male[b] = in_bin - f;
+        assigned += in_bin;
+    }
+    // Rounding leftovers go to the youngest bin, alternating sexes.
+    for (std::uint32_t i = 0; assigned < n; ++i, ++assigned) {
+        (i % 2 == 0 ? c.female[0] : c.male[0]) += 1;
+    }
+    return c;
+}
+
 // ------------------------------------------------------------------ demography
 
 void DemographySystem::step(StepContext& ctx) {

@@ -1,5 +1,6 @@
 add_library(histsim
     src/grid.cpp
+    src/interventions.cpp
     src/rng.cpp
     src/scheduler.cpp
     src/simulation.cpp

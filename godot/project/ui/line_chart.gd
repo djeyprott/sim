@@ -19,6 +19,10 @@ const TOOLTIP_BG := Color("#2c2c2a")
 @export var unit := ""
 @export var zero_line := false  # draw a stronger line at y = 0
 
+## Years to mark with thin vertical lines (e.g. eruptions, interventions).
+var markers := PackedInt64Array()
+var marker_color := Color("#c98500")
+
 var _x := PackedInt64Array()
 var _series: Array = []
 var _hover_index := -1
@@ -111,6 +115,13 @@ func _draw() -> void:
 		draw_line(Vector2(_plot.position.x, z.y), Vector2(_plot.end.x, z.y), BASELINE, 1.0)
 	draw_string(_font, Vector2(_plot.position.x, size_.y - 4), "year %d" % _x[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, INK_MUTED)
 	draw_string(_font, Vector2(_plot.end.x - 80, size_.y - 4), "year %d" % _x[_x.size() - 1], HORIZONTAL_ALIGNMENT_RIGHT, 80, 11, INK_MUTED)
+
+	# Event markers, behind the series.
+	for year in markers:
+		if year < _x[0] or year > _x[_x.size() - 1]:
+			continue
+		var mx: float = to_screen.call(float(year), lo).x
+		draw_line(Vector2(mx, _plot.position.y), Vector2(mx, _plot.end.y), marker_color, 1.0)
 
 	# Series, with a direct label at each line's end.
 	var label_ys: Array[float] = []

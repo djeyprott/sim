@@ -223,6 +223,9 @@ Ref<Image> HistSimWorld::render_map(const String& mode, bool coastlines) {
         histsim::view::color_cells(*sim_, to_std(mode), colors_);
         histsim::view::RenderOptions options;
         options.coastlines = coastlines;
+        if (highlight_on_ && highlight_.size() == sim_->world().cell_count()) {
+            options.highlight = &highlight_;
+        }
         histsim::view::render(*raster_, sim_->world(), colors_, rgba_, options);
         PackedByteArray bytes;
         bytes.resize(static_cast<int64_t>(rgba_.size()));
@@ -267,6 +270,75 @@ Dictionary HistSimWorld::get_cell_pyramid(int64_t cell) const {
     return d;
 }
 
+Dictionary HistSimWorld::apply_intervention(const String& type, int64_t cell, double radius_km, double amount,
+                                            double amount2, int64_t years) {
+    Dictionary d;
+    d["ok"] = false;
+    d["people"] = 0;
+    d["cells"] = 0;
+    if (!sim_) {
+        d["message"] = "No world.";
+        return d;
+    }
+    using histsim::CommandType;
+    const std::string t = to_std(type);
+    histsim::Command c;
+    if (t == "eruption") c.type = CommandType::Eruption;
+    else if (t == "forcing") c.type = CommandType::ClimateForcing;
+    else if (t == "climate") c.type = CommandType::RegionalClimate;
+    else if (t == "plague") c.type = CommandType::Plague;
+    else if (t == "wipeout") c.type = CommandType::WipeOut;
+    else if (t == "settlers") c.type = CommandType::Settlers;
+    else if (t == "game") c.type = CommandType::SetGame;
+    else {
+        d["message"] = to_godot("Unknown intervention: " + t);
+        return d;
+    }
+    c.cell = cell < 0 ? histsim::kInvalidCell : static_cast<histsim::CellId>(cell);
+    c.radius_km = radius_km;
+    c.amount = amount;
+    c.amount2 = amount2;
+    c.years = years;
+    try {
+        const histsim::InterventionResult r = sim_->apply(c);
+        d["ok"] = r.ok;
+        d["message"] = to_godot(r.message);
+        d["people"] = r.people;
+        d["cells"] = static_cast<int64_t>(r.cells);
+    } catch (const std::exception& e) {
+        d["message"] = to_godot(e.what());
+    }
+    return d;
+}
+
+double HistSimWorld::get_imposed_forcing() const { return sim_ ? sim_->state().climate.imposed_forcing : 0.0; }
+
+int64_t HistSimWorld::get_intervention_count() const {
+    return sim_ ? static_cast<int64_t>(sim_->state().commands.size()) : 0;
+}
+
+PackedInt64Array HistSimWorld::get_event_years(const String& kind) const {
+    PackedInt64Array out;
+    if (!sim_) return out;
+    const std::string k = to_std(kind);
+    const histsim::EventType type =
+        k == "eruption" ? histsim::EventType::Eruption : histsim::EventType::Intervention;
+    for (const histsim::Event& e : sim_->state().events) {
+        if (e.type == type) out.push_back(e.tick / histsim::kTicksPerYear);
+    }
+    return out;
+}
+
+void HistSimWorld::set_highlight(int64_t cell, double radius_km) {
+    highlight_on_ = false;
+    if (!sim_ || cell < 0 || static_cast<std::size_t>(cell) >= sim_->world().cell_count()) return;
+    highlight_.assign(sim_->world().cell_count(), 0);
+    for (const auto& wc : histsim::cells_within(sim_->world(), static_cast<histsim::CellId>(cell), radius_km, false)) {
+        highlight_[wc.cell] = 1;
+    }
+    highlight_on_ = true;
+}
+
 void HistSimWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("create_world", "seed", "level", "ocean_fraction"), &HistSimWorld::create_world);
     ClassDB::bind_method(D_METHOD("load_snapshot", "path"), &HistSimWorld::load_snapshot);
@@ -287,6 +359,12 @@ void HistSimWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_state_hash"), &HistSimWorld::get_state_hash);
     ClassDB::bind_method(D_METHOD("get_history", "max_points"), &HistSimWorld::get_history);
     ClassDB::bind_method(D_METHOD("get_cell_pyramid", "cell"), &HistSimWorld::get_cell_pyramid);
+    ClassDB::bind_method(D_METHOD("apply_intervention", "type", "cell", "radius_km", "amount", "amount2", "years"),
+                         &HistSimWorld::apply_intervention);
+    ClassDB::bind_method(D_METHOD("get_imposed_forcing"), &HistSimWorld::get_imposed_forcing);
+    ClassDB::bind_method(D_METHOD("get_intervention_count"), &HistSimWorld::get_intervention_count);
+    ClassDB::bind_method(D_METHOD("get_event_years", "kind"), &HistSimWorld::get_event_years);
+    ClassDB::bind_method(D_METHOD("set_highlight", "cell", "radius_km"), &HistSimWorld::set_highlight);
     ClassDB::bind_method(D_METHOD("get_modes"), &HistSimWorld::get_modes);
     ClassDB::bind_method(D_METHOD("get_legend", "mode"), &HistSimWorld::get_legend);
     ClassDB::bind_method(D_METHOD("set_map_size", "width", "height"), &HistSimWorld::set_map_size);
