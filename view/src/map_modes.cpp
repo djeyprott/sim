@@ -67,12 +67,49 @@ const ColorScale& density_scale() {
     return s;
 }
 
+const ColorScale& anomaly_scale() {
+    static const ColorScale s({{-3, hex("#184f95")},
+                               {-1.5, hex("#6da7ec")},
+                               {0, hex("#f0efec")},
+                               {1.5, hex("#ee9a99")},
+                               {3, hex("#b52a2a")}});
+    return s;
+}
+const ColorScale& game_scale() {  // violet, light to dark
+    static const ColorScale s({{0, hex("#ece9fb")},
+                               {0.25, hex("#c2b9f2")},
+                               {0.5, hex("#9587e6")},
+                               {0.75, hex("#6250d6")},
+                               {1.0, hex("#2f2475")}});
+    return s;
+}
+const ColorScale& crowding_scale() {  // room to grow (blue) - at capacity (gray) - overcrowded (red)
+    static const ColorScale s({{0, hex("#184f95")},
+                               {0.5, hex("#6da7ec")},
+                               {1, hex("#f0efec")},
+                               {1.5, hex("#ee9a99")},
+                               {2, hex("#b52a2a")}});
+    return s;
+}
+const ColorScale& age_scale() {  // magenta, light to dark
+    static const ColorScale s({{12, hex("#fbe4ed")},
+                               {17, hex("#f2b0c8")},
+                               {22, hex("#e87ba4")},
+                               {27, hex("#b84576")},
+                               {32, hex("#6e1c40")}});
+    return s;
+}
+
 const std::vector<MapModeInfo> kModes = {
     {"terrain", "Terrain", "Elevation above and below sea level"},
-    {"temperature", "Temperature", "Mean annual temperature"},
-    {"rainfall", "Rainfall", "Mean annual precipitation on land"},
-    {"capacity", "Forager capacity", "People per square km the land supports by foraging"},
+    {"temperature", "Temperature", "This year's mean temperature"},
+    {"temp_anomaly", "Temp. anomaly", "This year's temperature minus the long-run baseline"},
+    {"rainfall", "Rainfall", "This year's precipitation on land"},
+    {"capacity", "Forager capacity", "People per square km the land can feed by foraging this year"},
+    {"game", "Game", "Wild food abundance relative to undisturbed land"},
     {"population", "Population", "People per square km"},
+    {"crowding", "Crowding", "Population relative to what the land can feed"},
+    {"median_age", "Median age", "Median age of the people living in each cell"},
 };
 
 std::string fmt(const char* format, double v) {
@@ -101,7 +138,12 @@ std::vector<LegendEntry> ramp_entries(const ColorScale& s, const char* format) {
 }
 
 double density(const World& w, const SimState& s, CellId c) {
-    return static_cast<double>(s.population.read()[c]) / w.grid.area_km2(c);
+    return static_cast<double>(s.cell_population[c]) / w.grid.area_km2(c);
+}
+
+double crowding(const SimState& s, CellId c) {
+    const double k = s.env.capacity[c];
+    return k > 0.0 ? static_cast<double>(s.cell_population[c]) / k : 0.0;
 }
 
 }  // namespace
@@ -118,6 +160,34 @@ const MapModeInfo& map_mode(std::string_view id) {
     throw std::invalid_argument("unknown map mode: " + std::string(id));
 }
 
+Pyramid cell_pyramid(const Simulation& sim, CellId cell) {
+    Pyramid p;
+    if (cell >= sim.world().cell_count()) return p;
+    for (const Cohort& c : sim.state().cohorts_in(cell)) {
+        for (int b = 0; b < kAgeBins; ++b) {
+            p.female[b] += c.female[b];
+            p.male[b] += c.male[b];
+        }
+    }
+    return p;
+}
+
+double median_age(const Pyramid& p) {
+    std::int64_t total = 0;
+    for (int b = 0; b < kAgeBins; ++b) total += p.female[b] + p.male[b];
+    if (total == 0) return 0.0;
+    const double half = 0.5 * static_cast<double>(total);
+    double below = 0.0;
+    for (int b = 0; b < kAgeBins; ++b) {
+        const double in_bin = static_cast<double>(p.female[b] + p.male[b]);
+        if (below + in_bin >= half && in_bin > 0.0) {
+            return kYearsPerAgeBin * (b + (half - below) / in_bin);
+        }
+        below += in_bin;
+    }
+    return kYearsPerAgeBin * kAgeBins;
+}
+
 void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rgba>& out) {
     const World& w = sim.world();
     const SimState& s = sim.state();
@@ -127,24 +197,33 @@ void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rg
 
     for (CellId c = 0; c < n; ++c) {
         const bool land = w.is_land[c] != 0;
+        const bool inhabited = s.cell_population[c] > 0;
         if (id == "terrain") {
             if (!land) {
                 out[c] = terrain_ocean()(w.elevation_m[c]);
-            } else if (w.temperature_c[c] < kIceBelowC) {
+            } else if (s.env.temperature_c[c] < kIceBelowC) {
                 out[c] = kIce;
             } else {
                 out[c] = terrain_land()(w.elevation_m[c]);
             }
         } else if (id == "temperature") {
-            out[c] = temperature_scale()(w.temperature_c[c]);
+            out[c] = temperature_scale()(s.env.temperature_c[c]);
+        } else if (id == "temp_anomaly") {
+            out[c] = anomaly_scale()(s.env.temperature_c[c] - w.temperature_c[c]);
         } else if (!land) {
             out[c] = kOceanNeutral;  // remaining modes are land-only
         } else if (id == "rainfall") {
-            out[c] = rainfall_scale()(w.precipitation_mm[c]);
+            out[c] = rainfall_scale()(s.env.precipitation_mm[c]);
         } else if (id == "capacity") {
-            out[c] = capacity_scale()(w.forager_capacity[c] / w.grid.area_km2(c));
-        } else {  // population
-            out[c] = s.population.read()[c] == 0 ? kEmptyLand : density_scale()(density(w, s, c));
+            out[c] = capacity_scale()(s.env.capacity[c] / w.grid.area_km2(c));
+        } else if (id == "game") {
+            out[c] = game_scale()(s.env.game[c]);
+        } else if (id == "population") {
+            out[c] = inhabited ? density_scale()(density(w, s, c)) : kEmptyLand;
+        } else if (id == "crowding") {
+            out[c] = inhabited ? crowding_scale()(crowding(s, c)) : kEmptyLand;
+        } else {  // median_age
+            out[c] = inhabited ? age_scale()(median_age(cell_pyramid(sim, c))) : kEmptyLand;
         }
     }
 }
@@ -152,27 +231,46 @@ void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rg
 Legend legend(std::string_view mode_id) {
     const std::string id(map_mode(mode_id).id);
     Legend l;
+    const std::vector<LegendEntry> ocean = {{"Ocean", kOceanNeutral}};
+    const std::vector<LegendEntry> empty_and_ocean = {{"Uninhabited", kEmptyLand}, {"Ocean", kOceanNeutral}};
     if (id == "terrain") {
         l.title = "Elevation (m)";
         l.ramp = ramp_entries(terrain_ocean(), "%.0f");
         const auto land = ramp_entries(terrain_land(), "%.0f");
         l.ramp.insert(l.ramp.end(), land.begin(), land.end());
-        l.swatches = {{"Ice (below -10 °C)", kIce}};
+        l.swatches = {{"Ice (below -10 °C this year)", kIce}};
     } else if (id == "temperature") {
-        l.title = "Mean annual temperature (°C)";
+        l.title = "Mean temperature this year (°C)";
         l.ramp = ramp_entries(temperature_scale(), "%.0f");
+    } else if (id == "temp_anomaly") {
+        l.title = "Temperature vs. baseline (°C)";
+        l.ramp = ramp_entries(anomaly_scale(), "%+.1f");
+        l.ramp[2].label = "0";
     } else if (id == "rainfall") {
-        l.title = "Annual rainfall (mm)";
+        l.title = "Rainfall this year (mm)";
         l.ramp = ramp_entries(rainfall_scale(), "%.0f");
-        l.swatches = {{"Ocean", kOceanNeutral}};
+        l.swatches = ocean;
     } else if (id == "capacity") {
-        l.title = "Forager capacity (people per km²)";
+        l.title = "Forager capacity this year (people per km²)";
         l.ramp = ramp_entries(capacity_scale(), "%.2f");
-        l.swatches = {{"Ocean", kOceanNeutral}};
-    } else {
+        l.swatches = ocean;
+    } else if (id == "game") {
+        l.title = "Game abundance (share of undisturbed level)";
+        l.ramp = {{"0%", game_scale()(0)}, {"25%", game_scale()(0.25)}, {"50%", game_scale()(0.5)},
+                  {"75%", game_scale()(0.75)}, {"100%", game_scale()(1.0)}};
+        l.swatches = ocean;
+    } else if (id == "population") {
         l.title = "Population density (people per km², log scale)";
         l.ramp = ramp_entries(density_scale(), "%g");
-        l.swatches = {{"Uninhabited", kEmptyLand}, {"Ocean", kOceanNeutral}};
+        l.swatches = empty_and_ocean;
+    } else if (id == "crowding") {
+        l.title = "Population ÷ capacity (1 = at capacity)";
+        l.ramp = ramp_entries(crowding_scale(), "%g");
+        l.swatches = empty_and_ocean;
+    } else {
+        l.title = "Median age (years)";
+        l.ramp = ramp_entries(age_scale(), "%.0f");
+        l.swatches = empty_and_ocean;
     }
     return l;
 }
@@ -192,16 +290,39 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
     f.push_back({"Area", with_commas(std::llround(w.grid.area_km2(c))) + " km²"});
     const bool land = w.is_land[c] != 0;
     f.push_back({"Surface", land ? "Land" : "Ocean"});
-    f.push_back({land ? "Elevation" : "Depth",
-                 with_commas(std::llround(std::fabs(w.elevation_m[c]))) + " m"});
-    f.push_back({"Temperature", fmt("%.1f °C", w.temperature_c[c])});
-    if (land) {
-        f.push_back({"Rainfall", with_commas(std::llround(w.precipitation_mm[c])) + " mm/yr"});
-        f.push_back({"Coast distance", with_commas(static_cast<long long>(w.coast_distance[c])) + " cells"});
-        f.push_back({"Forager capacity", with_commas(std::llround(w.forager_capacity[c])) + " people"});
-        f.push_back({"Population", with_commas(static_cast<long long>(s.population.read()[c])) + " people"});
-        f.push_back({"Density", fmt("%.4f per km²", density(w, s, c))});
+    f.push_back({land ? "Elevation" : "Depth", with_commas(std::llround(std::fabs(w.elevation_m[c]))) + " m"});
+    const double anomaly = s.env.temperature_c[c] - w.temperature_c[c];
+    f.push_back({"Temperature", fmt("%.1f °C", s.env.temperature_c[c]) + fmt(" (%+.1f)", anomaly)});
+    if (!land) return f;
+
+    f.push_back({"Rainfall", with_commas(std::llround(s.env.precipitation_mm[c])) + " mm" +
+                                 fmt(" (%+.0f%%)", 100.0 * (s.env.precipitation_mm[c] / std::max(1.0, w.precipitation_mm[c]) - 1.0))});
+    f.push_back({"Game", fmt("%.0f%%", 100.0 * s.env.game[c])});
+    f.push_back({"Capacity", with_commas(std::llround(s.env.capacity[c])) + " people"});
+    f.push_back({"Population", with_commas(static_cast<long long>(s.cell_population[c])) + " people"});
+    if (s.cell_population[c] == 0) return f;
+
+    f.push_back({"Density", fmt("%.3f per km²", density(w, s, c))});
+    f.push_back({"Crowding", fmt("%.2f of capacity", crowding(s, c))});
+    const Pyramid p = cell_pyramid(sim, c);
+    f.push_back({"Median age", fmt("%.1f years", median_age(p))});
+    std::int64_t children = 0, total = 0;
+    for (int b = 0; b < kAgeBins; ++b) {
+        total += p.female[b] + p.male[b];
+        if (b < 3) children += p.female[b] + p.male[b];
     }
+    f.push_back({"Under 15", fmt("%.0f%%", 100.0 * static_cast<double>(children) / static_cast<double>(total))});
+    const auto groups = s.cohorts_in(c);
+    std::uint32_t main_group = 0;
+    std::int64_t main_size = -1;
+    for (const Cohort& co : groups) {
+        if (co.total() > main_size) {
+            main_size = co.total();
+            main_group = co.culture;
+        }
+    }
+    f.push_back({"Groups", with_commas(static_cast<long long>(groups.size())) + " (largest: group " +
+                               with_commas(static_cast<long long>(main_group)) + ")"});
     return f;
 }
 

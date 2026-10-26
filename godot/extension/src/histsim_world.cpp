@@ -3,9 +3,12 @@
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/color.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
+#include <godot_cpp/variant/packed_float64_array.hpp>
+#include <godot_cpp/variant/packed_int64_array.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -128,6 +131,44 @@ double HistSimWorld::get_forager_capacity() const {
     return total;
 }
 
+double HistSimWorld::get_capacity() const {
+    if (!sim_) return 0.0;
+    double total = 0.0;
+    for (double k : sim_->state().env.capacity) total += k;
+    return total;
+}
+
+double HistSimWorld::get_global_anomaly() const { return sim_ ? sim_->state().climate.global_anomaly_c : 0.0; }
+
+Dictionary HistSimWorld::get_history(int64_t max_points) const {
+    Dictionary d;
+    PackedInt64Array years, population;
+    PackedFloat64Array capacity, anomaly;
+    if (sim_ && max_points > 1) {
+        const auto& h = sim_->state().history;
+        const std::size_t n = h.size();
+        const std::size_t step = std::max<std::size_t>(1, (n + static_cast<std::size_t>(max_points) - 1) /
+                                                             static_cast<std::size_t>(max_points));
+        for (std::size_t i = 0; i < n; i += step) {
+            years.push_back(h[i].year);
+            population.push_back(h[i].population);
+            capacity.push_back(h[i].capacity);
+            anomaly.push_back(h[i].global_anomaly_c);
+        }
+        if (n > 0 && (n - 1) % step != 0) {  // always include the latest year
+            years.push_back(h[n - 1].year);
+            population.push_back(h[n - 1].population);
+            capacity.push_back(h[n - 1].capacity);
+            anomaly.push_back(h[n - 1].global_anomaly_c);
+        }
+    }
+    d["year"] = years;
+    d["population"] = population;
+    d["capacity"] = capacity;
+    d["anomaly"] = anomaly;
+    return d;
+}
+
 String HistSimWorld::get_state_hash() const {
     if (!sim_) return String();
     char buf[17];
@@ -211,6 +252,21 @@ Array HistSimWorld::describe_cell(int64_t cell) const {
     return out;
 }
 
+Dictionary HistSimWorld::get_cell_pyramid(int64_t cell) const {
+    Dictionary d;
+    PackedInt64Array female, male;
+    if (sim_ && cell >= 0) {
+        const histsim::view::Pyramid p = histsim::view::cell_pyramid(*sim_, static_cast<histsim::CellId>(cell));
+        for (int b = 0; b < histsim::kAgeBins; ++b) {
+            female.push_back(p.female[b]);
+            male.push_back(p.male[b]);
+        }
+    }
+    d["female"] = female;
+    d["male"] = male;
+    return d;
+}
+
 void HistSimWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("create_world", "seed", "level", "ocean_fraction"), &HistSimWorld::create_world);
     ClassDB::bind_method(D_METHOD("load_snapshot", "path"), &HistSimWorld::load_snapshot);
@@ -226,7 +282,11 @@ void HistSimWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_seed"), &HistSimWorld::get_seed);
     ClassDB::bind_method(D_METHOD("get_level"), &HistSimWorld::get_level);
     ClassDB::bind_method(D_METHOD("get_forager_capacity"), &HistSimWorld::get_forager_capacity);
+    ClassDB::bind_method(D_METHOD("get_capacity"), &HistSimWorld::get_capacity);
+    ClassDB::bind_method(D_METHOD("get_global_anomaly"), &HistSimWorld::get_global_anomaly);
     ClassDB::bind_method(D_METHOD("get_state_hash"), &HistSimWorld::get_state_hash);
+    ClassDB::bind_method(D_METHOD("get_history", "max_points"), &HistSimWorld::get_history);
+    ClassDB::bind_method(D_METHOD("get_cell_pyramid", "cell"), &HistSimWorld::get_cell_pyramid);
     ClassDB::bind_method(D_METHOD("get_modes"), &HistSimWorld::get_modes);
     ClassDB::bind_method(D_METHOD("get_legend", "mode"), &HistSimWorld::get_legend);
     ClassDB::bind_method(D_METHOD("set_map_size", "width", "height"), &HistSimWorld::set_map_size);

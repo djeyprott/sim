@@ -42,8 +42,14 @@ public:
     int64_t get_cell_count() const;
     int64_t get_seed() const;
     int64_t get_level() const;
-    double get_forager_capacity() const;
+    double get_forager_capacity() const;  // baseline, at the start of the run
+    double get_capacity() const;           // this year's
+    double get_global_anomaly() const;     // global mean temperature vs. baseline, degrees C
     godot::String get_state_hash() const;
+
+    // Yearly history, downsampled to at most max_points rows:
+    // {year, population, capacity, anomaly} as packed arrays.
+    godot::Dictionary get_history(int64_t max_points) const;
 
     // Map modes: Array of {id, name, description}.
     godot::Array get_modes() const;
@@ -56,6 +62,8 @@ public:
     int64_t cell_at(int64_t x, int64_t y) const;
     // Array of [label, value] pairs (PackedStringArray each).
     godot::Array describe_cell(int64_t cell) const;
+    // {female, male}: PackedInt64Array of 21 five-year age bins each.
+    godot::Dictionary get_cell_pyramid(int64_t cell) const;
 
 protected:
     static void _bind_methods();

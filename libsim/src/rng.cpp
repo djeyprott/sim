@@ -35,32 +35,11 @@ PhiloxCounter philox4x32_10(PhiloxCounter counter, PhiloxKey key) noexcept {
     return counter;
 }
 
-RngStream::RngStream(std::uint64_t seed, Tick tick, Stream stream, std::uint32_t entity) noexcept
-    : key_{static_cast<std::uint32_t>(seed), static_cast<std::uint32_t>(seed >> 32)},
-      counter_{0u, entity, static_cast<std::uint32_t>(stream), static_cast<std::uint32_t>(tick)} {}
-
-void RngStream::refill() noexcept {
-    block_ = philox4x32_10(counter_, key_);
-    ++counter_[0];
-    used_ = 0;
-}
-
-std::uint32_t RngStream::next_u32() noexcept {
-    if (used_ == 4) {
-        refill();
-    }
-    return block_[static_cast<std::size_t>(used_++)];
-}
-
-std::uint64_t RngStream::next_u64() noexcept {
-    const std::uint64_t hi = next_u32();
-    const std::uint64_t lo = next_u32();
-    return (hi << 32) | lo;
-}
-
-double RngStream::uniform() noexcept {
-    // 53 high bits scaled by 2^-53: exact, identical on every IEEE-754 platform.
-    return static_cast<double>(next_u64() >> 11) * 0x1.0p-53;
+RngStream::RngStream(std::uint64_t seed, Tick tick, Stream stream, std::uint32_t entity) noexcept {
+    const PhiloxCounter ctr{0u, entity, static_cast<std::uint32_t>(stream), static_cast<std::uint32_t>(tick)};
+    const PhiloxKey key{static_cast<std::uint32_t>(seed), static_cast<std::uint32_t>(seed >> 32)};
+    const PhiloxCounter h = philox4x32_10(ctr, key);
+    state_ = (static_cast<std::uint64_t>(h[0]) << 32) | h[1];
 }
 
 std::uint32_t RngStream::below(std::uint32_t n) noexcept {
@@ -72,15 +51,6 @@ std::uint32_t RngStream::below(std::uint32_t n) noexcept {
             return r % n;
         }
     }
-}
-
-std::int64_t stochastic_round(double x, RngStream& rng) noexcept {
-    if (!(x > 0.0)) {
-        return 0;
-    }
-    const auto whole = static_cast<std::int64_t>(x);  // truncation == floor for x > 0
-    const double frac = x - static_cast<double>(whole);
-    return whole + (rng.uniform() < frac ? 1 : 0);
 }
 
 }  // namespace histsim

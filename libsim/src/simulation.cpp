@@ -7,7 +7,9 @@
 #include <vector>
 
 #include "histsim/hash.hpp"
-#include "histsim/systems/foragers.hpp"
+#include "histsim/systems/climate.hpp"
+#include "histsim/systems/people.hpp"
+#include "state_io.hpp"
 
 namespace histsim {
 
@@ -15,109 +17,75 @@ namespace {
 
 constexpr char kMagic[4] = {'H', 'S', 'I', 'M'};
 
-// Little-endian writer and reader, independent of the host byte order.
-class Writer {
-public:
-    void raw(const void* p, std::size_t n) {
-        const auto* b = static_cast<const std::uint8_t*>(p);
-        buf_.insert(buf_.end(), b, b + n);
-    }
-    void u8(std::uint8_t v) { buf_.push_back(v); }
-    void u32(std::uint32_t v) {
-        for (int i = 0; i < 4; ++i) buf_.push_back(static_cast<std::uint8_t>(v >> (8 * i)));
-    }
-    void u64(std::uint64_t v) {
-        for (int i = 0; i < 8; ++i) buf_.push_back(static_cast<std::uint8_t>(v >> (8 * i)));
-    }
-    void i64(std::int64_t v) { u64(static_cast<std::uint64_t>(v)); }
-    void f64(double v) {
-        std::uint64_t bits;
-        std::memcpy(&bits, &v, sizeof bits);
-        u64(bits);
-    }
-    [[nodiscard]] const std::vector<std::uint8_t>& bytes() const { return buf_; }
-
-private:
-    std::vector<std::uint8_t> buf_;
-};
-
-class Reader {
-public:
-    Reader(const std::uint8_t* data, std::size_t size) : p_(data), end_(data + size) {}
-    void raw(void* out, std::size_t n) {
-        need(n);
-        std::memcpy(out, p_, n);
-        p_ += n;
-    }
-    std::uint8_t u8() {
-        need(1);
-        return *p_++;
-    }
-    std::uint32_t u32() {
-        need(4);
-        std::uint32_t v = 0;
-        for (int i = 0; i < 4; ++i) v |= static_cast<std::uint32_t>(*p_++) << (8 * i);
-        return v;
-    }
-    std::uint64_t u64() {
-        need(8);
-        std::uint64_t v = 0;
-        for (int i = 0; i < 8; ++i) v |= static_cast<std::uint64_t>(*p_++) << (8 * i);
-        return v;
-    }
-    std::int64_t i64() { return static_cast<std::int64_t>(u64()); }
-    double f64() {
-        const std::uint64_t bits = u64();
-        double v;
-        std::memcpy(&v, &bits, sizeof v);
-        return v;
-    }
-    [[nodiscard]] bool done() const { return p_ == end_; }
-
-private:
-    void need(std::size_t n) const {
-        if (static_cast<std::size_t>(end_ - p_) < n) {
-            throw std::runtime_error("snapshot is truncated");
-        }
-    }
-    const std::uint8_t* p_;
-    const std::uint8_t* end_;
-};
-
 std::uint64_t checksum(const std::uint8_t* data, std::size_t size) {
     Hasher h;
     h.bytes(data, size);
     return h.digest();
 }
 
+// Split n people across age bins by the stationary age structure, then
+// between sexes by the sex ratio at birth. Integer-exact: the parts sum to n.
+Cohort starting_cohort(CellId cell, std::uint32_t group, std::uint32_t n) {
+    Cohort c;
+    c.cell = cell;
+    c.culture = group;
+    c.language = group;
+    std::uint32_t assigned = 0;
+    for (int b = 0; b < kAgeBins; ++b) {
+        const auto in_bin = static_cast<std::uint32_t>(static_cast<double>(n) * stable_age_share(b));
+        const auto f = static_cast<std::uint32_t>(static_cast<double>(in_bin) * female_share_of_births());
+        c.female[b] = f;
+        c.male[b] = in_bin - f;
+        assigned += in_bin;
+    }
+    // Rounding leftovers go to the youngest bin, alternating sexes.
+    for (std::uint32_t i = 0; assigned < n; ++i, ++assigned) {
+        (i % 2 == 0 ? c.female[0] : c.male[0]) += 1;
+    }
+    return c;
+}
+
 }  // namespace
 
 void Simulation::install_systems() {
     scheduler_ = Scheduler{};
-    scheduler_.add(std::make_unique<ForagerDemography>());
-    scheduler_.add(std::make_unique<ForagerMigration>());
+    scheduler_.add(std::make_unique<ClimateSystem>());
+    scheduler_.add(std::make_unique<EnvironmentSystem>());
+    scheduler_.add(std::make_unique<DemographySystem>());
+    scheduler_.add(std::make_unique<MigrationSystem>());
+    scheduler_.add(std::make_unique<HistorySystem>());
 }
 
 Simulation Simulation::create(const WorldParams& params) {
     Simulation sim;
     sim.world_ = generate_test_world(params);
-    const std::size_t n = sim.world_.cell_count();
+    const World& w = sim.world_;
+    SimState& s = sim.state_;
+    const std::size_t n = w.cell_count();
 
-    // Start at half of carrying capacity; cells too poor to hold a band of
-    // two start empty and are settled by migration.
-    sim.state_.population.assign(n, 0);
-    sim.state_.ever_settled.assign(n, 0);
-    auto& pop = sim.state_.population.current();
-    std::int64_t total = 0;
+    // Climate starts at the baseline: no anomalies, full game stocks.
+    s.climate.regional_temp_anomaly.assign(w.climate_grid.cell_count(), 0.0);
+    s.climate.regional_precip_anomaly.assign(w.climate_grid.cell_count(), 0.0);
+    s.env.temperature_c = w.temperature_c;
+    s.env.precipitation_mm = w.precipitation_mm;
+    s.env.capacity = w.forager_capacity;
+    s.env.game.assign(n, 1.0);
     for (CellId c = 0; c < n; ++c) {
-        const auto people = static_cast<std::uint32_t>(0.5 * sim.world_.forager_capacity[c]);
+        if (!w.is_land[c]) s.env.game[c] = 0.0;
+    }
+
+    // Foragers at half of capacity, in a stationary age structure. Cells too
+    // poor to hold a band of two start empty and are settled by migration.
+    s.ever_settled.assign(n, 0);
+    for (CellId c = 0; c < n; ++c) {
+        const auto people = static_cast<std::uint32_t>(0.5 * w.forager_capacity[c]);
         if (people >= 2) {
-            pop[c] = people;
-            sim.state_.ever_settled[c] = 1;
-            total += people;
+            s.cohorts.push_back(starting_cohort(c, w.initial_group[c], people));
+            s.ever_settled[c] = 1;
         }
     }
-    sim.state_.ledger.initial_population = total;
+    s.normalize_cohorts(n);
+    s.ledger.initial_population = s.total_population();
     sim.install_systems();
     return sim;
 }
@@ -132,7 +100,7 @@ RunSummary Simulation::summary() const {
     RunSummary r;
     r.tick = state_.tick;
     r.population = state_.total_population();
-    for (std::uint32_t p : state_.population.read()) {
+    for (std::uint32_t p : state_.cell_population) {
         r.inhabited_cells += p > 0 ? 1 : 0;
     }
     r.births = state_.ledger.births;
@@ -142,43 +110,31 @@ RunSummary Simulation::summary() const {
     return r;
 }
 
-// Snapshot layout (all little-endian):
-//   "HSIM" | u32 version | u64 seed | u32 grid level | f64 ocean fraction
-//   | u64 world hash | i64 tick | 4 x i64 ledger | u64 n | n x u32 population
-//   | n x u8 ever_settled | u64 events | events (i64 tick, u32 type, u32 cell,
-//   i64 value) | u64 checksum of everything before it
+// Snapshot layout (little-endian): "HSIM" | u32 version | u64 seed | u32 grid
+// level | f64 ocean fraction | u64 world hash | SimState (see state_io.hpp)
+// | u64 checksum of everything before it.
 void Simulation::save(const std::string& path) const {
-    Writer w;
-    w.raw(kMagic, sizeof kMagic);
-    w.u32(kSnapshotVersion);
-    w.u64(world_.params.seed);
-    w.u32(static_cast<std::uint32_t>(world_.params.grid_level));
-    w.f64(world_.params.ocean_fraction);
-    w.u64(world_.hash());
-    w.i64(state_.tick);
-    w.i64(state_.ledger.initial_population);
-    w.i64(state_.ledger.births);
-    w.i64(state_.ledger.deaths);
-    w.i64(state_.ledger.migrants);
-    const auto pop = state_.population.read();
-    w.u64(pop.size());
-    for (std::uint32_t p : pop) w.u32(p);
-    for (std::uint8_t s : state_.ever_settled) w.u8(s);
-    w.u64(state_.events.size());
-    for (const Event& e : state_.events) {
-        w.i64(e.tick);
-        w.u32(static_cast<std::uint32_t>(e.type));
-        w.u32(e.cell);
-        w.i64(e.value);
-    }
-    const std::uint64_t sum = checksum(w.bytes().data(), w.bytes().size());
-    w.u64(sum);
+    io::WriteArchive ar;
+    ar.raw(kMagic, sizeof kMagic);
+    std::uint32_t version = kSnapshotVersion;
+    ar.u32(version);
+    std::uint64_t seed = world_.params.seed;
+    ar.count(seed);
+    std::uint32_t level = static_cast<std::uint32_t>(world_.params.grid_level);
+    ar.u32(level);
+    double ocean = world_.params.ocean_fraction;
+    ar.f64(ocean);
+    std::uint64_t world_hash = world_.hash();
+    ar.count(world_hash);
+    io::serialize(ar, const_cast<SimState&>(state_));  // the writer only reads
+    const std::uint64_t sum = checksum(ar.bytes().data(), ar.bytes().size());
+    ar.u64(sum);
 
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out) {
         throw std::runtime_error("cannot open " + path + " for writing");
     }
-    out.write(reinterpret_cast<const char*>(w.bytes().data()), static_cast<std::streamsize>(w.bytes().size()));
+    out.write(reinterpret_cast<const char*>(ar.bytes().data()), static_cast<std::streamsize>(ar.bytes().size()));
     if (!out) {
         throw std::runtime_error("failed writing " + path);
     }
@@ -194,61 +150,49 @@ Simulation Simulation::load(const std::string& path) {
         throw std::runtime_error(path + " is not a histsim snapshot");
     }
     const std::size_t body = bytes.size() - 8;
-    Reader tail(bytes.data() + body, 8);
+    io::ReadArchive tail(bytes.data() + body, 8);
     if (tail.u64() != checksum(bytes.data(), body)) {
         throw std::runtime_error(path + " is corrupt (checksum mismatch)");
     }
 
-    Reader r(bytes.data(), body);
+    io::ReadArchive ar(bytes.data(), body);
     char magic[4];
-    r.raw(magic, sizeof magic);
+    ar.raw(magic, sizeof magic);
     if (std::memcmp(magic, kMagic, sizeof kMagic) != 0) {
         throw std::runtime_error(path + " is not a histsim snapshot");
     }
-    const std::uint32_t version = r.u32();
+    std::uint32_t version = 0;
+    ar.u32(version);
     if (version != kSnapshotVersion) {
-        throw std::runtime_error("unsupported snapshot version " + std::to_string(version));
+        throw std::runtime_error("unsupported snapshot version " + std::to_string(version) + " (this build reads " +
+                                 std::to_string(kSnapshotVersion) + ")");
     }
-
     WorldParams params;
-    params.seed = r.u64();
-    params.grid_level = static_cast<int>(r.u32());
-    params.ocean_fraction = r.f64();
-    const std::uint64_t world_hash = r.u64();
+    params.seed = ar.u64();
+    std::uint32_t level = 0;
+    ar.u32(level);
+    params.grid_level = static_cast<int>(level);
+    ar.f64(params.ocean_fraction);
+    const std::uint64_t world_hash = ar.u64();
 
     Simulation sim;
     sim.world_ = generate_test_world(params);
     if (sim.world_.hash() != world_hash) {
         throw std::runtime_error("regenerated world does not match the snapshot (different build or platform?)");
     }
-
-    SimState& s = sim.state_;
-    s.tick = r.i64();
-    s.ledger.initial_population = r.i64();
-    s.ledger.births = r.i64();
-    s.ledger.deaths = r.i64();
-    s.ledger.migrants = r.i64();
-    const std::uint64_t n = r.u64();
-    if (n != sim.world_.cell_count()) {
-        throw std::runtime_error("snapshot cell count does not match the world");
-    }
-    s.population.assign(n, 0);
-    for (auto& p : s.population.current()) p = r.u32();
-    s.ever_settled.resize(n);
-    for (auto& v : s.ever_settled) v = r.u8();
-    const std::uint64_t event_count = r.u64();
-    s.events.reserve(event_count);
-    for (std::uint64_t i = 0; i < event_count; ++i) {
-        Event e;
-        e.tick = r.i64();
-        e.type = static_cast<EventType>(r.u32());
-        e.cell = r.u32();
-        e.value = r.i64();
-        s.events.push_back(e);
-    }
-    if (!r.done()) {
+    io::serialize(ar, sim.state_);
+    if (!ar.done()) {
         throw std::runtime_error(path + " has trailing data");
     }
+    const std::size_t n = sim.world_.cell_count();
+    for (const Cohort& c : sim.state_.cohorts) {
+        if (c.cell >= n) throw std::runtime_error(path + " is corrupt (cohort outside the world)");
+    }
+    if (sim.state_.env.capacity.size() != n || sim.state_.ever_settled.size() != n ||
+        sim.state_.climate.regional_temp_anomaly.size() != sim.world_.climate_grid.cell_count()) {
+        throw std::runtime_error(path + " does not match the world's size");
+    }
+    sim.state_.refresh(n);
     sim.install_systems();
     return sim;
 }

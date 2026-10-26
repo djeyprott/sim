@@ -5,7 +5,8 @@ add_library(histsim
     src/simulation.cpp
     src/state.cpp
     src/world.cpp
-    src/systems/foragers.cpp
+    src/systems/climate.cpp
+    src/systems/people.cpp
 )
 add_library(histsim::histsim ALIAS histsim)
 

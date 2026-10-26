@@ -1,7 +1,9 @@
 # histsim viewer (Godot 4)
 
-A simple map interface for the simulation: switchable map modes with legends,
-play/pause and speed controls, and a hover inspector for any cell.
+A simple interface for the simulation: a flat map or a globe with nine
+switchable map modes and legends, play/pause and speed controls, world charts
+of population vs. capacity and global temperature, and a hover inspector with
+the cell's age pyramid.
 
 The viewer is thin by design. All simulation and map rendering happen in C++:
 `extension/` builds a GDExtension that exposes one class, `HistSimWorld`,
@@ -37,7 +39,8 @@ godot --headless --path godot/project --script res://tests/smoke.gd
 | Input | Action |
 | --- | --- |
 | Space | Play / pause |
-| 1-5 | Switch map mode |
+| 1-9 | Switch map mode |
+| G | Toggle map / globe (drag to turn, scroll to zoom) |
 | . (period) | Step one year while paused |
 | Hover | Inspect a cell |
 | New world / Random seed | Generate a new planet |

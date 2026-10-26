@@ -4,11 +4,12 @@ An open-source human history simulator. A to-scale planet, populations with
 demographics, languages and cultures, goods and trade, technology, polities and
 climate, all interacting so that history emerges rather than being scripted.
 
-The project is at **milestone M0 (foundations)**: a deterministic simulation
-core, a geodesic world grid, a generated test world, a headless runner and a
-simple Godot map viewer. The
-forager systems in M0 are placeholders that exercise the machinery; real
-demography, culture and economy come in later milestones.
+The project has finished **milestone M1 (living planet)**: a deterministic
+simulation core on a geodesic world grid, with a changing climate, foraging
+capacity and game, and forager cohorts with age-sex pyramids that grow, die,
+migrate and settle near what the land can feed. A Godot viewer shows it as a
+map or globe with nine map modes, world charts and a cell inspector. Farming,
+culture and language change come next, in M2.
 
 ## Download
 

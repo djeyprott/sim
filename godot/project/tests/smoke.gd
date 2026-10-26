@@ -18,6 +18,10 @@ func _initialize() -> void:
 		return
 	_check_api()
 	main = load("res://main.tscn").instantiate()
+	if not main.has_method("_set_playing"):
+		_finish(["main.gd failed to load (script error)"])
+		main = null
+		return
 	root.add_child(main)
 
 
@@ -30,6 +34,10 @@ func _process(_delta: float) -> bool:
 		main.speed_index = 3  # 1,000 years per second
 	if frames == 10:
 		main._set_mode("population")
+	if frames == 20:
+		main._set_view(true)  # globe
+	if frames == 30:
+		main._show_cell(main.world.cell_at(1024, 400))
 	if frames == 40:
 		_check_scene()
 		_finish(failures)
@@ -62,6 +70,19 @@ func _check_api() -> void:
 	_expect(cell >= 0, "cell_at inside the map")
 	_expect(w.cell_at(-5, 0) == -1, "cell_at outside the map")
 	_expect(w.describe_cell(cell).size() >= 4, "describe_cell lists fields")
+	var h: Dictionary = w.get_history(100)
+	_expect(h["year"].size() == 50 and h["population"].size() == 50, "history has one row per year")
+	_expect(w.get_capacity() > 0.0, "capacity")
+	var populated := -1
+	for c in w.get_cell_count():
+		var p: Dictionary = w.get_cell_pyramid(c)
+		var people := 0
+		for n in p["female"]:
+			people += n
+		if people > 0:
+			populated = c
+			break
+	_expect(populated >= 0 and w.get_cell_pyramid(populated)["male"].size() == 21, "cell pyramid has 21 bins")
 
 	var path := OS.get_user_data_dir().path_join("smoke.hsim")
 	var hash_before: String = w.get_state_hash()
@@ -79,6 +100,8 @@ func _check_scene() -> void:
 	_expect(main.map_texture != null, "main scene rendered the map")
 	_expect(main.mode_id == "population", "mode switch")
 	_expect(main.legend_ticks.get_child_count() >= 2, "legend ticks shown")
+	_expect(main.showing_globe and main.globe.visible, "globe view switch")
+	_expect(main.population_chart._x.size() > 1, "population chart has history")
 
 
 func _expect(condition: bool, what: String) -> void:

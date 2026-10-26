@@ -7,6 +7,7 @@
 #include <unordered_map>
 
 #include "histsim/hash.hpp"
+#include "histsim/portable_math.hpp"
 
 namespace histsim {
 
@@ -67,22 +68,6 @@ void subdivide(std::vector<Vec3>& verts, std::vector<Tri>& faces) {
         next.push_back({ab, bc, ca});
     }
     faces = std::move(next);
-}
-
-// Arcsine by Maclaurin series, for 0 <= x <= 0.5 (error < 1e-6 relative).
-double asin_series(double x) {
-    const double x2 = x * x;
-    return x * (1.0 + x2 * (1.0 / 6.0 + x2 * (3.0 / 40.0 + x2 * (5.0 / 112.0 +
-               x2 * (35.0 / 1152.0 + x2 * (63.0 / 2816.0 + x2 * (231.0 / 13312.0 + x2 * (143.0 / 10240.0))))))));
-}
-
-// Arcsine on [0, 1] using only + - * / and sqrt, so it is identical on every
-// platform. Above 0.5 it uses asin(s) = pi/2 - 2 asin(sqrt((1 - s) / 2)).
-double portable_asin(double s) {
-    if (s <= 0.5) {
-        return asin_series(s);
-    }
-    return 0.5 * kPi - 2.0 * asin_series(std::sqrt(0.5 * (1.0 - s)));
 }
 
 // Quadrant-then-cross-product comparison of two tangent-plane directions:
@@ -192,7 +177,7 @@ Grid make_icosahedral_grid(int level) {
 double Grid::distance_km(CellId a, CellId b) const noexcept {
     // Chord length c = 2 sin(theta / 2), so theta = 2 asin(c / 2).
     const double s = std::min(1.0, 0.5 * norm(sub(center_[a], center_[b])));
-    return 2.0 * portable_asin(s) * kPlanetRadiusKm;
+    return 2.0 * pmath::asin_unit(s) * kPlanetRadiusKm;
 }
 
 std::uint64_t Grid::geometry_hash() const noexcept {

@@ -64,15 +64,6 @@ TEST(sim_people_are_conserved) {
     CHECK(sim.state().ledger.migrants > 0);
 }
 
-TEST(sim_population_approaches_capacity) {
-    Simulation sim = Simulation::create(small_world());
-    double capacity = 0.0;
-    for (double k : sim.world().forager_capacity) capacity += k;
-    sim.step_years(800);
-    const double ratio = static_cast<double>(sim.state().total_population()) / capacity;
-    CHECK(ratio > 0.9 && ratio < 1.05);
-}
-
 TEST(sim_systems_run_yearly_only) {
     Simulation sim = Simulation::create(small_world());
     const std::uint64_t start = sim.state_hash();
@@ -164,5 +155,5 @@ TEST(sim_golden_hash) {
     p.grid_level = 5;
     Simulation sim = Simulation::create(p);
     sim.step_years(200);
-    CHECK_EQ(sim.state_hash(), 0x3dd878bd6c6ad5c1ull);
+    CHECK_EQ(sim.state_hash(), 0x0e2ae299e956c29bull);
 }

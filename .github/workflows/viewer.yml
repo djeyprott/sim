@@ -116,14 +116,15 @@ jobs:
           cp godot/project/export/windows/* "$pkg/"
           cp LICENSE "$pkg/"
           cat > "$pkg/README.txt" <<'EOF'
-          histsim viewer (milestone M0)
+          histsim viewer (milestone M1)
 
           Double-click histsim-viewer.exe. Keep histsim_godot.windows.x86_64.dll in
           the same folder: it is the simulation library.
 
           Controls
             Play / Pause (Space)   run the simulation
-            1-5                    switch map mode
+            1-9                    switch map mode
+            G                      map / globe (drag to turn, scroll to zoom)
             .                      step one year while paused
             Hover the map          inspect a cell
             New world              generate a new planet from the seed

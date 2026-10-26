@@ -115,9 +115,13 @@ Options parse(const std::vector<std::string_view>& args, std::size_t first) {
 
 void print_report(const Simulation& sim) {
     const histsim::RunSummary r = sim.summary();
-    std::printf("year %6lld  population %12lld  inhabited cells %7zu  births %14lld  deaths %14lld  hash %016llx\n",
-                static_cast<long long>(sim.year()), static_cast<long long>(r.population), r.inhabited_cells,
-                static_cast<long long>(r.births), static_cast<long long>(r.deaths),
+    double capacity = 0.0;
+    for (double k : sim.state().env.capacity) capacity += k;
+    std::printf("year %6lld  population %11lld  capacity %11.0f (%5.1f%%)  inhabited %6zu  cohorts %5zu  "
+                "climate %+5.2f C  hash %016llx\n",
+                static_cast<long long>(sim.year()), static_cast<long long>(r.population), capacity,
+                capacity > 0 ? 100.0 * static_cast<double>(r.population) / capacity : 0.0, r.inhabited_cells,
+                sim.state().cohorts.size(), sim.state().climate.global_anomaly_c,
                 static_cast<unsigned long long>(r.state_hash));
 }
 
@@ -196,16 +200,16 @@ int world_info(const Options& o) {
 
 // No arguments: show the world and 1,000 years of history, then explain usage.
 int demo() {
-    std::printf("histsim %s: human history simulator (milestone M0, foundations)\n\n", HISTSIM_VERSION);
+    std::printf("histsim %s: human history simulator (milestone M1, living planet)\n\n", HISTSIM_VERSION);
     Options o;
     o.years = 1000;
     o.report_every = 100;
     world_info(o);
-    std::printf("\nSimulating %lld years of placeholder foragers on this world...\n\n",
+    std::printf("\nSimulating %lld years of forager history on this world...\n\n",
                 static_cast<long long>(o.years));
     const int rc = run(Simulation::create(o.params), o);
     std::printf(
-        "\nThis is a headless runner; the map interface comes in later milestones.\n"
+        "\nThis is the command-line runner; the map and globe interface is the histsim viewer.\n"
         "Run it from a terminal for more options, for example:\n"
         "  histsim run --seed 7 --level 6 --years 2000 --report-every 200\n"
         "  histsim run --years 500 --save run.hsim\n"

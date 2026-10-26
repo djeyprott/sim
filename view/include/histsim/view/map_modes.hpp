@@ -5,6 +5,7 @@
 // use this, so a new system only has to add a mode here to appear everywhere.
 #pragma once
 
+#include <array>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -41,6 +42,16 @@ const MapModeInfo& map_mode(std::string_view id);
 void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rgba>& out);
 
 Legend legend(std::string_view mode_id);
+
+// The age-sex pyramid of everyone in a cell (all cohorts summed).
+struct Pyramid {
+    std::array<std::int64_t, kAgeBins> female{};
+    std::array<std::int64_t, kAgeBins> male{};
+};
+Pyramid cell_pyramid(const Simulation& sim, CellId cell);
+
+// Median age in years, interpolated within the 5-year bin. 0 if empty.
+double median_age(const Pyramid& p);
 
 // Human-readable values for one cell, for hover panels.
 struct CellField {

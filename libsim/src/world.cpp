@@ -51,9 +51,100 @@ double fractal_noise(std::uint64_t seed, const Vec3& p) {
     return sum / total;  // in [0, 1)
 }
 
-double clamp01(double v) { return std::clamp(v, 0.0, 1.0); }
+
+// Starting forager groups: Voronoi-like regions grown by breadth-first search
+// over land from random seed cells, so each group is contiguous and an
+// island no seed reaches becomes a group of its own. About one group per 40
+// land cells at the default grid level.
+void assign_initial_groups(World& w) {
+    const std::size_t n = w.cell_count();
+    std::vector<CellId> land;
+    for (CellId c = 0; c < n; ++c) {
+        if (w.is_land[c]) land.push_back(c);
+    }
+    w.initial_group.assign(n, 0);
+    w.group_count = 0;
+    if (land.empty()) return;
+
+    const std::size_t target = std::max<std::size_t>(4, land.size() / 40);
+    RngStream rng(w.params.seed, 0, Stream::WorldGen, 1);
+    std::deque<CellId> queue;
+    for (std::size_t i = 0; i < target; ++i) {
+        const CellId c = land[rng.below(static_cast<std::uint32_t>(land.size()))];
+        if (w.initial_group[c] == 0) {
+            w.initial_group[c] = ++w.group_count;
+            queue.push_back(c);
+        }
+    }
+    auto grow = [&] {
+        while (!queue.empty()) {
+            const CellId c = queue.front();
+            queue.pop_front();
+            for (CellId nb : w.grid.neighbors(c)) {
+                if (w.is_land[nb] && w.initial_group[nb] == 0) {
+                    w.initial_group[nb] = w.initial_group[c];
+                    queue.push_back(nb);
+                }
+            }
+        }
+    };
+    grow();
+    for (CellId c : land) {  // islands no seed reached
+        if (w.initial_group[c] == 0) {
+            w.initial_group[c] = ++w.group_count;
+            queue.push_back(c);
+            grow();
+        }
+    }
+}
+
+// For each fine cell, the three nearest coarse climate cells, weighted by
+// inverse squared distance. Arithmetic only, so identical everywhere.
+void build_climate_mapping(World& w) {
+    w.climate_grid = make_icosahedral_grid(kClimateGridLevel);
+    const std::size_t n = w.cell_count();
+    w.climate_cells.resize(n);
+    w.climate_weights.resize(n);
+    for (CellId c = 0; c < n; ++c) {
+        const Vec3& p = w.grid.center(c);
+        std::array<CellId, 3> best{0, 0, 0};
+        std::array<double, 3> best_d2{9.0, 9.0, 9.0};
+        for (CellId k = 0; k < w.climate_grid.cell_count(); ++k) {
+            const Vec3& q = w.climate_grid.center(k);
+            const double dx = p.x - q.x, dy = p.y - q.y, dz = p.z - q.z;
+            const double d2 = dx * dx + dy * dy + dz * dz;
+            // Keep the three smallest; ties go to the lower id, which is stable.
+            for (int slot = 0; slot < 3; ++slot) {
+                if (d2 < best_d2[slot]) {
+                    for (int j = 2; j > slot; --j) {
+                        best_d2[j] = best_d2[j - 1];
+                        best[j] = best[j - 1];
+                    }
+                    best_d2[slot] = d2;
+                    best[slot] = k;
+                    break;
+                }
+            }
+        }
+        double total = 0.0;
+        std::array<double, 3> weight{};
+        for (int i = 0; i < 3; ++i) {
+            weight[i] = 1.0 / (best_d2[i] + 1e-6);
+            total += weight[i];
+        }
+        for (int i = 0; i < 3; ++i) weight[i] /= total;
+        w.climate_cells[c] = best;
+        w.climate_weights[c] = weight;
+    }
+}
 
 }  // namespace
+
+double forager_density(double temperature_c, double precipitation_mm) {
+    const double warmth = std::clamp((temperature_c + 8.0) / 30.0, 0.0, 1.0);
+    const double wetness = std::clamp((precipitation_mm - 100.0) / 1100.0, 0.0, 1.0);
+    return 0.2 * warmth * wetness;
+}
 
 World generate_test_world(const WorldParams& params) {
     World w;
@@ -131,20 +222,15 @@ World generate_test_world(const WorldParams& params) {
         const double subtropic = std::max(0.0, 1.0 - ((abs_z - 0.45) / 0.15) * ((abs_z - 0.45) / 0.15));
         const double inland_km = static_cast<double>(w.coast_distance[c]) * cell_km;
         double p = 2200.0 * (1.0 - 0.75 * z2);
-        p *= 1.0 - 0.65 * subtropic;
-        p *= 1.0 / (1.0 + inland_km / 1500.0);
+        p *= 1.0 - 0.8 * subtropic;
+        p *= 1.0 / (1.0 + inland_km / 1200.0);
         w.precipitation_mm[c] = p;
-
-        // Forager density (people per km^2), a placeholder until M1: warm and
-        // wet land supports up to ~0.2/km^2; ice, deserts and ocean support none.
-        if (w.is_land[c]) {
-            const double warmth = clamp01((w.temperature_c[c] + 8.0) / 30.0);
-            const double wetness = clamp01((p - 100.0) / 1100.0);
-            w.forager_capacity[c] = 0.2 * warmth * wetness * w.grid.area_km2(c);
-        } else {
-            w.forager_capacity[c] = 0.0;
-        }
+        w.forager_capacity[c] =
+            w.is_land[c] ? forager_density(w.temperature_c[c], p) * w.grid.area_km2(c) : 0.0;
     }
+
+    assign_initial_groups(w);
+    build_climate_mapping(w);
     return w;
 }
 
@@ -160,6 +246,15 @@ std::uint64_t World::hash() const noexcept {
     h.span<double>(temperature_c);
     h.span<double>(precipitation_mm);
     h.span<double>(forager_capacity);
+    h.span<std::uint32_t>(initial_group);
+    h.u32(group_count);
+    h.u64(climate_grid.geometry_hash());
+    for (std::size_t c = 0; c < climate_cells.size(); ++c) {
+        for (int i = 0; i < 3; ++i) {
+            h.u32(climate_cells[c][i]);
+            h.f64(climate_weights[c][i]);
+        }
+    }
     return h.digest();
 }
 

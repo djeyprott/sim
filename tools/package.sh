@@ -27,7 +27,7 @@ fi
 cp "$root/LICENSE" "$root/README.md" "$pkg/"
 
 cat > "$pkg/QUICKSTART.txt" <<'EOF'
-histsim - human history simulator (milestone M0, foundations)
+histsim - human history simulator (milestone M1, living planet)
 
 Double-click histsim (histsim.exe on Windows) to run a 1,000-year demo.
 
@@ -43,8 +43,8 @@ From a terminal you can run your own worlds:
 --level  grid detail: 5 = 10,242 cells (fast), 7 = 163,842 cells
 --years  how long to simulate, in years since the run began
 
-This build is a headless runner for the simulation core. The map interface
-arrives in later milestones.
+This is the command-line runner. For the map and globe interface, download
+the histsim viewer (see the project README).
 
 Windows may show a SmartScreen warning because the executable is not
 code-signed: choose "More info", then "Run anyway".

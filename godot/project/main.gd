@@ -1,6 +1,6 @@
 extends Control
-## histsim viewer: a flat world map with switchable map modes, a legend,
-## playback controls and a hover inspector.
+## histsim viewer: a flat map or globe with switchable map modes, a legend,
+## playback controls, world charts and a hover inspector with an age pyramid.
 ##
 ## All simulation and map rendering happens in C++ (the HistSimWorld class from
 ## the histsim GDExtension). This script only lays out the UI and forwards input.
@@ -12,6 +12,8 @@ const LEVELS := [4, 5, 6, 7]
 const LEVEL_NAMES := ["Coarse (2.6k cells)", "Normal (10k cells)", "Fine (41k cells)", "Detailed (164k cells)"]
 const STEP_BUDGET_MSEC := 12.0  # max time per frame spent simulating
 const RENDER_INTERVAL := 1.0 / 15.0  # max map redraws per second while playing
+const CHART_INTERVAL := 0.25  # chart refreshes per second while playing
+const CHART_POINTS := 400
 
 var world: Object  # HistSimWorld; untyped so a missing extension gives a clear message
 var mode_id := "terrain"
@@ -24,6 +26,9 @@ var hover_cell := -1
 var map_texture: ImageTexture
 var rate_years := 0  # years simulated since the last speed sample
 var rate_time := 0.0
+var chart_cooldown := 0.0
+var charts_dirty := true
+var showing_globe := false
 
 # UI nodes
 var map_rect: TextureRect
@@ -43,6 +48,12 @@ var legend_swatches: VBoxContainer
 var cell_grid: GridContainer
 var cell_hint: Label
 var status_label: Label
+var globe: GlobeView
+var map_button: Button
+var globe_button: Button
+var population_chart: LineChart
+var climate_chart: LineChart
+var pyramid: PyramidChart
 
 
 func _ready() -> void:
@@ -68,6 +79,7 @@ func _new_world() -> void:
 	hover_cell = -1
 	_clear_cell_info()
 	_update_legend()
+	charts_dirty = true
 	map_dirty = true
 	render_cooldown = 0.0
 	_update_summary()
@@ -89,6 +101,7 @@ func _process(delta: float) -> void:
 			rate_years += done
 			if done > 0:
 				map_dirty = true
+				charts_dirty = true
 				_update_summary()
 		# Show the real speed when the machine cannot keep up with the setting.
 		rate_time += delta
@@ -100,6 +113,9 @@ func _process(delta: float) -> void:
 	render_cooldown -= delta
 	if map_dirty and render_cooldown <= 0.0:
 		_render_map()
+	chart_cooldown -= delta
+	if charts_dirty and chart_cooldown <= 0.0:
+		_update_charts()
 
 
 func _render_map() -> void:
@@ -110,6 +126,7 @@ func _render_map() -> void:
 	if map_texture == null or map_texture.get_size() != Vector2(image.get_size()):
 		map_texture = ImageTexture.create_from_image(image)
 		map_rect.texture = map_texture
+		globe.set_texture(map_texture)
 	else:
 		map_texture.update(image)
 	map_dirty = false
@@ -120,8 +137,41 @@ func _render_map() -> void:
 
 func _update_summary() -> void:
 	year_label.text = "Year %s" % _commas(world.get_year())
-	population_label.text = "Population %s  ·  %s inhabited cells" % [
-		_commas(world.get_population()), _commas(world.get_inhabited_cells())]
+	var capacity: float = world.get_capacity()
+	var share: float = 100.0 * world.get_population() / capacity if capacity > 0.0 else 0.0
+	population_label.text = "Population %s (%.0f%% of capacity)  ·  %s cells inhabited  ·  climate %+.2f °C" % [
+		_commas(world.get_population()), share, _commas(world.get_inhabited_cells()), world.get_global_anomaly()]
+
+
+func _update_charts() -> void:
+	var h: Dictionary = world.get_history(CHART_POINTS)
+	population_chart.set_data(h["year"], [
+		{"name": "Population", "values": _to_floats(h["population"]), "color": Color("#3987e5")},
+		{"name": "Capacity", "values": h["capacity"], "color": Color("#898781"), "width": 1.0},
+	])
+	climate_chart.set_data(h["year"], [
+		{"name": "Global", "values": h["anomaly"], "color": Color("#d95926")},
+	])
+	charts_dirty = false
+	chart_cooldown = CHART_INTERVAL
+
+
+func _to_floats(values: PackedInt64Array) -> PackedFloat64Array:
+	var out := PackedFloat64Array()
+	out.resize(values.size())
+	for i in values.size():
+		out[i] = float(values[i])
+	return out
+
+
+func _set_view(globe_view: bool) -> void:
+	showing_globe = globe_view
+	globe.visible = globe_view
+	map_rect.visible = not globe_view
+	map_button.button_pressed = not globe_view
+	globe_button.button_pressed = globe_view
+	hover_cell = -1
+	_clear_cell_info()
 
 
 func _set_playing(value: bool) -> void:
@@ -158,7 +208,10 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif key == KEY_PERIOD and not playing:
 		world.step_years(1)
 		map_dirty = true
+		charts_dirty = true
 		_update_summary()
+	elif key == KEY_G:
+		_set_view(not showing_globe)
 	else:
 		return
 	get_viewport().set_input_as_handled()
@@ -168,6 +221,18 @@ func _on_map_input(event: InputEvent) -> void:
 	if world == null or map_texture == null or not (event is InputEventMouseMotion):
 		return
 	var cell := _cell_under(event.position)
+	if cell != hover_cell:
+		hover_cell = cell
+		if cell >= 0:
+			_show_cell(cell)
+		else:
+			_clear_cell_info()
+
+
+func _on_globe_pixel(pixel: Vector2i) -> void:
+	if world == null or map_texture == null:
+		return
+	var cell: int = world.cell_at(pixel.x, pixel.y) if pixel.x >= 0 else -1
 	if cell != hover_cell:
 		hover_cell = cell
 		if cell >= 0:
@@ -256,6 +321,15 @@ func _show_cell(cell: int) -> void:
 		var value := Label.new()
 		value.text = pair[1]
 		cell_grid.add_child(value)
+	var p: Dictionary = world.get_cell_pyramid(cell)
+	var people := 0
+	for n in p["female"]:
+		people += n
+	for n in p["male"]:
+		people += n
+	pyramid.visible = people > 0
+	if people > 0:
+		pyramid.set_pyramid(p)
 
 
 func _clear_cell_info() -> void:
@@ -263,6 +337,8 @@ func _clear_cell_info() -> void:
 		cell_grid.remove_child(child)
 		child.queue_free()
 	cell_hint.visible = true
+	if pyramid != null:
+		pyramid.visible = false
 
 
 # ---------------------------------------------------------------- layout
@@ -291,15 +367,84 @@ func _build_ui() -> void:
 	root.add_child(body)
 	body.add_child(_build_side_panel())
 
+	var column := VBoxContainer.new()
+	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	column.add_theme_constant_override("separation", 6)
+	body.add_child(column)
+
+	var view_bar := HBoxContainer.new()
+	var view_group := ButtonGroup.new()
+	map_button = Button.new()
+	map_button.text = "Map"
+	map_button.toggle_mode = true
+	map_button.button_group = view_group
+	map_button.button_pressed = true
+	map_button.pressed.connect(_set_view.bind(false))
+	view_bar.add_child(map_button)
+	globe_button = Button.new()
+	globe_button.text = "Globe"
+	globe_button.tooltip_text = "G. Drag to turn, scroll to zoom."
+	globe_button.toggle_mode = true
+	globe_button.button_group = view_group
+	globe_button.pressed.connect(_set_view.bind(true))
+	view_bar.add_child(globe_button)
+	view_bar.add_child(VSeparator.new())
+	population_label = Label.new()
+	population_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	population_label.clip_text = true
+	population_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	view_bar.add_child(population_label)
+	column.add_child(view_bar)
+
+	var stack := Control.new()
+	stack.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	column.add_child(stack)
+
 	map_rect = TextureRect.new()
 	map_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	map_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	map_rect.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	map_rect.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	map_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	map_rect.mouse_filter = Control.MOUSE_FILTER_STOP
 	map_rect.gui_input.connect(_on_map_input)
 	map_rect.mouse_exited.connect(_on_map_mouse_exited)
-	body.add_child(map_rect)
+	stack.add_child(map_rect)
+
+	globe = GlobeView.new()
+	globe.map_size = Vector2i(MAP_WIDTH, MAP_HEIGHT)
+	globe.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	globe.visible = false
+	globe.pixel_hovered.connect(_on_globe_pixel)
+	globe.mouse_exited.connect(_on_map_mouse_exited)
+	stack.add_child(globe)
+
+	var charts := HBoxContainer.new()
+	charts.custom_minimum_size = Vector2(0, 150)
+	charts.add_theme_constant_override("separation", 24)
+	column.add_child(charts)
+	population_chart = LineChart.new()
+	population_chart.title = "World population and foraging capacity"
+	population_chart.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	population_chart.size_flags_stretch_ratio = 1.6
+	charts.add_child(population_chart)
+	climate_chart = LineChart.new()
+	climate_chart.title = "Global temperature vs. baseline (°C)"
+	climate_chart.value_format = "signed1"
+	climate_chart.zero_line = true
+	climate_chart.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	charts.add_child(climate_chart)
+	var pyramid_box := VBoxContainer.new()
+	pyramid_box.custom_minimum_size = Vector2(300, 0)
+	var pyramid_title := Label.new()
+	pyramid_title.text = "Ages in the cell under the mouse"
+	pyramid_title.add_theme_font_size_override("font_size", 13)
+	pyramid_box.add_child(pyramid_title)
+	pyramid = PyramidChart.new()
+	pyramid.custom_minimum_size = Vector2(300, 120)
+	pyramid.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	pyramid.visible = false
+	pyramid_box.add_child(pyramid)
+	charts.add_child(pyramid_box)
 
 	status_label = Label.new()
 	status_label.add_theme_font_size_override("font_size", 12)
@@ -359,6 +504,7 @@ func _build_top_bar() -> Control:
 	step_button.pressed.connect(func() -> void:
 		world.step_years(1)
 		map_dirty = true
+		charts_dirty = true
 		_update_summary())
 	bar.add_child(step_button)
 
@@ -381,9 +527,6 @@ func _build_top_bar() -> Control:
 	year_label.add_theme_font_size_override("font_size", 18)
 	year_label.custom_minimum_size.x = 130
 	bar.add_child(year_label)
-
-	population_label = Label.new()
-	bar.add_child(population_label)
 	return bar
 
 
@@ -398,6 +541,11 @@ func _build_side_panel() -> Control:
 	scroll.add_child(panel)
 
 	panel.add_child(_heading("Map mode"))
+	var mode_grid := GridContainer.new()
+	mode_grid.columns = 2
+	mode_grid.add_theme_constant_override("h_separation", 4)
+	mode_grid.add_theme_constant_override("v_separation", 2)
+	panel.add_child(mode_grid)
 	var group := ButtonGroup.new()
 	var modes: Array = world.get_modes() if world != null else _fallback_modes()
 	var number := 1
@@ -410,7 +558,10 @@ func _build_side_panel() -> Control:
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.button_pressed = mode["id"] == mode_id
 		button.pressed.connect(_set_mode.bind(mode["id"]))
-		panel.add_child(button)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.clip_text = true
+		button.add_theme_font_size_override("font_size", 13)
+		mode_grid.add_child(button)
 		mode_buttons[mode["id"]] = button
 		number += 1
 
@@ -447,7 +598,7 @@ func _build_side_panel() -> Control:
 	panel.add_child(cell_grid)
 
 	panel.add_child(HSeparator.new())
-	var keys := _label("Space play/pause  ·  1-5 map modes  ·  . step a year")
+	var keys := _label("Space play/pause  ·  1-9 map modes  ·  . step a year  ·  G globe")
 	keys.add_theme_font_size_override("font_size", 11)
 	keys.add_theme_color_override("font_color", Color(0.54, 0.53, 0.51))
 	keys.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

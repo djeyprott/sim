@@ -87,7 +87,7 @@ TEST(view_describe_cell_lists_land_details) {
     Simulation sim = Simulation::create({});
     CellId land = kInvalidCell;
     for (CellId c = 0; c < sim.world().cell_count(); ++c) {
-        if (sim.world().is_land[c] && sim.state().population.read()[c] > 0) {
+        if (sim.world().is_land[c] && sim.state().cell_population[c] > 0) {
             land = c;
             break;
         }
