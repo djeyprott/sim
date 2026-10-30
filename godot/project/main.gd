@@ -14,6 +14,7 @@ const LEVEL_NAMES := ["Coarse (2.6k cells)", "Normal (10k cells)", "Fine (41k ce
 const STEP_BUDGET_MSEC := 12.0  # max time per frame spent simulating
 const RENDER_INTERVAL := 1.0 / 15.0  # max map redraws per second while playing
 const CHART_INTERVAL := 0.25  # chart refreshes per second while playing
+const DYNAMIC_LEGENDS := ["language", "language_family", "culture"]
 const CHART_POINTS := 400
 const QUICKSAVE_PATH := "user://quicksave.hsim"
 
@@ -146,6 +147,8 @@ func _render_map() -> void:
 		map_texture.update(image)
 	map_dirty = false
 	render_cooldown = RENDER_INTERVAL
+	if mode_id in DYNAMIC_LEGENDS:
+		_update_legend()  # lists the largest groups, which change as the run goes on
 	if hover_cell >= 0:
 		_show_cell(hover_cell)
 
@@ -154,8 +157,10 @@ func _update_summary() -> void:
 	year_label.text = "Year %s" % _commas(world.get_year())
 	var capacity: float = world.get_capacity()
 	var share: float = 100.0 * world.get_population() / capacity if capacity > 0.0 else 0.0
-	population_label.text = "Population %s (%.0f%% of capacity)  ·  %s cells inhabited  ·  climate %+.2f °C" % [
-		_commas(world.get_population()), share, _commas(world.get_inhabited_cells()), world.get_global_anomaly()]
+	var peoples: Dictionary = world.get_people_counts()
+	population_label.text = "Population %s (%.0f%% of capacity)  ·  %s cells inhabited  ·  %s languages in %s families  ·  climate %+.2f °C" % [
+		_commas(world.get_population()), share, _commas(world.get_inhabited_cells()),
+		_commas(peoples["languages"]), _commas(peoples["families"]), world.get_global_anomaly()]
 
 
 func _update_charts() -> void:
@@ -447,6 +452,8 @@ func _show_cell(cell: int) -> void:
 		cell_grid.add_child(key)
 		var value := Label.new()
 		value.text = pair[1]
+		value.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		value.custom_minimum_size.x = 230
 		cell_grid.add_child(value)
 	var native: PackedStringArray = world.get_native_species(cell)
 	species_label.visible = native.size() > 0

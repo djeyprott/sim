@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <deque>
+#include <memory>
 #include <queue>
 
 #include "histsim/hash.hpp"
@@ -371,7 +372,11 @@ void assign_initial_groups(World& w) {
     w.group_count = 0;
     if (land.empty()) return;
 
-    const std::size_t target = std::max<std::size_t>(4, land.size() / 40);
+    // About one starting people per 2 million km^2 of land (40 cells at grid
+    // level 5), whatever the grid level.
+    double land_km2 = 0.0;
+    for (CellId c : land) land_km2 += w.grid.area_km2(c);
+    const std::size_t target = std::max<std::size_t>(4, static_cast<std::size_t>(land_km2 / 2.0e6));
     RngStream rng(w.params.seed, 0, Stream::WorldGen, 1);
     std::deque<CellId> queue;
     for (std::size_t i = 0; i < target; ++i) {
@@ -481,6 +486,13 @@ World generate_test_world(const WorldParams& params, const Content& content) {
     World w;
     w.params = params;
     w.content_hash = content.hash;
+    // The default pack lives for the whole program: refer to it without
+    // owning it. Any other pack is copied, so the world never dangles.
+    if (&content == &default_content()) {
+        w.content = std::shared_ptr<const Content>(std::shared_ptr<const Content>{}, &content);
+    } else {
+        w.content = std::make_shared<const Content>(content);
+    }
     w.grid = make_icosahedral_grid(params.grid_level);
     const std::size_t n = w.grid.cell_count();
 

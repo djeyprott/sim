@@ -5,9 +5,11 @@
 #include <array>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include "histsim/content.hpp"
 #include "histsim/types.hpp"
 
 namespace histsim {
@@ -17,15 +19,21 @@ namespace histsim {
 inline constexpr int kAgeBins = 21;  // 0-4, 5-9, ..., 95-99, 100+
 inline constexpr int kYearsPerAgeBin = 5;
 
+// Dimensions of a cohort's dialect: a point that drifts at random and is
+// pulled toward the speakers it talks to. How far apart two groups' points are
+// stands for how hard they find each other to understand.
+inline constexpr int kDialectDims = 8;
+
 // A group of people in one cell who share a culture and a language, with an
-// age-sex pyramid. In M1 culture and language are the same starting group id;
-// M2 lets them drift apart.
+// age-sex pyramid, its local version of the culture's traits and its dialect.
 struct Cohort {
     CellId cell = kInvalidCell;
-    std::uint32_t culture = 0;
-    std::uint32_t language = 0;
+    std::uint32_t culture = 0;   // id into SimState::cultures
+    std::uint32_t language = 0;  // id into SimState::languages
     std::array<std::uint32_t, kAgeBins> female{};
     std::array<std::uint32_t, kAgeBins> male{};
+    std::array<double, kMaxTraits> traits{};       // 0-1 each, as in Content::traits
+    std::array<double, kDialectDims> dialect{};
 
     [[nodiscard]] std::int64_t total() const noexcept {
         std::int64_t t = 0;
@@ -40,6 +48,43 @@ struct Cohort {
         if (culture != o.culture) return culture < o.culture;
         return language < o.language;
     }
+};
+
+// ---------------------------------------------------------------- languages
+
+inline constexpr Tick kNever = -1;
+
+// One word of a language's core vocabulary. Words with the same cognate id
+// descend from the same ancestral word, so the share of cognates between
+// two languages measures how closely related they are.
+struct Word {
+    std::vector<PhonemeId> sounds;
+    std::uint64_t cognate = 0;
+};
+
+struct Language {
+    std::uint32_t id = 0;
+    std::uint32_t parent = 0;  // 0 = founder of a family
+    std::uint32_t family = 0;  // id of the family's founding language
+    Tick founded = 0;
+    Tick extinct = kNever;
+    std::string name;
+    std::vector<Word> words;        // one per Content::concepts
+    std::uint32_t syllables = 1;    // bit s set if syllable shape s is allowed
+    std::uint8_t word_order = 0;    // index into Content::word_order
+    std::uint8_t morphology = 0;
+    std::uint8_t tone = 0;
+    std::vector<std::uint16_t> sound_changes;  // rules applied since founding, in order
+};
+
+struct Culture {
+    std::uint32_t id = 0;
+    std::uint32_t parent = 0;  // 0 = one of the founding cultures
+    std::uint32_t root = 0;    // founding culture of this lineage
+    std::uint32_t language = 0;  // main language when it was founded
+    Tick founded = 0;
+    Tick extinct = kNever;
+    std::string name;
 };
 
 // ---------------------------------------------------------------- climate
@@ -83,6 +128,10 @@ enum class EventType : std::uint32_t {
     WorldPopulation = 2,  // world population crossed a power of ten; value = new total
     Eruption = 3,         // large volcanic eruption; value = forcing in mW/m^2 (negative)
     Intervention = 4,     // a command applied by the user; value = CommandType
+    LanguageSplit = 5,    // a dialect became a language; value = new language id
+    CultureSplit = 6,     // a regional culture became distinct; value = new culture id
+    LanguageExtinct = 7,  // last speakers gone; value = language id
+    CultureExtinct = 8,   // value = culture id
 };
 
 struct Event {
@@ -139,6 +188,9 @@ struct YearRecord {
     std::uint32_t inhabited_cells = 0;
     double global_anomaly_c = 0.0;
     double capacity = 0.0;  // total foraging capacity this year
+    std::uint32_t languages = 0;          // living languages
+    std::uint32_t language_families = 0;  // families with a living language
+    std::uint32_t cultures = 0;           // living cultures
 };
 
 // ---------------------------------------------------------------- state
@@ -157,7 +209,12 @@ struct SimState {
     std::vector<Event> events;         // append-only, in tick order
     std::vector<YearRecord> history;   // one per completed year
     std::vector<Command> commands;     // interventions, in the order applied
-    std::uint32_t next_group = 0;      // id for the next new group (settlers)
+
+    // Every language and culture that ever existed; entry i has id i, and
+    // entry 0 is an unused placeholder so that 0 can mean "none".
+    std::vector<Language> languages;
+    std::vector<Culture> cultures;
+    std::uint64_t next_cognate = 1;
 
     // ---- Derived data: rebuilt by refresh(), never saved or hashed.
     std::vector<std::uint32_t> cell_population;

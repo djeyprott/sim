@@ -1,10 +1,13 @@
-# Embed the content pack in the library as bytes (a string literal would hit
-# MSVC's length limit). Re-runs automatically when the JSON changes.
-set(HISTSIM_SPECIES_JSON "${PROJECT_SOURCE_DIR}/data/species.json")
-file(READ "${HISTSIM_SPECIES_JSON}" _species_hex HEX)
-string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," HISTSIM_SPECIES_BYTES "${_species_hex}")
+# Embed the content packs in the library as bytes (a string literal would hit
+# MSVC's length limit). Re-runs automatically when a JSON file changes.
+foreach(_pack species phonology culture)
+    string(TOUPPER "${_pack}" _PACK)
+    set(_file "${PROJECT_SOURCE_DIR}/data/${_pack}.json")
+    file(READ "${_file}" _hex HEX)
+    string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," HISTSIM_${_PACK}_BYTES "${_hex}")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_file}")
+endforeach()
 configure_file(src/content_data.cpp.in "${CMAKE_CURRENT_BINARY_DIR}/generated/content_data.cpp" @ONLY)
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${HISTSIM_SPECIES_JSON}")
 
 add_library(histsim
     "${CMAKE_CURRENT_BINARY_DIR}/generated/content_data.cpp"
@@ -12,6 +15,8 @@ add_library(histsim
     src/grid.cpp
     src/interventions.cpp
     src/json.cpp
+    src/language.cpp
+    src/systems/culture.cpp
     src/rng.cpp
     src/scheduler.cpp
     src/simulation.cpp

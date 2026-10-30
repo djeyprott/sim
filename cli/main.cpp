@@ -4,6 +4,7 @@
 //                [--report-every Y] [--save FILE] [--hash-only]
 //   histsim resume FILE [--years Y] [--report-every Y] [--save FILE] [--hash-only]
 //   histsim world [--seed N] [--level L] [--ocean F]
+//   histsim languages [--seed N] [--level L] [--years Y] [--top N]
 //
 // With no arguments (for example, double-clicked in Explorer) it runs a short
 // demo and waits for Enter so the window stays open.
@@ -28,6 +29,7 @@
 #endif
 
 #include "histsim/simulation.hpp"
+#include "histsim/systems/culture.hpp"
 #include "histsim/view/map_modes.hpp"
 #include "histsim/view/png.hpp"
 #include "histsim/view/raster.hpp"
@@ -48,6 +50,8 @@ struct Options {
     int width = 2048;
     bool coastlines = true;
     bool rivers = true;
+    // languages command: how many families to print (0 = all)
+    std::int64_t top = 0;
     // --at YEAR:ACTION:...: interventions, applied when the run reaches YEAR
     std::vector<std::pair<std::int64_t, std::string>> at;
 };
@@ -66,7 +70,11 @@ struct Options {
                  "                 [--width W] [--out PREFIX] [--no-coastlines] [--no-rivers]\n"
                  "                 writes PREFIX-<mode>.png; modes: terrain biome population\n"
                  "                 crowding temperature rainfall rain_season growing soil\n"
-                 "                 species capacity game temp_anomaly median_age\n"
+                 "                 species capacity game temp_anomaly median_age language\n"
+                 "                 language_family culture\n"
+                 "  histsim languages [--seed N] [--level L] [--years Y] [--top N]\n"
+                 "                 family trees of the languages alive after Y years, largest\n"
+                 "                 families first, with speakers and sample words\n"
                  "  histsim --version\n"
                  "\n"
                  "run, resume and map accept interventions, applied when the run reaches YEAR\n"
@@ -130,6 +138,7 @@ Options parse(const std::vector<std::string_view>& args, std::size_t first) {
             if (colon == std::string::npos) usage("--at needs YEAR:ACTION...");
             o.at.emplace_back(parse_int(std::string_view(spec).substr(0, colon)), spec.substr(colon + 1));
         }
+        else if (a == "--top") o.top = parse_int(value());
         else usage("unknown option");
     }
     if (o.years < 0) usage("--years must be >= 0");
@@ -261,11 +270,12 @@ void print_report(const Simulation& sim) {
     const histsim::RunSummary r = sim.summary();
     double capacity = 0.0;
     for (double k : sim.state().env.capacity) capacity += k;
-    std::printf("year %6lld  population %11lld  capacity %11.0f (%5.1f%%)  inhabited %6zu  cohorts %5zu  "
-                "climate %+5.2f C  hash %016llx\n",
+    const histsim::PeopleCounts p = histsim::count_peoples(sim.state());
+    std::printf("year %6lld  population %11lld  capacity %11.0f (%5.1f%%)  inhabited %6zu  "
+                "languages %4u (%3u families)  cultures %4u  climate %+5.2f C  hash %016llx\n",
                 static_cast<long long>(sim.year()), static_cast<long long>(r.population), capacity,
                 capacity > 0 ? 100.0 * static_cast<double>(r.population) / capacity : 0.0, r.inhabited_cells,
-                sim.state().cohorts.size(), sim.state().climate.global_anomaly_c,
+                p.languages, p.families, p.cultures, sim.state().climate.global_anomaly_c,
                 static_cast<unsigned long long>(r.state_hash));
 }
 
@@ -324,6 +334,64 @@ int map_images(const Options& o) {
     return 0;
 }
 
+// Family trees: each language with its speakers (or when it split or died
+// out), living languages with a few words.
+int languages(const Options& o) {
+    Simulation sim = Simulation::create(o.params);
+    apply_due_now(sim, o, true);
+    advance(sim, o.years, o, true);
+    const histsim::SimState& s = sim.state();
+    const std::size_t nl = s.languages.size();
+    std::vector<std::int64_t> speakers(nl, 0), subtree(nl, 0);
+    for (const histsim::Cohort& c : s.cohorts) speakers[c.language] += c.total();
+    std::vector<std::vector<std::uint32_t>> children(nl);
+    for (std::uint32_t i = 1; i < nl; ++i) {
+        if (s.languages[i].parent != 0) children[s.languages[i].parent].push_back(i);
+    }
+    // Speakers of each language and all its descendants (children have
+    // higher ids than parents, so one backward pass suffices).
+    for (std::uint32_t i = static_cast<std::uint32_t>(nl); i-- > 1;) {
+        subtree[i] += speakers[i];
+        if (s.languages[i].parent != 0) subtree[s.languages[i].parent] += subtree[i];
+    }
+    std::vector<std::uint32_t> roots;
+    for (std::uint32_t i = 1; i < nl; ++i) {
+        if (s.languages[i].parent == 0 && subtree[i] > 0) roots.push_back(i);
+    }
+    std::stable_sort(roots.begin(), roots.end(), [&](auto a, auto b) { return subtree[a] > subtree[b]; });
+    const histsim::PeopleCounts p = histsim::count_peoples(s);
+    std::printf("year %lld: %u languages in %u families, %u cultures\n\n", static_cast<long long>(sim.year()),
+                p.languages, p.families, p.cultures);
+    auto when = [](histsim::Tick t) {
+        const long long y = t / histsim::kTicksPerYear;
+        return y < 0 ? std::to_string(-y) + " years before the run" : "year " + std::to_string(y);
+    };
+    auto print = [&](auto&& self, std::uint32_t id, const std::string& indent) -> void {
+        if (subtree[id] == 0) return;  // whole branch extinct: skip
+        const histsim::Language& l = s.languages[id];
+        if (l.extinct == histsim::kNever) {
+            std::printf("%s%s  %s speakers  [%s]\n", indent.c_str(), l.name.c_str(),
+                        std::to_string(speakers[id]).c_str(), histsim::view::sample_words(sim, id, 4).c_str());
+        } else {
+            std::printf("%s%s  (split %s)\n", indent.c_str(), l.name.c_str(), when(l.extinct).c_str());
+        }
+        auto kids = children[id];
+        std::stable_sort(kids.begin(), kids.end(), [&](auto a, auto b) { return subtree[a] > subtree[b]; });
+        for (std::uint32_t k : kids) self(self, k, indent + "  ");
+    };
+    std::size_t shown = 0;
+    for (std::uint32_t r : roots) {
+        if (o.top > 0 && static_cast<std::int64_t>(shown) >= o.top) break;
+        std::string family = s.languages[r].name;
+        if (family.rfind("Proto-", 0) == 0) family = family.substr(6);
+        std::printf("%s family, %s speakers\n", family.c_str(), std::to_string(subtree[r]).c_str());
+        print(print, r, "  ");
+        std::printf("\n");
+        ++shown;
+    }
+    return 0;
+}
+
 int world_info(const Options& o) {
     const histsim::World w = histsim::generate_test_world(o.params);
     std::size_t land = 0;
@@ -348,7 +416,7 @@ int world_info(const Options& o) {
 
 // No arguments: show the world and 1,000 years of history, then explain usage.
 int demo() {
-    std::printf("histsim %s: human history simulator (milestone M1, living planet)\n\n", HISTSIM_VERSION);
+    std::printf("histsim %s: human history simulator (milestone M2 in progress, Neolithic)\n\n", HISTSIM_VERSION);
     Options o;
     o.years = 1000;
     o.report_every = 100;
@@ -400,6 +468,10 @@ int main(int argc, char** argv) {
             if (args.size() < 3) usage("resume needs a snapshot file");
             const Options o = parse(args, 3);
             return run(Simulation::load(std::string(args[2])), o);
+        }
+        if (cmd == "languages") {
+            Options o = parse(args, 2);
+            return languages(o);
         }
         if (cmd == "world") {
             return world_info(parse(args, 2));

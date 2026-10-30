@@ -25,6 +25,13 @@ bool throws(F&& f) {
     return false;
 }
 
+// The default packs with a different species file.
+Content with_species(const std::string& species) {
+    ContentSources src = default_sources();
+    src.species = species;
+    return load_content(src);
+}
+
 const World& level5() {
     static const World w = [] {
         WorldParams p;
@@ -87,7 +94,7 @@ TEST(content_validation_errors_are_reported) {
         "coldest_month_c": [-5, 0, 10, 20], "warmest_month_c": [10, 20, 30, 40],
         "annual_precip_mm": [100, 300, 800, 1500], "rain_season": [-1, -1, 1, 1],
         "elevation_m": [-100, 0, 1000, 3000], "native_regions": 1, "range_km": 1500}]})";
-    const Content c = load_content(good);
+    const Content c = with_species(good);
     CHECK_EQ(c.species.size(), std::size_t{1});
     CHECK(c.species[0].coldest_month_c(5.0) == 1.0);
     CHECK_NEAR(c.species[0].coldest_month_c(-2.5), 0.5, 1e-12);
@@ -98,13 +105,13 @@ TEST(content_validation_errors_are_reported) {
         s.replace(s.find(from), from.size(), to);
         return s;
     };
-    CHECK(throws([&] { (void)load_content(with("\"plant\"", "\"fungus\"")); }));
-    CHECK(throws([&] { (void)load_content(with("[-5, 0, 10, 20]", "[0, -5, 10, 20]")); }));
-    CHECK(throws([&] { (void)load_content(with("\"native_regions\": 1", "\"native_regions\": 0")); }));
-    CHECK(throws([&] { (void)load_content(with("\"version\": 1", "\"version\": 2")); }));
-    CHECK(throws([&] { (void)load_content(with("\"range_km\": 1500", "\"range_km\": -1")); }));
+    CHECK(throws([&] { (void)with_species(with("\"plant\"", "\"fungus\"")); }));
+    CHECK(throws([&] { (void)with_species(with("[-5, 0, 10, 20]", "[0, -5, 10, 20]")); }));
+    CHECK(throws([&] { (void)with_species(with("\"native_regions\": 1", "\"native_regions\": 0")); }));
+    CHECK(throws([&] { (void)with_species(with("\"version\": 1", "\"version\": 2")); }));
+    CHECK(throws([&] { (void)with_species(with("\"range_km\": 1500", "\"range_km\": -1")); }));
     // A different pack is a different world.
-    CHECK(load_content(with("\"X\"", "\"Y\"")).hash != c.hash);
+    CHECK(with_species(with("\"X\"", "\"Y\"")).hash != c.hash);
 }
 
 // ---- Climate and biomes

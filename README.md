@@ -7,11 +7,12 @@ climate, all interacting so that history emerges rather than being scripted.
 The project has finished **milestone M1 (living planet)**: a deterministic
 simulation core on a geodesic world grid, with a changing climate, foraging
 capacity and game, and forager cohorts with age-sex pyramids that grow, die,
-migrate and settle near what the land can feed. M2 has begun: the world now
+migrate and settle near what the land can feed. M2 is under way: the world
 has seasons, biomes, rivers, soils and the native ranges of wild plants and
-animals that farming will grow from. A Godot viewer shows it as a map or globe
-with fourteen map modes, world charts and a cell inspector. Culture, language
-change and farming come next.
+animals that farming will grow from, and its peoples have cultures and
+languages that drift, split, shift and die out, with family trees, sound
+changes and generated words. A Godot viewer shows it as a map or globe with
+seventeen map modes, world charts and a cell inspector. Farming comes next.
 
 ## Download
 
@@ -59,6 +60,9 @@ ctest --test-dir build --output-on-failure
     --at 100:eruption:10 --at 150:plague:2.4,27.7:800:0.4 \
     --at 200:climate:2.4,27.7:1000:0:-0.5:20
 
+# Language family trees after 1,000 years, largest five families
+./build/cli/histsim languages --years 1000 --top 5
+
 # Save after 400 years, then resume for 600 more (same result as one run)
 ./build/cli/histsim run --seed 1 --years 400 --save run.hsim
 ./build/cli/histsim resume run.hsim --years 600
@@ -78,7 +82,7 @@ began; the sim has no calendar years.
 | `cli/` | `histsim`, the headless runner for batch runs and CI. |
 | `tests/` | Unit, determinism and replay tests. |
 | `tools/` | Offline tools (Earth importer, procedural generator) — from M4. |
-| `data/` | Content packs, compiled into the library: wild species now; crops, goods, techs and diseases later. |
+| `data/` | Content packs, compiled into the library: wild species, sounds and sound changes, core vocabulary, culture traits; crops, goods, techs and diseases later. |
 | `docs/` | [Architecture and determinism rules](docs/ARCHITECTURE.md). |
 
 The viewer talks to the core only through the Sim API in

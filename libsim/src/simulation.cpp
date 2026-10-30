@@ -8,6 +8,7 @@
 
 #include "histsim/hash.hpp"
 #include "histsim/systems/climate.hpp"
+#include "histsim/systems/culture.hpp"
 #include "histsim/systems/people.hpp"
 #include "state_io.hpp"
 
@@ -31,6 +32,7 @@ void Simulation::install_systems() {
     scheduler_.add(std::make_unique<EnvironmentSystem>());
     scheduler_.add(std::make_unique<DemographySystem>());
     scheduler_.add(std::make_unique<MigrationSystem>());
+    scheduler_.add(std::make_unique<CultureSystem>());
     scheduler_.add(std::make_unique<HistorySystem>());
 }
 
@@ -58,13 +60,37 @@ Simulation Simulation::create(const WorldParams& params) {
     for (CellId c = 0; c < n; ++c) {
         const auto people = static_cast<std::uint32_t>(0.5 * w.forager_capacity[c]);
         if (people >= 2) {
-            s.cohorts.push_back(make_stable_cohort(c, w.initial_group[c], people));
+            s.cohorts.push_back(make_stable_cohort(c, w.initial_group[c], w.initial_group[c], people));
             s.ever_settled[c] = 1;
         }
     }
     s.normalize_cohorts(n);
     s.ledger.initial_population = s.total_population();
-    s.next_group = w.group_count + 1;
+
+    // Each starting group is a people of its own: a culture, and a language
+    // family that has already been diversifying for thousands of years.
+    std::vector<std::vector<CellId>> group_cells(w.group_count + 1);
+    for (CellId c = 0; c < n; ++c) {
+        if (w.is_land[c]) group_cells[w.initial_group[c]].push_back(c);
+    }
+    std::vector<std::uint32_t> cell_culture(n, 0), cell_language(n, 0);
+    std::vector<std::array<double, kMaxTraits>> traits(w.group_count + 1);
+    for (std::uint32_t g = 1; g <= w.group_count; ++g) {
+        RngStream rng(params.seed, 0, Stream::Language, g);
+        const double history = kFamilyHistoryMinYears + rng.uniform() * kFamilyHistoryRangeYears;
+        const FoundedPeople p = found_people(w, s, params.seed, g, group_cells[g], history);
+        traits[g] = p.traits;
+        for (std::size_t i = 0; i < group_cells[g].size(); ++i) {
+            cell_culture[group_cells[g][i]] = p.culture;
+            cell_language[group_cells[g][i]] = p.cell_language[i];
+        }
+    }
+    for (Cohort& co : s.cohorts) {
+        co.traits = traits[co.culture];  // still the group number here
+        co.culture = cell_culture[co.cell];
+        co.language = cell_language[co.cell];
+    }
+    s.normalize_cohorts(n);
     sim.install_systems();
     return sim;
 }

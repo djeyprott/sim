@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "histsim/simulation.hpp"
+#include "histsim/systems/culture.hpp"
 #include "histsim/view/map_modes.hpp"
 #include "histsim/view/raster.hpp"
 
@@ -45,6 +46,7 @@ public:
     double get_forager_capacity() const;  // baseline, at the start of the run
     double get_capacity() const;           // this year's
     double get_global_anomaly() const;     // global mean temperature vs. baseline, degrees C
+    godot::Dictionary get_people_counts() const;  // living languages, families and cultures
     godot::String get_state_hash() const;
 
     // Yearly history, downsampled to at most max_points rows:

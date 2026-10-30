@@ -1,8 +1,11 @@
 #include "histsim/view/map_modes.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <stdexcept>
+
+#include "histsim/language.hpp"
 
 namespace histsim::view {
 
@@ -165,7 +168,87 @@ const std::vector<MapModeInfo> kModes = {
     {"game", "Game", "Wild food abundance relative to undisturbed land"},
     {"temp_anomaly", "Temp. anomaly", "This year's temperature minus the long-run baseline"},
     {"median_age", "Median age", "Median age of the people living in each cell"},
+    {"language", "Language", "Main language spoken; related languages share a hue"},
+    {"language_family", "Language family", "Family of the main language"},
+    {"culture", "Culture", "Main culture; related cultures share a hue"},
 };
+
+// ---- Colors for languages and cultures.
+//
+// Each family (or founding culture) gets a hue spread around the color wheel
+// by the golden angle; each member varies it a little in hue and lightness,
+// so a family reads as one block of related shades.
+
+std::uint64_t mix(std::uint64_t x) {
+    x += 0x9E3779B97F4A7C15ull;
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ull;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBull;
+    return x ^ (x >> 31);
+}
+
+double unit_hash(std::uint64_t x) { return static_cast<double>(mix(x) >> 11) * 0x1.0p-53; }
+
+Rgba hsl(double h, double s, double l) {
+    h = std::fmod(h, 360.0);
+    if (h < 0) h += 360.0;
+    const double c = (1.0 - std::fabs(2.0 * l - 1.0)) * s;
+    const double x = c * (1.0 - std::fabs(std::fmod(h / 60.0, 2.0) - 1.0));
+    const double m = l - c / 2.0;
+    double r = 0, g = 0, b = 0;
+    if (h < 60) r = c, g = x;
+    else if (h < 120) r = x, g = c;
+    else if (h < 180) g = c, b = x;
+    else if (h < 240) g = x, b = c;
+    else if (h < 300) r = x, b = c;
+    else r = c, b = x;
+    auto to8 = [](double v) { return static_cast<std::uint8_t>(std::lround(std::clamp(v, 0.0, 1.0) * 255.0)); };
+    return {to8(r + m), to8(g + m), to8(b + m), 255};
+}
+
+double family_hue(std::uint32_t root) { return std::fmod(static_cast<double>(root) * 137.50776, 360.0); }
+
+Rgba group_color(std::uint32_t root, std::uint32_t id) {
+    if (id == root) return hsl(family_hue(root), 0.55, 0.52);
+    const double dh = (unit_hash(id * 2 + 1) - 0.5) * 36.0;
+    const double dl = (unit_hash(id * 2 + 2) - 0.5) * 0.30;
+    return hsl(family_hue(root) + dh, 0.55, 0.52 + dl);
+}
+
+// Main language and culture of a cell (most people; ties: the lower id).
+struct MainPeople {
+    std::uint32_t language = 0, culture = 0;
+    std::int64_t language_pop = 0, culture_pop = 0;
+};
+MainPeople main_people(const SimState& s, CellId c) {
+    MainPeople m;
+    std::vector<std::pair<std::uint32_t, std::int64_t>> langs, cults;
+    auto add = [](std::vector<std::pair<std::uint32_t, std::int64_t>>& v, std::uint32_t id, std::int64_t p) {
+        for (auto& e : v) {
+            if (e.first == id) {
+                e.second += p;
+                return;
+            }
+        }
+        v.emplace_back(id, p);
+    };
+    for (const Cohort& co : s.cohorts_in(c)) {
+        add(langs, co.language, co.total());
+        add(cults, co.culture, co.total());
+    }
+    for (const auto& [id, p] : langs) {
+        if (p > m.language_pop || (p == m.language_pop && id < m.language)) m.language = id, m.language_pop = p;
+    }
+    for (const auto& [id, p] : cults) {
+        if (p > m.culture_pop || (p == m.culture_pop && id < m.culture)) m.culture = id, m.culture_pop = p;
+    }
+    return m;
+}
+
+std::string family_name(const SimState& s, std::uint32_t lang) {
+    std::string name = s.languages[s.languages[lang].family].name;
+    if (name.rfind("Proto-", 0) == 0) name = name.substr(6);
+    return name;
+}
 
 int species_count(std::uint32_t mask) {
     int n = 0;
@@ -207,6 +290,31 @@ double crowding(const SimState& s, CellId c) {
     return k > 0.0 ? static_cast<double>(s.cell_population[c]) / k : 0.0;
 }
 
+}  // namespace
+
+Rgba language_color(const SimState& s, std::uint32_t lang) {
+    if (lang == 0 || lang >= s.languages.size()) return kEmptyLand;
+    return group_color(s.languages[lang].family, lang);
+}
+
+Rgba language_family_color(const SimState& s, std::uint32_t lang) {
+    if (lang == 0 || lang >= s.languages.size()) return kEmptyLand;
+    const std::uint32_t f = s.languages[lang].family;
+    return group_color(f, f);
+}
+
+Rgba culture_color(const SimState& s, std::uint32_t culture) {
+    if (culture == 0 || culture >= s.cultures.size()) return kEmptyLand;
+    // Offset so a culture and its founding language family differ in hue.
+    return group_color(s.cultures[culture].root + 7919, culture + 7919);
+}
+
+namespace {
+Rgba people_color(const SimState& s, const MainPeople& m, const std::string& id) {
+    if (id == "language") return language_color(s, m.language);
+    if (id == "language_family") return language_family_color(s, m.language);
+    return culture_color(s, m.culture);
+}
 }  // namespace
 
 Rgba ocean_neutral() { return kOceanNeutral; }
@@ -293,6 +401,8 @@ void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rg
             out[c] = inhabited ? density_scale()(density(w, s, c)) : kEmptyLand;
         } else if (id == "crowding") {
             out[c] = inhabited ? crowding_scale()(crowding(s, c)) : kEmptyLand;
+        } else if (id == "language" || id == "language_family" || id == "culture") {
+            out[c] = inhabited ? people_color(s, main_people(s, c), id) : kEmptyLand;
         } else {  // median_age
             out[c] = inhabited ? age_scale()(median_age(cell_pyramid(sim, c))) : kEmptyLand;
         }
@@ -363,11 +473,57 @@ Legend legend(std::string_view mode_id) {
         l.title = "Population ÷ capacity (1 = at capacity)";
         l.ramp = ramp_entries(crowding_scale(), "%g");
         l.swatches = empty_and_ocean;
+    } else if (id == "language") {
+        l.title = "Main language";
+        l.swatches = empty_and_ocean;
+    } else if (id == "language_family") {
+        l.title = "Language family";
+        l.swatches = empty_and_ocean;
+    } else if (id == "culture") {
+        l.title = "Main culture";
+        l.swatches = empty_and_ocean;
     } else {
         l.title = "Median age (years)";
         l.ramp = ramp_entries(age_scale(), "%.0f");
         l.swatches = empty_and_ocean;
     }
+    return l;
+}
+
+Legend legend(const Simulation& sim, std::string_view mode_id) {
+    Legend l = legend(mode_id);
+    const std::string id(map_mode(mode_id).id);
+    if (id != "language" && id != "language_family" && id != "culture") return l;
+    const SimState& s = sim.state();
+    // The largest groups by people, then a count of the rest.
+    const bool culture = id == "culture";
+    const bool family = id == "language_family";
+    std::vector<std::int64_t> people(culture ? s.cultures.size() : s.languages.size(), 0);
+    for (const Cohort& co : s.cohorts) {
+        const std::uint32_t key = culture ? co.culture : (family ? s.languages[co.language].family : co.language);
+        people[key] += co.total();
+    }
+    std::vector<std::uint32_t> order;
+    for (std::uint32_t i = 1; i < people.size(); ++i) {
+        if (people[i] > 0) order.push_back(i);
+    }
+    std::stable_sort(order.begin(), order.end(), [&](std::uint32_t a, std::uint32_t b) { return people[a] > people[b]; });
+    constexpr std::size_t kShown = 10;
+    std::vector<LegendEntry> entries;
+    for (std::size_t i = 0; i < order.size() && i < kShown; ++i) {
+        const std::uint32_t k = order[i];
+        std::string name = culture ? s.cultures[k].name : (family ? family_name(s, k) + " family" : s.languages[k].name);
+        if (!culture && !family) name += " (" + family_name(s, k) + ")";
+        const Rgba color = culture ? culture_color(s, k) : (family ? language_family_color(s, k) : language_color(s, k));
+        entries.push_back({name + ": " + with_commas(people[k]), color});
+    }
+    if (order.size() > kShown) {
+        const char* what = culture ? " other cultures" : (family ? " other families" : " other languages");
+        entries.push_back({"+ " + with_commas(static_cast<long long>(order.size() - kShown)) + what, Rgba{0, 0, 0, 0}});
+    }
+    entries.insert(entries.end(), l.swatches.begin(), l.swatches.end());
+    l.swatches = std::move(entries);
+    l.title += " (" + with_commas(static_cast<long long>(order.size())) + " living)";
     return l;
 }
 
@@ -419,25 +575,96 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
         if (b < 3) children += p.female[b] + p.male[b];
     }
     f.push_back({"Under 15", fmt("%.0f%%", 100.0 * static_cast<double>(children) / static_cast<double>(total))});
-    const auto groups = s.cohorts_in(c);
-    std::uint32_t main_group = 0;
-    std::int64_t main_size = -1;
-    for (const Cohort& co : groups) {
-        if (co.total() > main_size) {
-            main_size = co.total();
-            main_group = co.culture;
+
+    // Peoples.
+    const Content& content = *w.content;
+    const MainPeople m = main_people(s, c);
+    const double cell_pop = static_cast<double>(s.cell_population[c]);
+    const Language& lang = s.languages[m.language];
+    f.push_back({"Language", lang.name + " (" + family_name(s, m.language) + " family)" +
+                                 (m.language_pop < s.cell_population[c]
+                                      ? fmt(", %.0f%%", 100.0 * static_cast<double>(m.language_pop) / cell_pop)
+                                      : "")});
+    {  // Other languages here, by speakers.
+        std::vector<std::pair<std::uint32_t, std::int64_t>> others;
+        for (const Cohort& co : s.cohorts_in(c)) {
+            if (co.language == m.language) continue;
+            bool found = false;
+            for (auto& e : others) {
+                if (e.first == co.language) e.second += co.total(), found = true;
+            }
+            if (!found) others.emplace_back(co.language, co.total());
+        }
+        std::stable_sort(others.begin(), others.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+        std::string text;
+        for (std::size_t i = 0; i < others.size() && i < 3; ++i) {
+            if (i) text += ", ";
+            text += s.languages[others[i].first].name +
+                    fmt(" %.0f%%", 100.0 * static_cast<double>(others[i].second) / cell_pop);
+        }
+        if (!text.empty()) f.push_back({"Also spoken", text});
+    }
+    f.push_back({"Lineage", language_lineage(sim, m.language)});
+    f.push_back({"Grammar", std::string(word_order_name(content, lang)) + ", " + morphology_name(content, lang) +
+                                (lang.tone == 0 ? "" : std::string(", ") + tone_name(content, lang) + " tone")});
+    f.push_back({"Words", sample_words(sim, m.language, 6)});
+
+    const Culture& cul = s.cultures[m.culture];
+    f.push_back({"Culture", cul.name + (m.culture_pop < s.cell_population[c]
+                                            ? fmt(", %.0f%%", 100.0 * static_cast<double>(m.culture_pop) / cell_pop)
+                                            : "")});
+    // The culture's most distinctive ways here: traits far from the middle.
+    for (const Cohort& co : s.cohorts_in(c)) {
+        if (co.culture != m.culture) continue;
+        std::vector<std::pair<double, std::string>> marked;
+        for (std::size_t t = 0; t < content.traits.size(); ++t) {
+            const double x = co.traits[t];
+            if (std::fabs(x - 0.5) >= 0.15) {
+                marked.emplace_back(std::fabs(x - 0.5), x < 0.5 ? content.traits[t].low : content.traits[t].high);
+            }
+        }
+        std::stable_sort(marked.begin(), marked.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+        std::string text;
+        for (std::size_t i = 0; i < marked.size() && i < 4; ++i) text += (i ? ", " : "") + marked[i].second;
+        if (!text.empty()) f.push_back({"Ways", text});
+        break;
+    }
+    return f;
+}
+
+std::string language_lineage(const Simulation& sim, std::uint32_t lang) {
+    const SimState& s = sim.state();
+    std::string out;
+    for (std::uint32_t id = lang; id != 0 && id < s.languages.size(); id = s.languages[id].parent) {
+        if (!out.empty()) out += " < ";
+        out += s.languages[id].name;
+    }
+    return out;
+}
+
+std::string sample_words(const Simulation& sim, std::uint32_t lang, std::size_t count) {
+    const SimState& s = sim.state();
+    const Content& c = *sim.world().content;
+    if (lang == 0 || lang >= s.languages.size()) return {};
+    static const char* const kSample[] = {"water", "fire", "sun", "two", "eye", "mother", "people", "river", "stone"};
+    std::string out;
+    std::size_t shown = 0;
+    for (const char* id : kSample) {
+        if (shown == count) break;
+        for (std::size_t k = 0; k < c.concepts.size(); ++k) {
+            if (c.concepts[k].id != id) continue;
+            out += (shown ? ", " : "") + c.concepts[k].id + " " + romanize(c, s.languages[lang].words[k].sounds);
+            ++shown;
         }
     }
-    f.push_back({"Groups", with_commas(static_cast<long long>(groups.size())) + " (largest: group " +
-                               with_commas(static_cast<long long>(main_group)) + ")"});
-    return f;
+    return out;
 }
 
 std::vector<std::string> native_species(const Simulation& sim, CellId c) {
     std::vector<std::string> out;
     const World& w = sim.world();
     if (c >= w.cell_count()) return out;
-    const auto& species = default_content().species;
+    const auto& species = w.content->species;
     for (std::size_t s = 0; s < species.size() && s < 32; ++s) {
         if (w.species_mask[c] & (1u << s)) out.push_back(species[s].name);
     }

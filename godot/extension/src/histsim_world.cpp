@@ -140,6 +140,15 @@ double HistSimWorld::get_capacity() const {
 
 double HistSimWorld::get_global_anomaly() const { return sim_ ? sim_->state().climate.global_anomaly_c : 0.0; }
 
+Dictionary HistSimWorld::get_people_counts() const {
+    Dictionary d;
+    const histsim::PeopleCounts p = sim_ ? histsim::count_peoples(sim_->state()) : histsim::PeopleCounts{};
+    d["languages"] = static_cast<int64_t>(p.languages);
+    d["families"] = static_cast<int64_t>(p.families);
+    d["cultures"] = static_cast<int64_t>(p.cultures);
+    return d;
+}
+
 Dictionary HistSimWorld::get_history(int64_t max_points) const {
     Dictionary d;
     PackedInt64Array years, population;
@@ -191,7 +200,7 @@ Array HistSimWorld::get_modes() const {
 Dictionary HistSimWorld::get_legend(const String& mode) const {
     Dictionary d;
     try {
-        const histsim::view::Legend l = histsim::view::legend(to_std(mode));
+        const histsim::view::Legend l = sim_ ? histsim::view::legend(*sim_, to_std(mode)) : histsim::view::legend(to_std(mode));
         d["title"] = to_godot(l.title);
         d["ramp"] = legend_entries(l.ramp);
         d["swatches"] = legend_entries(l.swatches);
@@ -366,6 +375,7 @@ void HistSimWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_forager_capacity"), &HistSimWorld::get_forager_capacity);
     ClassDB::bind_method(D_METHOD("get_capacity"), &HistSimWorld::get_capacity);
     ClassDB::bind_method(D_METHOD("get_global_anomaly"), &HistSimWorld::get_global_anomaly);
+    ClassDB::bind_method(D_METHOD("get_people_counts"), &HistSimWorld::get_people_counts);
     ClassDB::bind_method(D_METHOD("get_state_hash"), &HistSimWorld::get_state_hash);
     ClassDB::bind_method(D_METHOD("get_history", "max_points"), &HistSimWorld::get_history);
     ClassDB::bind_method(D_METHOD("get_cell_pyramid", "cell"), &HistSimWorld::get_cell_pyramid);

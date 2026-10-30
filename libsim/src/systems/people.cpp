@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 
+#include "histsim/systems/culture.hpp"
 #include "vital_rates.inc"
 
 namespace histsim {
@@ -36,11 +37,11 @@ double stable_age_share(int b) { return vital::kStableAgeShare[b]; }
 double female_share_of_births() { return vital::kFemaleShareOfBirths; }
 double replacement_fertility_multiplier() { return vital::kReplacementFertilityMultiplier; }
 
-Cohort make_stable_cohort(CellId cell, std::uint32_t group, std::uint32_t n) {
+Cohort make_stable_cohort(CellId cell, std::uint32_t culture, std::uint32_t language, std::uint32_t n) {
     Cohort c;
     c.cell = cell;
-    c.culture = group;
-    c.language = group;
+    c.culture = culture;
+    c.language = language;
     std::uint32_t assigned = 0;
     for (int b = 0; b < kAgeBins; ++b) {
         const auto in_bin = static_cast<std::uint32_t>(static_cast<double>(n) * vital::kStableAgeShare[b]);
@@ -166,6 +167,8 @@ void MigrationSystem::step(StepContext& ctx) {
             band.cell = dest[d];
             band.culture = co.culture;
             band.language = co.language;
+            band.traits = co.traits;
+            band.dialect = co.dialect;
             std::int64_t band_size = 0;
             for (int b = 0; b < kAgeBins; ++b) {
                 const double share = std::min(1.0, rate * kMigrationByAge[b]);
@@ -188,8 +191,9 @@ void MigrationSystem::step(StepContext& ctx) {
     s.normalize_cohorts(n);
     s.ledger.migrants += moved;
 
-    // Small groups join the largest group in their cell (a stand-in for
-    // assimilation until M2 models culture and language change).
+    // Small groups join the largest group in their cell: a band of a few
+    // dozen arriving among many takes up their language and customs at once.
+    // (Larger minorities shift gradually; see CultureSystem.)
     bool merged_any = false;
     for (CellId c = 0; c < n; ++c) {
         const auto first = s.cohort_begin[c], last = s.cohort_begin[c + 1];
@@ -202,6 +206,12 @@ void MigrationSystem::step(StepContext& ctx) {
             std::max(static_cast<double>(kMinGroupSize), kMinGroupShare * static_cast<double>(s.cell_population[c]));
         for (auto i = first; i < last; ++i) {
             if (i == largest || static_cast<double>(s.cohorts[i].total()) >= threshold) continue;
+            Cohort& big = s.cohorts[largest];
+            const double wb = static_cast<double>(big.total()), ws = static_cast<double>(s.cohorts[i].total());
+            if (wb + ws > 0.0) {
+                const double f = ws / (wb + ws);
+                for (std::size_t t = 0; t < kMaxTraits; ++t) big.traits[t] += f * (s.cohorts[i].traits[t] - big.traits[t]);
+            }
             for (int b = 0; b < kAgeBins; ++b) {
                 s.cohorts[largest].female[b] += s.cohorts[i].female[b];
                 s.cohorts[largest].male[b] += s.cohorts[i].male[b];
@@ -234,6 +244,10 @@ void HistorySystem::step(StepContext& ctx) {
     for (std::uint32_t p : s.cell_population) r.inhabited_cells += p > 0 ? 1 : 0;
     r.global_anomaly_c = s.climate.global_anomaly_c;
     for (double k : s.env.capacity) r.capacity += k;
+    const PeopleCounts p = count_peoples(s);
+    r.languages = p.languages;
+    r.language_families = p.families;
+    r.cultures = p.cultures;
     s.history.push_back(r);
 }
 

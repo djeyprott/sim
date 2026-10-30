@@ -8,6 +8,7 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "histsim/content.hpp"
@@ -49,6 +50,7 @@ struct World {
     WorldParams params;
     Grid grid;
     std::uint64_t content_hash = 0;  // content pack the world was built with
+    std::shared_ptr<const Content> content;  // that pack (never null)
 
     // ---- Terrain
     std::vector<double> elevation_m;            // relative to sea level; negative = ocean depth

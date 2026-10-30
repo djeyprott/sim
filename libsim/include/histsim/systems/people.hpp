@@ -62,7 +62,7 @@ public:
 
 // A cohort of n people in the stationary age structure of the life table,
 // split between the sexes by the sex ratio at birth. Integer-exact.
-Cohort make_stable_cohort(CellId cell, std::uint32_t group, std::uint32_t n);
+Cohort make_stable_cohort(CellId cell, std::uint32_t culture, std::uint32_t language, std::uint32_t n);
 
 // Life-table helpers exposed for tests and the inspector.
 double forager_death_probability(int age_bin);

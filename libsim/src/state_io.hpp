@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <stdexcept>
 #include <vector>
 
@@ -24,6 +25,7 @@ public:
     void i64(std::int64_t& v) { h_.i64(v); }
     void f64(double& v) { h_.f64(v); }
     void count(std::uint64_t& n) { h_.u64(n); }
+    void id64(std::uint64_t& v) { h_.u64(v); }
     [[nodiscard]] std::uint64_t digest() const { return h_.digest(); }
 
 private:
@@ -47,6 +49,7 @@ public:
         u64(bits);
     }
     void count(std::uint64_t& n) { u64(n); }
+    void id64(std::uint64_t& v) { u64(v); }
     void raw(const void* p, std::size_t n) {
         const auto* b = static_cast<const std::uint8_t*>(p);
         buf_.insert(buf_.end(), b, b + n);
@@ -88,6 +91,7 @@ public:
             throw std::runtime_error("snapshot is corrupt (impossible length)");
         }
     }
+    void id64(std::uint64_t& v) { v = u64(); }
     void raw(void* out, std::size_t n) {
         need(n);
         std::memcpy(out, p_, n);
@@ -122,6 +126,18 @@ void doubles(Ar& ar, std::vector<double>& v) {
     vec(ar, v, [&](double& x) { ar.f64(x); });
 }
 
+template <class Ar>
+void str(Ar& ar, std::string& s) {
+    std::uint64_t n = s.size();
+    ar.count(n);
+    if constexpr (Ar::kReading) s.resize(n);
+    for (char& ch : s) {
+        auto b = static_cast<std::uint8_t>(ch);
+        ar.u8(b);
+        ch = static_cast<char>(b);
+    }
+}
+
 // ---- The state
 
 template <class Ar>
@@ -133,6 +149,8 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(c.language);
         for (auto& n : c.female) ar.u32(n);
         for (auto& n : c.male) ar.u32(n);
+        for (auto& t : c.traits) ar.f64(t);
+        for (auto& d : c.dialect) ar.f64(d);
     });
     vec(ar, s.ever_settled, [&](std::uint8_t& v) { ar.u8(v); });
 
@@ -180,7 +198,37 @@ void serialize(Ar& ar, SimState& s) {
         ar.f64(c.amount2);
         ar.i64(c.years);
     });
-    ar.u32(s.next_group);
+    vec(ar, s.languages, [&](Language& l) {
+        ar.u32(l.id);
+        ar.u32(l.parent);
+        ar.u32(l.family);
+        ar.i64(l.founded);
+        ar.i64(l.extinct);
+        str(ar, l.name);
+        vec(ar, l.words, [&](Word& w) {
+            vec(ar, w.sounds, [&](PhonemeId& p) { ar.u8(p); });
+            ar.id64(w.cognate);
+        });
+        ar.u32(l.syllables);
+        ar.u8(l.word_order);
+        ar.u8(l.morphology);
+        ar.u8(l.tone);
+        vec(ar, l.sound_changes, [&](std::uint16_t& r) {
+            std::uint32_t v = r;
+            ar.u32(v);
+            r = static_cast<std::uint16_t>(v);
+        });
+    });
+    vec(ar, s.cultures, [&](Culture& c) {
+        ar.u32(c.id);
+        ar.u32(c.parent);
+        ar.u32(c.root);
+        ar.u32(c.language);
+        ar.i64(c.founded);
+        ar.i64(c.extinct);
+        str(ar, c.name);
+    });
+    ar.id64(s.next_cognate);
     vec(ar, s.history, [&](YearRecord& r) {
         ar.i64(r.year);
         ar.i64(r.population);
@@ -190,6 +238,9 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(r.inhabited_cells);
         ar.f64(r.global_anomaly_c);
         ar.f64(r.capacity);
+        ar.u32(r.languages);
+        ar.u32(r.language_families);
+        ar.u32(r.cultures);
     });
 }
 

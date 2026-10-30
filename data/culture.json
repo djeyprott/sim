@@ -1,0 +1,61 @@
+// Culture traits.
+//
+// A culture is a vector of traits, each between 0 (the `low` pole) and 1
+// (the `high` pole). Every local group of a culture carries its own values,
+// which:
+//   - drift at random (`drift`: typical change per century),
+//   - are pulled toward the rest of the culture nearby and, more weakly,
+//     toward neighbouring cultures,
+//   - adapt to circumstances, approaching a target set by the land the group
+//     lives on (`adapt`: share of the gap closed per century).
+//
+// target = clamp(base + sum of weight x variable, 0, 1), where each variable
+// is between 0 and 1:
+//   crowding        people / foraging capacity of the cell (capped at 1)
+//   aquatic         fish and shellfish from coasts and rivers (aquatic bonus / 0.8)
+//   seasonality     temperature swing between warmest and coldest month / 40 °C
+//   growing_season  months warm and wet enough for plants / 12
+//   game            abundance of game, relative to undisturbed land
+//   wild_plants     wild ancestors of crops native to the cell (4 or more = 1)
+//
+// The pushes follow forager ethnography: storable aquatic foods go with
+// settled, ranked societies (the Pacific Northwest); strong seasons with
+// food storage and wide sharing; crowding with raiding and clans.
+{
+  "version": 1,
+  "traits": [
+    {"id": "mobility", "name": "Mobility", "low": "settled", "high": "nomadic",
+     "drift": 0.05, "adapt": 0.25, "base": 0.75,
+     "push": {"aquatic": -0.6, "seasonality": 0.15, "crowding": -0.2}},
+    {"id": "plant_reliance", "name": "Plant foods", "low": "hunting", "high": "gathering",
+     "drift": 0.05, "adapt": 0.25, "base": 0.3,
+     "push": {"growing_season": 0.4, "wild_plants": 0.25, "game": -0.2, "seasonality": -0.2}},
+    {"id": "storage", "name": "Food storage", "low": "eat now", "high": "store",
+     "drift": 0.04, "adapt": 0.2, "base": 0.2,
+     "push": {"seasonality": 0.5, "aquatic": 0.3, "crowding": 0.1}},
+    {"id": "sharing", "name": "Sharing", "low": "household", "high": "whole band",
+     "drift": 0.05, "adapt": 0.15, "base": 0.75,
+     "push": {"crowding": -0.25, "aquatic": -0.2, "seasonality": 0.1}},
+    {"id": "hierarchy", "name": "Hierarchy", "low": "egalitarian", "high": "ranked",
+     "drift": 0.04, "adapt": 0.15, "base": 0.15,
+     "push": {"aquatic": 0.45, "crowding": 0.25}},
+    {"id": "kinship", "name": "Kinship", "low": "loose ties", "high": "strong clans",
+     "drift": 0.05, "adapt": 0.1, "base": 0.45,
+     "push": {"crowding": 0.25, "aquatic": 0.15}},
+    {"id": "warfare", "name": "Warfare", "low": "peaceful", "high": "raiding",
+     "drift": 0.06, "adapt": 0.2, "base": 0.25,
+     "push": {"crowding": 0.45, "game": -0.15}},
+    {"id": "openness", "name": "Openness", "low": "closed", "high": "open to outsiders",
+     "drift": 0.06, "adapt": 0.1, "base": 0.55,
+     "push": {"seasonality": 0.15, "crowding": -0.2}},
+    {"id": "ritual", "name": "Ritual", "low": "plain", "high": "elaborate",
+     "drift": 0.06, "adapt": 0.05, "base": 0.4,
+     "push": {"aquatic": 0.2, "crowding": 0.15}},
+    {"id": "gender_roles", "name": "Gender roles", "low": "fluid", "high": "strict",
+     "drift": 0.05, "adapt": 0.1, "base": 0.45,
+     "push": {"game": 0.2}},
+    {"id": "innovation", "name": "Innovation", "low": "traditional", "high": "experimental",
+     "drift": 0.06, "adapt": 0.0, "base": 0.4,
+     "push": {}}
+  ]
+}

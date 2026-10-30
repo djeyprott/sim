@@ -6,6 +6,7 @@
 
 #include "histsim/rng.hpp"
 #include "histsim/systems/climate.hpp"
+#include "histsim/systems/culture.hpp"
 #include "histsim/systems/people.hpp"
 
 namespace histsim {
@@ -170,8 +171,13 @@ InterventionResult apply_command(const World& w, SimState& s, std::uint64_t seed
             }
             cmd.amount = std::clamp(std::floor(cmd.amount), 1.0, static_cast<double>(kMaxSettlers));
             const auto people = static_cast<std::uint32_t>(cmd.amount);
-            const std::uint32_t group = s.next_group++;
-            s.cohorts.push_back(make_stable_cohort(cmd.cell, group, people));
+            const CellId home[] = {cmd.cell};
+            const FoundedPeople founded = found_people(w, s, seed, 0x20000000u | static_cast<std::uint32_t>(s.commands.size()), home,
+                                                       /*history_years=*/0.0);
+            const std::uint32_t language = founded.family;
+            Cohort settlers = make_stable_cohort(cmd.cell, founded.culture, language, people);
+            settlers.traits = founded.traits;
+            s.cohorts.push_back(settlers);
             s.ledger.added += people;
             s.normalize_cohorts(n);
             if (!s.ever_settled[cmd.cell]) {
@@ -180,7 +186,8 @@ InterventionResult apply_command(const World& w, SimState& s, std::uint64_t seed
             }
             r.people = people;
             r.cells = 1;
-            r.message = "Settlers: " + commas(people) + " people of a new group (" + commas(group) + ") arrived.";
+            r.message = "Settlers: " + commas(people) + " people speaking " + s.languages[language].name +
+                        " arrived.";
             break;
         }
         case CommandType::SetGame: {

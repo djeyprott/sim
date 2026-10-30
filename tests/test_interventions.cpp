@@ -139,14 +139,21 @@ TEST(intervention_settlers_found_a_new_group) {
     Simulation sim = small_sim();
     const CellId c = busiest_cell(sim);
     const auto before = sim.state().total_population();
-    const auto group = sim.state().next_group;
+    const auto languages = sim.state().languages.size();
+    const auto cultures = sim.state().cultures.size();
     const auto r = sim.apply(cmd(CommandType::Settlers, c, 0, 2500));
     CHECK(r.ok);
     CHECK_EQ(sim.state().total_population(), before + 2500);
     CHECK_EQ(sim.state().ledger.added, std::int64_t{2500});
-    CHECK_EQ(sim.state().next_group, group + 1);
+    // A new people: its own language family and culture.
+    CHECK_EQ(sim.state().languages.size(), languages + 1);
+    CHECK_EQ(sim.state().cultures.size(), cultures + 1);
+    const auto lang = static_cast<std::uint32_t>(languages);
+    CHECK_EQ(sim.state().languages[lang].family, lang);
     bool found = false;
-    for (const Cohort& co : sim.state().cohorts_in(c)) found |= co.culture == group && co.total() == 2500;
+    for (const Cohort& co : sim.state().cohorts_in(c)) {
+        found |= co.language == lang && co.culture == cultures && co.total() == 2500;
+    }
     CHECK(found);
     CHECK(conserved(sim));
     sim.step_years(10);

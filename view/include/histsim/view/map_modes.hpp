@@ -41,7 +41,11 @@ const MapModeInfo& map_mode(std::string_view id);
 // One color per cell for the given mode.
 void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rgba>& out);
 
+// The fixed part of a mode's legend.
 Legend legend(std::string_view mode_id);
+// The legend for the current state: for language and culture modes it lists
+// the largest groups now living.
+Legend legend(const Simulation& sim, std::string_view mode_id);
 
 // The age-sex pyramid of everyone in a cell (all cohorts summed).
 struct Pyramid {
@@ -59,6 +63,18 @@ struct CellField {
     std::string value;
 };
 std::vector<CellField> describe_cell(const Simulation& sim, CellId cell);
+
+// "Yiyi < Proto-Yiyi < Proto-Sivaw": a language and its ancestors.
+std::string language_lineage(const Simulation& sim, std::uint32_t language);
+
+// "water du, fire khu, ...": a few core words of a language.
+std::string sample_words(const Simulation& sim, std::uint32_t language, std::size_t count);
+
+// Colors used for languages, families and cultures on the map, for UI that
+// lists them.
+Rgba language_color(const SimState& state, std::uint32_t language);
+Rgba language_family_color(const SimState& state, std::uint32_t language);
+Rgba culture_color(const SimState& state, std::uint32_t culture);
 
 // Names of the wild species native to a cell.
 std::vector<std::string> native_species(const Simulation& sim, CellId cell);

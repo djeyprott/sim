@@ -1,0 +1,201 @@
+// Sounds, word shapes, sound changes and core vocabulary for generated
+// languages.
+//
+// Every language draws its sounds from the phonemes below. Each phoneme has
+// articulatory features; sound-change rules shift features ("voiced stops
+// become fricatives between vowels"), so a change can only produce a sound
+// that is listed here. `frequency` is the share of the world's languages that
+// have the sound (roughly, after PHOIBLE), used when a new language family
+// picks its inventory.
+//
+//   consonants: place  labial | dental | alveolar | palatal | velar | uvular | glottal
+//               manner stop | affricate | fricative | nasal | lateral | rhotic | glide
+//   vowels:     height high | mid | low;  backness front | central | back
+//
+// `text` is how the sound is written in the viewer (a simple romanization).
+{
+  "version": 1,
+  "phonemes": [
+    {"text": "p",  "kind": "consonant", "place": "labial",  "manner": "stop",      "voiced": false, "frequency": 0.86},
+    {"text": "b",  "kind": "consonant", "place": "labial",  "manner": "stop",      "voiced": true,  "frequency": 0.63},
+    {"text": "t",  "kind": "consonant", "place": "alveolar",  "manner": "stop",      "voiced": false, "frequency": 0.90},
+    {"text": "d",  "kind": "consonant", "place": "alveolar",  "manner": "stop",      "voiced": true,  "frequency": 0.60},
+    {"text": "k",  "kind": "consonant", "place": "velar",   "manner": "stop",      "voiced": false, "frequency": 0.90},
+    {"text": "g",  "kind": "consonant", "place": "velar",   "manner": "stop",      "voiced": true,  "frequency": 0.56},
+    {"text": "q",  "kind": "consonant", "place": "uvular",  "manner": "stop",      "voiced": false, "frequency": 0.12},
+    {"text": "'",  "kind": "consonant", "place": "glottal", "manner": "stop",      "voiced": false, "frequency": 0.38},
+    {"text": "ts", "kind": "consonant", "place": "alveolar",  "manner": "affricate", "voiced": false, "frequency": 0.22},
+    {"text": "dz", "kind": "consonant", "place": "alveolar",  "manner": "affricate", "voiced": true,  "frequency": 0.08},
+    {"text": "ch", "kind": "consonant", "place": "palatal", "manner": "affricate", "voiced": false, "frequency": 0.40},
+    {"text": "j",  "kind": "consonant", "place": "palatal", "manner": "affricate", "voiced": true,  "frequency": 0.26},
+    {"text": "f",  "kind": "consonant", "place": "labial",  "manner": "fricative", "voiced": false, "frequency": 0.43},
+    {"text": "v",  "kind": "consonant", "place": "labial",  "manner": "fricative", "voiced": true,  "frequency": 0.29},
+    {"text": "th", "kind": "consonant", "place": "dental",      "manner": "fricative", "voiced": false, "frequency": 0.06},
+    {"text": "s",  "kind": "consonant", "place": "alveolar",  "manner": "fricative", "voiced": false, "frequency": 0.67},
+    {"text": "z",  "kind": "consonant", "place": "alveolar",  "manner": "fricative", "voiced": true,  "frequency": 0.29},
+    {"text": "sh", "kind": "consonant", "place": "palatal", "manner": "fricative", "voiced": false, "frequency": 0.38},
+    {"text": "zh", "kind": "consonant", "place": "palatal", "manner": "fricative", "voiced": true,  "frequency": 0.16},
+    {"text": "kh", "kind": "consonant", "place": "velar",   "manner": "fricative", "voiced": false, "frequency": 0.24},
+    {"text": "gh", "kind": "consonant", "place": "velar",   "manner": "fricative", "voiced": true,  "frequency": 0.13},
+    {"text": "h",  "kind": "consonant", "place": "glottal", "manner": "fricative", "voiced": false, "frequency": 0.56},
+    {"text": "m",  "kind": "consonant", "place": "labial",  "manner": "nasal",     "voiced": true,  "frequency": 0.96},
+    {"text": "n",  "kind": "consonant", "place": "alveolar",  "manner": "nasal",     "voiced": true,  "frequency": 0.95},
+    {"text": "ny", "kind": "consonant", "place": "palatal", "manner": "nasal",     "voiced": true,  "frequency": 0.38},
+    {"text": "ng", "kind": "consonant", "place": "velar",   "manner": "nasal",     "voiced": true,  "frequency": 0.55},
+    {"text": "l",  "kind": "consonant", "place": "alveolar",  "manner": "lateral",   "voiced": true,  "frequency": 0.68},
+    {"text": "r",  "kind": "consonant", "place": "alveolar",  "manner": "rhotic",    "voiced": true,  "frequency": 0.65},
+    {"text": "w",  "kind": "consonant", "place": "labial",  "manner": "glide",     "voiced": true,  "frequency": 0.82},
+    {"text": "y",  "kind": "consonant", "place": "palatal", "manner": "glide",     "voiced": true,  "frequency": 0.88},
+
+    {"text": "i",  "kind": "vowel", "height": "high", "backness": "front",   "frequency": 0.92},
+    {"text": "e",  "kind": "vowel", "height": "mid",  "backness": "front",   "frequency": 0.70},
+    {"text": "a",  "kind": "vowel", "height": "low",  "backness": "central", "frequency": 0.98},
+    {"text": "o",  "kind": "vowel", "height": "mid",  "backness": "back",    "frequency": 0.68},
+    {"text": "u",  "kind": "vowel", "height": "high", "backness": "back",    "frequency": 0.88},
+    {"text": "ë",  "kind": "vowel", "height": "mid",  "backness": "central", "frequency": 0.22}
+  ],
+
+  // Syllable shapes (C = consonant, V = vowel). Every language has CV; it
+  // has each other shape with the given probability.
+  "syllables": [
+    {"shape": "CV",  "probability": 1.0},
+    {"shape": "V",   "probability": 0.45},
+    {"shape": "CVC", "probability": 0.55},
+    {"shape": "VC",  "probability": 0.25},
+    {"shape": "CCV", "probability": 0.2},
+    {"shape": "CCVC","probability": 0.1}
+  ],
+
+  // Grammar features, picked at random for each new language family with
+  // the given weights (roughly the shares in WALS), and occasionally
+  // changing later.
+  "typology": {
+    "word_order":  {"SOV": 45, "SVO": 42, "VSO": 9, "VOS": 3, "OVS": 1},
+    "morphology":  {"isolating": 25, "agglutinative": 50, "fusional": 25},
+    "tone":        {"none": 58, "simple": 30, "complex": 12}
+  },
+
+  // Regular sound changes. When a language undergoes a change, it applies to
+  // every word at once (as in real sound laws), so daughter languages show
+  // systematic correspondences. Each rule picks the sounds it applies to
+  // (`match`), where in the word (`where`), and what happens: shift some
+  // features (`to`), "delete", or insert a sound after (`insert_after`).
+  //
+  //   where: anywhere | word_initial | word_final | between_vowels |
+  //          before_front_vowel | before_high_front_vowel | before_consonant |
+  //          after_vowel | before_velar
+  //
+  // `weight` is how often the change is chosen relative to the others.
+  "sound_changes": [
+    {"name": "intervocalic voicing",   "match": {"manner": "stop", "voiced": false}, "where": "between_vowels", "to": {"voiced": true}, "weight": 3},
+    {"name": "intervocalic lenition",  "match": {"manner": "stop", "voiced": true}, "where": "between_vowels", "to": {"manner": "fricative"}, "weight": 2},
+    {"name": "final devoicing",        "match": {"manner": ["stop", "affricate", "fricative"], "voiced": true}, "where": "word_final", "to": {"voiced": false}, "weight": 2},
+    {"name": "velar palatalization",   "match": {"manner": "stop", "place": "velar"}, "where": "before_front_vowel", "to": {"place": "palatal", "manner": "affricate"}, "weight": 2.5},
+    {"name": "assibilation",           "match": {"manner": "stop", "place": "alveolar"}, "where": "before_high_front_vowel", "to": {"manner": "affricate"}, "weight": 1.5},
+    {"name": "spirantization",         "match": {"manner": "stop", "voiced": false, "place": ["labial", "alveolar", "velar"]}, "where": "anywhere", "to": {"manner": "fricative"}, "weight": 0.8},
+    {"name": "debuccalization of s",   "match": {"manner": "fricative", "place": "alveolar", "voiced": false}, "where": "anywhere", "to": {"place": "glottal"}, "weight": 1},
+    {"name": "f becomes h",            "match": {"manner": "fricative", "place": "labial", "voiced": false}, "where": "anywhere", "to": {"place": "glottal"}, "weight": 1},
+    {"name": "loss of h",              "match": {"manner": "fricative", "place": "glottal"}, "where": "anywhere", "delete": true, "weight": 1.2},
+    {"name": "loss of final stops",    "match": {"manner": "stop"}, "where": "word_final", "delete": true, "weight": 1.5},
+    {"name": "loss of final vowels",   "match": {"kind": "vowel"}, "where": "word_final", "delete": true, "weight": 1},
+    {"name": "cluster simplification", "match": {"kind": "consonant", "manner": ["stop", "fricative", "affricate"]}, "where": "before_consonant", "delete": true, "weight": 1.5},
+    {"name": "final vowel epenthesis", "match": {"kind": "consonant"}, "where": "word_final", "insert_after": "u", "weight": 0.6},
+    {"name": "mid vowel raising",      "match": {"kind": "vowel", "height": "mid", "backness": ["front", "back"]}, "where": "anywhere", "to": {"height": "high"}, "weight": 1},
+    {"name": "vowel centralization",   "match": {"kind": "vowel", "height": "mid"}, "where": "word_final", "to": {"backness": "central"}, "weight": 0.8},
+    {"name": "fronting of u",          "match": {"kind": "vowel", "height": "high", "backness": "back"}, "where": "before_front_vowel", "to": {"backness": "front"}, "weight": 0.5},
+    {"name": "w becomes v",            "match": {"manner": "glide", "place": "labial"}, "where": "anywhere", "to": {"manner": "fricative"}, "weight": 1},
+    {"name": "y becomes j",            "match": {"manner": "glide", "place": "palatal"}, "where": "word_initial", "to": {"manner": "affricate"}, "weight": 0.8},
+    {"name": "rhotacism",              "match": {"manner": "fricative", "place": "alveolar", "voiced": true}, "where": "between_vowels", "to": {"manner": "rhotic"}, "weight": 1},
+    {"name": "l becomes r",            "match": {"manner": "lateral"}, "where": "anywhere", "to": {"manner": "rhotic"}, "weight": 0.7},
+    {"name": "r becomes l",            "match": {"manner": "rhotic"}, "where": "anywhere", "to": {"manner": "lateral"}, "weight": 0.7},
+    {"name": "deaffrication",          "match": {"manner": "affricate"}, "where": "anywhere", "to": {"manner": "fricative"}, "weight": 1},
+    {"name": "nasal assimilation",     "match": {"manner": "nasal", "place": "alveolar"}, "where": "before_velar", "to": {"place": "velar"}, "weight": 1},
+    {"name": "palatal nasal merger",   "match": {"manner": "nasal", "place": "palatal"}, "where": "anywhere", "to": {"place": "alveolar"}, "weight": 0.6},
+    {"name": "glottal stop loss",      "match": {"manner": "stop", "place": "glottal"}, "where": "anywhere", "delete": true, "weight": 0.8},
+    {"name": "uvular merger",          "match": {"manner": "stop", "place": "uvular"}, "where": "anywhere", "to": {"place": "velar"}, "weight": 0.8},
+    {"name": "fortition of initial w", "match": {"manner": "glide", "place": "labial"}, "where": "word_initial", "to": {"manner": "stop"}, "weight": 0.5}
+  ],
+
+  // Core vocabulary: the meanings every language has a word for (a
+  // Swadesh-style list). `stability` (0-1) is how resistant the meaning is
+  // to being replaced by a new word; numbers and pronouns are the most
+  // stable (Pagel et al. 2007). `syllables` is the usual length of a new
+  // word. Words for `people`, `land` and `river` are used for names.
+  "concepts": [
+    {"id": "i",        "stability": 0.95, "syllables": [1, 1]},
+    {"id": "you",      "stability": 0.93, "syllables": [1, 1]},
+    {"id": "we",       "stability": 0.90, "syllables": [1, 2]},
+    {"id": "who",      "stability": 0.85, "syllables": [1, 2]},
+    {"id": "what",     "stability": 0.85, "syllables": [1, 2]},
+    {"id": "not",      "stability": 0.75, "syllables": [1, 1]},
+    {"id": "one",      "stability": 0.92, "syllables": [1, 2]},
+    {"id": "two",      "stability": 0.95, "syllables": [1, 2]},
+    {"id": "three",    "stability": 0.94, "syllables": [1, 2]},
+    {"id": "many",     "stability": 0.50, "syllables": [2, 3]},
+    {"id": "big",      "stability": 0.45, "syllables": [1, 2]},
+    {"id": "small",    "stability": 0.40, "syllables": [2, 3]},
+    {"id": "people",   "stability": 0.55, "syllables": [2, 3]},
+    {"id": "woman",    "stability": 0.60, "syllables": [2, 3]},
+    {"id": "man",      "stability": 0.55, "syllables": [1, 2]},
+    {"id": "child",    "stability": 0.55, "syllables": [2, 3]},
+    {"id": "mother",   "stability": 0.80, "syllables": [1, 2]},
+    {"id": "father",   "stability": 0.75, "syllables": [1, 2]},
+    {"id": "name",     "stability": 0.85, "syllables": [1, 2]},
+    {"id": "fish",     "stability": 0.65, "syllables": [1, 2]},
+    {"id": "bird",     "stability": 0.45, "syllables": [2, 3]},
+    {"id": "dog",      "stability": 0.40, "syllables": [1, 2]},
+    {"id": "louse",    "stability": 0.75, "syllables": [1, 2]},
+    {"id": "tree",     "stability": 0.60, "syllables": [1, 2]},
+    {"id": "seed",     "stability": 0.50, "syllables": [1, 2]},
+    {"id": "leaf",     "stability": 0.55, "syllables": [2, 2]},
+    {"id": "root",     "stability": 0.50, "syllables": [1, 2]},
+    {"id": "meat",     "stability": 0.45, "syllables": [1, 2]},
+    {"id": "blood",    "stability": 0.75, "syllables": [1, 2]},
+    {"id": "bone",     "stability": 0.70, "syllables": [1, 2]},
+    {"id": "egg",      "stability": 0.65, "syllables": [1, 2]},
+    {"id": "horn",     "stability": 0.65, "syllables": [1, 2]},
+    {"id": "hair",     "stability": 0.50, "syllables": [1, 2]},
+    {"id": "head",     "stability": 0.55, "syllables": [1, 2]},
+    {"id": "ear",      "stability": 0.75, "syllables": [1, 2]},
+    {"id": "eye",      "stability": 0.85, "syllables": [1, 2]},
+    {"id": "nose",     "stability": 0.75, "syllables": [1, 2]},
+    {"id": "mouth",    "stability": 0.50, "syllables": [1, 2]},
+    {"id": "tooth",    "stability": 0.75, "syllables": [1, 2]},
+    {"id": "tongue",   "stability": 0.80, "syllables": [1, 2]},
+    {"id": "hand",     "stability": 0.65, "syllables": [1, 2]},
+    {"id": "foot",     "stability": 0.60, "syllables": [1, 2]},
+    {"id": "heart",    "stability": 0.75, "syllables": [1, 2]},
+    {"id": "eat",      "stability": 0.65, "syllables": [1, 2]},
+    {"id": "drink",    "stability": 0.75, "syllables": [1, 2]},
+    {"id": "see",      "stability": 0.55, "syllables": [1, 2]},
+    {"id": "hear",     "stability": 0.75, "syllables": [1, 2]},
+    {"id": "sleep",    "stability": 0.60, "syllables": [1, 2]},
+    {"id": "die",      "stability": 0.75, "syllables": [1, 2]},
+    {"id": "kill",     "stability": 0.50, "syllables": [1, 2]},
+    {"id": "walk",     "stability": 0.40, "syllables": [1, 2]},
+    {"id": "come",     "stability": 0.75, "syllables": [1, 2]},
+    {"id": "give",     "stability": 0.70, "syllables": [1, 2]},
+    {"id": "say",      "stability": 0.50, "syllables": [1, 2]},
+    {"id": "sun",      "stability": 0.75, "syllables": [1, 2]},
+    {"id": "moon",     "stability": 0.75, "syllables": [1, 2]},
+    {"id": "star",     "stability": 0.75, "syllables": [1, 2]},
+    {"id": "water",    "stability": 0.80, "syllables": [1, 2]},
+    {"id": "rain",     "stability": 0.55, "syllables": [1, 2]},
+    {"id": "stone",    "stability": 0.65, "syllables": [1, 2]},
+    {"id": "earth",    "stability": 0.45, "syllables": [1, 2]},
+    {"id": "cloud",    "stability": 0.40, "syllables": [2, 2]},
+    {"id": "smoke",    "stability": 0.50, "syllables": [1, 2]},
+    {"id": "fire",     "stability": 0.75, "syllables": [1, 2]},
+    {"id": "ash",      "stability": 0.50, "syllables": [1, 2]},
+    {"id": "path",     "stability": 0.45, "syllables": [1, 2]},
+    {"id": "mountain", "stability": 0.55, "syllables": [2, 3]},
+    {"id": "river",    "stability": 0.50, "syllables": [2, 3]},
+    {"id": "land",     "stability": 0.45, "syllables": [1, 2]},
+    {"id": "night",    "stability": 0.75, "syllables": [1, 2]},
+    {"id": "red",      "stability": 0.65, "syllables": [1, 2]},
+    {"id": "white",    "stability": 0.60, "syllables": [1, 2]},
+    {"id": "black",    "stability": 0.55, "syllables": [1, 2]},
+    {"id": "cold",     "stability": 0.50, "syllables": [1, 2]},
+    {"id": "new",      "stability": 0.70, "syllables": [1, 2]}
+  ]
+}

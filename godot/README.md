@@ -1,9 +1,12 @@
 # histsim viewer (Godot 4)
 
-A simple interface for the simulation: a flat map or a globe with nine
-switchable map modes and legends, play/pause and speed controls, world charts
-of population vs. capacity and global temperature, and a hover inspector with
-the cell's age pyramid, and a god-mode panel for meddling with the world.
+A simple interface for the simulation: a flat map or a globe with switchable
+map modes and legends (terrain, biomes, climate, rivers, soils, wild species,
+population, languages, language families, cultures and more), play/pause and
+speed controls, world charts of population vs. capacity and global
+temperature, a hover inspector with the cell's age pyramid and its peoples
+(language, lineage, sample words, culture and its ways), and a god-mode panel
+for meddling with the world.
 
 The viewer is thin by design. All simulation and map rendering happen in C++:
 `extension/` builds a GDExtension that exposes one class, `HistSimWorld`,

@@ -46,6 +46,8 @@ godot viewer ── view ───┘                                   │
 | `simulation.hpp` | The Sim API: create, step, save, load, read state, hash. |
 | `systems/climate.hpp` | Climate (global energy balance, regional anomalies) and environment (yearly capacity, game). |
 | `systems/people.hpp` | Cohort demography, migration and the yearly history record. |
+| `language.hpp` | Languages as objects: proto-language generation, regular sound changes, word replacement, lexical similarity, names. |
+| `systems/culture.hpp` | Culture and dialect drift, contact, adaptation, language shift, assimilation, splits, extinctions; founding new peoples. |
 | `view/` (separate library) | Map modes, color scales, legends, pixel-to-cell rasterizing and PNG output. Display only: it reads state and never writes it, so the determinism rules do not apply to it. |
 | `godot/extension/` | GDExtension class `HistSimWorld`: the Sim API plus `view/`, exposed to GDScript. |
 
@@ -115,6 +117,28 @@ rounded operation) and rejects anything it cannot read exactly, so content
 never depends on the platform's `strtod`. The pack's hash goes into the world
 hash: a snapshot made with different content is refused.
 
+### Culture and language (M2)
+
+Culture and language are separate systems linked through cohorts: a cohort is
+keyed by (cell, culture, language) and carries its own copy of its culture's
+traits (`data/culture.json`, 0–1 each) and a dialect point (8 numbers).
+
+| Process | Model |
+| --- | --- |
+| Start | Each starting group is a people: a culture with traits suited to its land plus a random character, and a language family that has already been diversifying for 3,000–7,000 years. The proto-language splits again and again along the longest axis of its land until there is about one language per 300,000 km², so a run starts with ~500 languages in ~80 families. Extinct ancestors ("Proto-…") stay in the tree with negative founding and split ticks (years before the run). |
+| Traits | Each year: random drift, a pull toward the same culture in this and neighbouring cells, a weaker pull (stronger for open cultures) toward other cultures there, and adaptation toward a target set by the cell (crowding, aquatic foods, seasonality, growing season, game, wild plants). |
+| Dialects | Each year: random drift and a pull toward speakers of the same language nearby, so separated groups grow apart. Pull and drift are set per 50,000 km² and scaled by cell area, so levels 5 and 6 settle at similar numbers of languages. |
+| Newcomers | When cohorts merge (migrants arriving, people shifting), newcomers move the residents' traits and dialect by the square of their share: a few change little, a crowd nearly everything. |
+| Shift | In a cell with several languages, 3% a year times the gap in share move from a smaller language to the largest, keeping their culture; cultures assimilate the same way at 1.5%, keeping their language. Bands under 20 people or 10% of a cell are absorbed at once (M1). |
+| Splits | Every 20 years, a language whose farthest dialect is more than 0.5 from its average splits: everyone closer to that dialect than to the average forms a daughter language (both sides need 150 people). The daughter starts as a copy of its parent plus 300 years of change. Cultures split the same way on their traits (threshold 0.3). |
+| Language change | Per language per year: a regular sound law from `data/phonology.json` about every 350 years, applied to every word at once (so daughters show systematic correspondences); word replacement weighted by meaning stability, keeping ~85% of the 75-word core vocabulary per thousand years (glottochronology: 81–86%); rare grammar changes. Words carry cognate ids, so lexical similarity is the share of cognates. |
+| Names | A language is named by its word for "people" (or its land, river, mountains, or a new word in it) and is unique. A culture split gets a name coined in its main language. |
+| Extinction | A language or culture with no one left is marked extinct and logged. |
+
+At level 5 a run settles at about 580 languages (5 cells each) in ~70
+families, with splits and extinctions roughly balanced (about 100 of each per
+thousand years). `histsim languages` prints the family trees.
+
 ### Interventions
 
 `Simulation::apply(Command)` changes a running world: a volcanic eruption, a
@@ -178,6 +202,9 @@ A run must be bit-identical on every compiler, OS and CPU we support. The CI
   on different standard libraries. Give comparators a tie-break, or use
   `std::stable_sort`.
 - Sum conserved quantities (people, goods, money) as integers.
+- Floating-point sums and averages depend on the order of their terms. When
+  merging cohorts, `normalize_cohorts()` stable-sorts an index array, so
+  equal keys merge in the order they were added, on every platform.
 
 **When behavior changes on purpose**
 
@@ -199,7 +226,7 @@ generator can fill it without changing systems.
 | --- | --- | --- | --- |
 | M0 Foundations (done) | Grid, test-world generator, scheduler, RNG, snapshots, headless runner | Sim API, map viewer | Identical replays on Windows, Linux and macOS |
 | M1 Living planet (done) | Climate and environment systems, cohort demography, migration, foragers | Globe, climate and population map modes, pyramid, charts | Forager populations settle near carrying capacity (`m1_gate_populations_settle_near_capacity`) |
-| **M2 Neolithic** (in progress: world geography and content packs done) | Agriculture, herding, disease, culture and language drift, early tech | Culture and language map modes, language tree | Farming arises in several plausible regions |
+| **M2 Neolithic** (in progress: world geography, content packs, culture and language done) | Agriculture, herding, disease, culture and language drift, early tech | Culture and language map modes, language tree | Farming arises in several plausible regions |
 | M3 States and trade | Goods, markets, transport, polities, war, religion, notable agents, forced labor and the slave trade | Trade flows, inspectors, explain view, timeline | Polity sizes track Seshat ranges by era |
 | M4 Modern era | Energy, carbon cycle, demographic transition, Earth importer, procedural generator | God mode, branch comparison, modding tools | Full runs to the near future on Earth and generated worlds |
 
