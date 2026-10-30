@@ -36,9 +36,10 @@ godot viewer ── view ───┘                                   │
 | File | Role |
 | --- | --- |
 | `grid.hpp` | Geodesic grid as plain data: cell centers (unit vectors), areas, CCW neighbor lists. `make_icosahedral_grid(level)` builds it. |
-| `world.hpp` | Static world: terrain, baseline climate, starting forager groups, and the coarse climate grid with per-cell interpolation weights. `generate_test_world()` is the stand-in generator until M4. |
+| `world.hpp` | Static world: terrain, baseline climate and seasons, biomes, rivers, soils, wild species ranges, starting forager groups, and the coarse climate grid with per-cell interpolation weights. `generate_test_world()` is the stand-in generator until M4. |
 | `state.hpp` | Everything that changes during a run: cohorts, climate state, this year's environment, the ledger, the event log and yearly history. |
 | `src/state_io.hpp` | One `serialize()` walk over `SimState`, used for hashing, saving and loading, so all three always agree. |
+| `content.hpp`, `json.hpp` | Content packs: the JSON files in `data/`, compiled into the library, parsed and validated at startup. |
 | `rng.hpp` | Counter-based RNG: (seed, tick, stream, entity) is hashed with Philox4x32-10 into a start state, then draws come from SplitMix64. |
 | `portable_math.hpp` | `sin`, `cos`, `asin` and normal draws built from arithmetic only, identical on every platform. |
 | `scheduler.hpp` | Phases, the `System` interface, and the per-tick loop. |
@@ -83,7 +84,7 @@ deaths` holds exactly.
 | System | Model |
 | --- | --- |
 | Climate | One-box energy balance, C dT/dt = F - λT, with C = 8 W·yr·m⁻²·K⁻¹ and λ = 1.3 W·m⁻²·K⁻¹. Forcing: four Milankovitch terms (small in the global mean), solar wander, and volcanic eruptions (about one large eruption per 60 years, -1 to -4 W/m², clearing in about a year). Regional AR(1) temperature and rainfall anomalies on a 162-cell coarse grid, interpolated to every cell. |
-| Environment | Capacity = forager density for this year's temperature and rainfall × area × (0.4 + 0.6 × game). Game regrows logistically and is depleted when people exceed 60% of the climate's capacity. |
+| Environment | Capacity = forager density for this year's temperature and rainfall × area × (0.4 + 0.6 × game + aquatic bonus). Game regrows logistically and is depleted when people exceed 60% of the climate's capacity. |
 | Demography | Average hunter-gatherer life table (Siler fit, Gurven & Kaplan 2007: life expectancy 31 at birth, 38 more at 15) and a natural-fertility age pattern with total fertility 5.4 (Marlowe 2005), precomputed by `tools/vital_rates.py`. Fertility falls linearly to replacement (total fertility 4.4) as a cell reaches capacity; past capacity, famine raises mortality. Empty land grows about 0.7% a year. |
 | Migration | 0.5% of people a year explore; crowded cells send more (rising with crowding squared); a cell with no food empties. Each cohort's movers travel as one band to a neighbor picked by spare capacity over climbing cost. Young adults move most. Groups under 20 people or 10% of their cell join the cell's largest group. |
 | History | One row per year: population, cumulative births, deaths and migrants, inhabited cells, global temperature anomaly, total capacity. |
@@ -91,6 +92,28 @@ deaths` holds exactly.
 Typical behavior: a world starting at half capacity grows for two or three
 centuries, then holds near 90% of capacity, dipping after eruptions and in cold
 spells.
+
+### World geography (M2)
+
+`generate_test_world()` builds, in order:
+
+| Step | Model |
+| --- | --- |
+| Terrain | Fractal noise continents; sea level set so the requested share of cells is ocean. |
+| Temperature | Mean annual T = 27 − 30z² − 17z⁴ − 6.5 × altitude in km (z = sine of latitude). |
+| Rainfall | A zonal profile (wet equator, dry subtropics near 30°, wet westerlies, dry poles) scaled by moisture from upwind: each cell traces back along its prevailing wind (trades and polar easterlies from the east, westerlies from the west between 30° and 60°) and dries with the distance of land crossed. A ridge more than 800 m above the cell upwind casts a rain shadow; otherwise height lifts rain on the windward side. |
+| Seasons | Temperature range grows with latitude and continentality (land upwind); rain season is signed (−1 winter rain, Mediterranean; +1 summer rain, monsoon). Monthly values come from these, peaking in July in the north and January in the south. |
+| Biomes | Köppen-style classification from the twelve months: ice, tundra, boreal, temperate, warm temperate, Mediterranean, grassland, shrubland, desert, savanna, rainforest. Growing months = months with T ≥ 5 °C and rain ≥ 35% of potential evaporation. |
+| Rivers | Runoff = max(0, rain − 0.8 × potential evaporation). Priority-flood drainage (lakes and pits are filled) gives every land cell one downstream cell, and discharge and basin area accumulate downstream. A cell is a river when its basin is at least 150,000 km² and its flow at least 300 m³/s, so the network looks alike at every grid level. |
+| Soils | Base fertility by biome, lower on steep relief, plus alluvium on large rivers. |
+| Aquatic foods | Coasts and rivers add up to +80% foraging capacity (fish and shellfish, not depleted by hunting). |
+| Wild species | Each species in `data/species.json` has trapezoid niches (coldest and warmest month, rainfall, rain season, elevation) and a river affinity. Suitability is their product. Homelands are picked from suitable cells (the best of 24 tries by spread, far apart from each other) and ranges spread from them up to `range_km`. Stored as a 32-bit presence mask and an abundance byte per cell. |
+
+Content packs are plain JSON with `//` comments. The reader parses numbers
+exactly (decimal digits up to 15 and powers of ten up to 22, a single correctly
+rounded operation) and rejects anything it cannot read exactly, so content
+never depends on the platform's `strtod`. The pack's hash goes into the world
+hash: a snapshot made with different content is refused.
 
 ### Interventions
 
@@ -176,7 +199,7 @@ generator can fill it without changing systems.
 | --- | --- | --- | --- |
 | M0 Foundations (done) | Grid, test-world generator, scheduler, RNG, snapshots, headless runner | Sim API, map viewer | Identical replays on Windows, Linux and macOS |
 | M1 Living planet (done) | Climate and environment systems, cohort demography, migration, foragers | Globe, climate and population map modes, pyramid, charts | Forager populations settle near carrying capacity (`m1_gate_populations_settle_near_capacity`) |
-| **M2 Neolithic** (next)  | Agriculture, herding, disease, culture and language drift, early tech | Culture and language map modes, language tree | Farming arises in several plausible regions |
+| **M2 Neolithic** (in progress: world geography and content packs done) | Agriculture, herding, disease, culture and language drift, early tech | Culture and language map modes, language tree | Farming arises in several plausible regions |
 | M3 States and trade | Goods, markets, transport, polities, war, religion, notable agents, forced labor and the slave trade | Trade flows, inspectors, explain view, timeline | Polity sizes track Seshat ranges by era |
 | M4 Modern era | Energy, carbon cycle, demographic transition, Earth importer, procedural generator | God mode, branch comparison, modding tools | Full runs to the near future on Earth and generated worlds |
 

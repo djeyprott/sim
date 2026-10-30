@@ -1,0 +1,186 @@
+// Wild species that people can gather, hunt and (from M2) domesticate.
+//
+// Each entry is an archetype of the wild ancestors of a domesticated crop or
+// animal. The niche describes where it thrives, as trapezoids
+// [min, best_from, best_to, max]: suitability is 0 outside min..max, 1 between
+// best_from and best_to, and linear in between.
+//
+//   coldest_month_c, warmest_month_c  mean temperature of those months, °C
+//   annual_precip_mm                  yearly rainfall, mm
+//   rain_season                       -1 = all rain in winter (Mediterranean),
+//                                     0 = even, +1 = all rain in summer (monsoon)
+//   elevation_m                       metres above sea level
+//   river_affinity                    0-1: how much it depends on river floodplains
+//
+// Real species live in a few native regions, not everywhere the climate
+// suits them. Each world places `native_regions` homelands among suitable
+// land, at least `range_km` apart, and the species spreads up to `range_km`
+// from each through suitable country.
+//
+// domesticability (0-1) and food_value (relative calories per unit of effort)
+// are used by the farming systems in M2.
+{
+  "version": 1,
+  "species": [
+    {
+      "id": "wild_wheat_barley", "name": "Wild wheat and barley", "kind": "plant",
+      "food": "large-seeded annual grasses",
+      "coldest_month_c": [-2, 2, 10, 14], "warmest_month_c": [18, 22, 30, 34],
+      "annual_precip_mm": [200, 300, 700, 1000], "rain_season": [-1, -1, -0.2, 0.2],
+      "elevation_m": [-100, 0, 1800, 2600],
+      "native_regions": 1, "range_km": 1800, "domesticability": 0.9, "food_value": 1.0
+    },
+    {
+      "id": "wild_rice", "name": "Wild rice", "kind": "plant",
+      "food": "wetland grass seeds",
+      "coldest_month_c": [10, 15, 26, 28], "warmest_month_c": [23, 26, 33, 36],
+      "annual_precip_mm": [900, 1300, 2600, 3500], "rain_season": [-0.1, 0.3, 1, 1],
+      "elevation_m": [-100, 0, 800, 1500], "river_affinity": 0.7,
+      "native_regions": 2, "range_km": 2500, "domesticability": 0.8, "food_value": 1.0
+    },
+    {
+      "id": "wild_millets", "name": "Wild millets", "kind": "plant",
+      "food": "small-seeded summer grasses",
+      "coldest_month_c": [-16, -9, 2, 6], "warmest_month_c": [19, 22, 30, 33],
+      "annual_precip_mm": [250, 350, 800, 1100], "rain_season": [0, 0.3, 1, 1],
+      "elevation_m": [-100, 0, 1500, 2500],
+      "native_regions": 1, "range_km": 2000, "domesticability": 0.8, "food_value": 0.9
+    },
+    {
+      "id": "teosinte", "name": "Teosinte (wild maize)", "kind": "plant",
+      "food": "hard-cased grass seeds; slow to domesticate",
+      "coldest_month_c": [10, 14, 22, 25], "warmest_month_c": [19, 22, 30, 33],
+      "annual_precip_mm": [500, 700, 1500, 2000], "rain_season": [0, 0.4, 1, 1],
+      "elevation_m": [0, 400, 2200, 2800],
+      "native_regions": 1, "range_km": 1200, "domesticability": 0.4, "food_value": 1.0
+    },
+    {
+      "id": "wild_sorghum", "name": "Wild sorghum and African millets", "kind": "plant",
+      "food": "drought-hardy summer grasses",
+      "coldest_month_c": [12, 17, 28, 30], "warmest_month_c": [25, 28, 36, 40],
+      "annual_precip_mm": [200, 350, 900, 1300], "rain_season": [0.2, 0.5, 1, 1],
+      "elevation_m": [-100, 0, 1500, 2200],
+      "native_regions": 1, "range_km": 2500, "domesticability": 0.7, "food_value": 0.9
+    },
+    {
+      "id": "wild_yams_taro", "name": "Wild yams and taro", "kind": "plant",
+      "food": "tropical tubers and corms",
+      "coldest_month_c": [16, 20, 28, 30], "warmest_month_c": [22, 25, 32, 35],
+      "annual_precip_mm": [1000, 1500, 4000, 5000], "rain_season": [-0.4, -0.1, 0.6, 0.9],
+      "elevation_m": [-100, 0, 1500, 2500],
+      "native_regions": 2, "range_km": 2500, "domesticability": 0.7, "food_value": 0.8
+    },
+    {
+      "id": "highland_tubers", "name": "Wild potatoes and highland tubers", "kind": "plant",
+      "food": "cool-climate tubers",
+      "coldest_month_c": [-2, 3, 12, 16], "warmest_month_c": [7, 10, 18, 22],
+      "annual_precip_mm": [300, 500, 1200, 1600], "rain_season": [-0.3, 0.2, 1, 1],
+      "elevation_m": [1200, 2200, 4200, 4800],
+      "native_regions": 1, "range_km": 1500, "domesticability": 0.6, "food_value": 0.9
+    },
+    {
+      "id": "wild_legumes", "name": "Wild legumes", "kind": "plant",
+      "food": "lentils, peas and beans",
+      "coldest_month_c": [-8, 0, 15, 20], "warmest_month_c": [18, 22, 32, 36],
+      "annual_precip_mm": [250, 400, 1200, 1800], "rain_season": [-1, -0.8, 0.6, 0.9],
+      "elevation_m": [-100, 0, 2000, 3000],
+      "native_regions": 3, "range_km": 2000, "domesticability": 0.8, "food_value": 0.7
+    },
+    {
+      "id": "wild_squash", "name": "Wild squash and gourds", "kind": "plant",
+      "food": "fleshy fruits and seeds",
+      "coldest_month_c": [5, 12, 24, 28], "warmest_month_c": [22, 25, 34, 37],
+      "annual_precip_mm": [300, 500, 1500, 2200], "rain_season": [-0.5, 0, 1, 1],
+      "elevation_m": [-100, 0, 2000, 2800],
+      "native_regions": 2, "range_km": 2000, "domesticability": 0.7, "food_value": 0.5
+    },
+    {
+      "id": "wild_fruit_trees", "name": "Wild fruit trees", "kind": "plant",
+      "food": "olives, figs, dates and grapes",
+      "coldest_month_c": [-3, 4, 14, 20], "warmest_month_c": [22, 25, 34, 38],
+      "annual_precip_mm": [100, 250, 800, 1200], "rain_season": [-1, -0.9, 0.2, 0.6],
+      "elevation_m": [-100, 0, 1200, 2000],
+      "native_regions": 2, "range_km": 2000, "domesticability": 0.5, "food_value": 0.5
+    },
+    {
+      "id": "wild_sheep_goats", "name": "Wild sheep and goats", "kind": "animal",
+      "food": "meat, milk and wool",
+      "coldest_month_c": [-12, -5, 8, 14], "warmest_month_c": [15, 20, 32, 36],
+      "annual_precip_mm": [150, 250, 800, 1200], "rain_season": [-1, -0.8, 0.6, 0.9],
+      "elevation_m": [200, 600, 3000, 4500],
+      "native_regions": 1, "range_km": 2500, "domesticability": 0.9, "food_value": 0.8
+    },
+    {
+      "id": "aurochs", "name": "Wild cattle (aurochs)", "kind": "animal",
+      "food": "meat, milk and traction",
+      "coldest_month_c": [-15, -8, 14, 20], "warmest_month_c": [16, 20, 30, 34],
+      "annual_precip_mm": [300, 500, 1500, 2000], "rain_season": [-1, -1, 1, 1],
+      "elevation_m": [-100, 0, 1500, 2500],
+      "native_regions": 2, "range_km": 4000, "domesticability": 0.6, "food_value": 0.9
+    },
+    {
+      "id": "wild_boar", "name": "Wild boar", "kind": "animal",
+      "food": "meat",
+      "coldest_month_c": [-20, -10, 22, 26], "warmest_month_c": [14, 18, 32, 35],
+      "annual_precip_mm": [400, 600, 2500, 3500], "rain_season": [-1, -1, 1, 1],
+      "elevation_m": [-100, 0, 2000, 3000],
+      "native_regions": 3, "range_km": 4000, "domesticability": 0.8, "food_value": 0.7
+    },
+    {
+      "id": "wild_horses", "name": "Wild horses", "kind": "animal",
+      "food": "meat, milk and riding",
+      "coldest_month_c": [-30, -20, 0, 8], "warmest_month_c": [12, 16, 26, 30],
+      "annual_precip_mm": [150, 250, 600, 900], "rain_season": [-0.5, 0, 1, 1],
+      "elevation_m": [-100, 0, 2000, 3000],
+      "native_regions": 1, "range_km": 3500, "domesticability": 0.5, "food_value": 0.7
+    },
+    {
+      "id": "wild_camels", "name": "Wild camels", "kind": "animal",
+      "food": "meat, milk and desert transport",
+      "coldest_month_c": [0, 8, 22, 26], "warmest_month_c": [26, 30, 40, 45],
+      "annual_precip_mm": [20, 50, 300, 500], "rain_season": [-1, -1, 1, 1],
+      "elevation_m": [-100, 0, 1500, 2500],
+      "native_regions": 1, "range_km": 2500, "domesticability": 0.5, "food_value": 0.6
+    },
+    {
+      "id": "highland_camelids", "name": "Wild highland camelids", "kind": "animal",
+      "food": "meat, wool and pack animals",
+      "coldest_month_c": [-10, -4, 10, 15], "warmest_month_c": [5, 8, 18, 22],
+      "annual_precip_mm": [100, 200, 800, 1200], "rain_season": [-0.3, 0.2, 1, 1],
+      "elevation_m": [1800, 3000, 4600, 5200],
+      "native_regions": 1, "range_km": 1500, "domesticability": 0.6, "food_value": 0.6
+    },
+    {
+      "id": "junglefowl", "name": "Junglefowl", "kind": "animal",
+      "food": "eggs and meat",
+      "coldest_month_c": [12, 18, 28, 30], "warmest_month_c": [24, 26, 33, 36],
+      "annual_precip_mm": [800, 1200, 3500, 4500], "rain_season": [-0.2, 0.2, 1, 1],
+      "elevation_m": [-100, 0, 1500, 2200],
+      "native_regions": 1, "range_km": 2500, "domesticability": 0.8, "food_value": 0.3
+    },
+    {
+      "id": "reindeer", "name": "Wild reindeer", "kind": "animal",
+      "food": "meat, milk and hides",
+      "coldest_month_c": [-45, -35, -10, -2], "warmest_month_c": [4, 8, 16, 20],
+      "annual_precip_mm": [150, 250, 700, 1000], "rain_season": [-1, -1, 1, 1],
+      "elevation_m": [-100, 0, 1500, 2500],
+      "native_regions": 2, "range_km": 4000, "domesticability": 0.4, "food_value": 0.7
+    },
+    {
+      "id": "water_buffalo", "name": "Wild water buffalo", "kind": "animal",
+      "food": "meat, milk and traction in wet fields",
+      "coldest_month_c": [10, 15, 26, 30], "warmest_month_c": [25, 28, 34, 38],
+      "annual_precip_mm": [800, 1200, 3000, 4000], "rain_season": [0, 0.3, 1, 1],
+      "elevation_m": [-100, 0, 800, 1500], "river_affinity": 0.6,
+      "native_regions": 1, "range_km": 2500, "domesticability": 0.6, "food_value": 0.8
+    },
+    {
+      "id": "wolves", "name": "Wolves", "kind": "animal",
+      "food": "none; tamed as hunting and herding dogs",
+      "coldest_month_c": [-45, -30, 25, 30], "warmest_month_c": [5, 10, 34, 40],
+      "annual_precip_mm": [50, 150, 3000, 5000], "rain_season": [-1, -1, 1, 1],
+      "elevation_m": [-100, 0, 3500, 5000],
+      "native_regions": 4, "range_km": 8000, "domesticability": 0.9, "food_value": 0.0
+    }
+  ]
+}

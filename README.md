@@ -7,9 +7,11 @@ climate, all interacting so that history emerges rather than being scripted.
 The project has finished **milestone M1 (living planet)**: a deterministic
 simulation core on a geodesic world grid, with a changing climate, foraging
 capacity and game, and forager cohorts with age-sex pyramids that grow, die,
-migrate and settle near what the land can feed. A Godot viewer shows it as a
-map or globe with nine map modes, world charts and a cell inspector. Farming,
-culture and language change come next, in M2.
+migrate and settle near what the land can feed. M2 has begun: the world now
+has seasons, biomes, rivers, soils and the native ranges of wild plants and
+animals that farming will grow from. A Godot viewer shows it as a map or globe
+with fourteen map modes, world charts and a cell inspector. Culture, language
+change and farming come next.
 
 ## Download
 
@@ -76,7 +78,7 @@ began; the sim has no calendar years.
 | `cli/` | `histsim`, the headless runner for batch runs and CI. |
 | `tests/` | Unit, determinism and replay tests. |
 | `tools/` | Offline tools (Earth importer, procedural generator) — from M4. |
-| `data/` | Content packs (goods, techs, diseases) — from M2. |
+| `data/` | Content packs, compiled into the library: wild species now; crops, goods, techs and diseases later. |
 | `docs/` | [Architecture and determinism rules](docs/ARCHITECTURE.md). |
 
 The viewer talks to the core only through the Sim API in

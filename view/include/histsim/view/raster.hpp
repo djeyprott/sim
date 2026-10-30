@@ -36,6 +36,7 @@ private:
 
 struct RenderOptions {
     bool coastlines = true;  // dark line where land meets ocean
+    bool rivers = false;     // rivers drawn as blue lines, wider for more flow
     // Optional per-cell flags (size = cell count): flagged cells are lightened
     // and outlined, e.g. to preview the area an intervention will touch.
     const std::vector<std::uint8_t>* highlight = nullptr;

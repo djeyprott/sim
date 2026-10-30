@@ -58,10 +58,12 @@ public:
 
     // Map image. set_map_size rebuilds the pixel-to-cell lookup.
     void set_map_size(int64_t width, int64_t height);
-    godot::Ref<godot::Image> render_map(const godot::String& mode, bool coastlines);
+    godot::Ref<godot::Image> render_map(const godot::String& mode, bool coastlines, bool rivers = true);
     int64_t cell_at(int64_t x, int64_t y) const;
     // Array of [label, value] pairs (PackedStringArray each).
     godot::Array describe_cell(int64_t cell) const;
+    // Names of the wild species native to a cell.
+    godot::PackedStringArray get_native_species(int64_t cell) const;
     // {female, male}: PackedInt64Array of 21 five-year age bins each.
     godot::Dictionary get_cell_pyramid(int64_t cell) const;
 

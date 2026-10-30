@@ -39,7 +39,8 @@ godot --headless --path godot/project --script res://tests/smoke.gd
 | Input | Action |
 | --- | --- |
 | Space | Play / pause |
-| 1-9 | Switch map mode |
+| 1-9, 0 | Switch map mode (the rest are in the list) |
+| Rivers checkbox | Show / hide rivers (line width grows with flow) |
 | G | Toggle map / globe (drag to turn, scroll to zoom) |
 | . (period) | Step one year while paused |
 | F2 | Show / hide god mode |

@@ -213,7 +213,7 @@ void HistSimWorld::ensure_raster() {
     }
 }
 
-Ref<Image> HistSimWorld::render_map(const String& mode, bool coastlines) {
+Ref<Image> HistSimWorld::render_map(const String& mode, bool coastlines, bool rivers) {
     if (!sim_) {
         fail("no world to render");
         return Ref<Image>();
@@ -223,6 +223,7 @@ Ref<Image> HistSimWorld::render_map(const String& mode, bool coastlines) {
         histsim::view::color_cells(*sim_, to_std(mode), colors_);
         histsim::view::RenderOptions options;
         options.coastlines = coastlines;
+        options.rivers = rivers;
         if (highlight_on_ && highlight_.size() == sim_->world().cell_count()) {
             options.highlight = &highlight_;
         }
@@ -251,6 +252,15 @@ Array HistSimWorld::describe_cell(int64_t cell) const {
         pair.push_back(to_godot(f.label));
         pair.push_back(to_godot(f.value));
         out.push_back(pair);
+    }
+    return out;
+}
+
+PackedStringArray HistSimWorld::get_native_species(int64_t cell) const {
+    PackedStringArray out;
+    if (!sim_ || cell < 0) return out;
+    for (const std::string& name : histsim::view::native_species(*sim_, static_cast<histsim::CellId>(cell))) {
+        out.push_back(to_godot(name));
     }
     return out;
 }
@@ -368,7 +378,9 @@ void HistSimWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_modes"), &HistSimWorld::get_modes);
     ClassDB::bind_method(D_METHOD("get_legend", "mode"), &HistSimWorld::get_legend);
     ClassDB::bind_method(D_METHOD("set_map_size", "width", "height"), &HistSimWorld::set_map_size);
-    ClassDB::bind_method(D_METHOD("render_map", "mode", "coastlines"), &HistSimWorld::render_map);
+    ClassDB::bind_method(D_METHOD("render_map", "mode", "coastlines", "rivers"), &HistSimWorld::render_map,
+                         DEFVAL(true));
+    ClassDB::bind_method(D_METHOD("get_native_species", "cell"), &HistSimWorld::get_native_species);
     ClassDB::bind_method(D_METHOD("cell_at", "x", "y"), &HistSimWorld::cell_at);
     ClassDB::bind_method(D_METHOD("describe_cell", "cell"), &HistSimWorld::describe_cell);
 }

@@ -43,6 +43,8 @@ var actual_speed_label: Label
 var seed_spin: SpinBox
 var level_option: OptionButton
 var coastline_check: CheckBox
+var river_check: CheckBox
+var species_label: Label
 var mode_buttons := {}
 var legend_title: Label
 var legend_bar: TextureRect
@@ -132,7 +134,7 @@ func _process(delta: float) -> void:
 
 
 func _render_map() -> void:
-	var image: Image = world.render_map(mode_id, coastline_check.button_pressed)
+	var image: Image = world.render_map(mode_id, coastline_check.button_pressed, river_check.button_pressed)
 	if image == null:
 		status_label.text = "Map render failed: " + world.get_last_error()
 		return
@@ -216,9 +218,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	var key: int = event.keycode
 	if key == KEY_SPACE:
 		_set_playing(not playing)
-	elif key >= KEY_1 and key <= KEY_9:
+	elif (key >= KEY_1 and key <= KEY_9) or key == KEY_0:
 		var modes: Array = world.get_modes()
-		var index := key - KEY_1
+		var index := 9 if key == KEY_0 else key - KEY_1
 		if index < modes.size():
 			_set_mode(modes[index]["id"])
 	elif key == KEY_PERIOD and not playing:
@@ -387,7 +389,11 @@ func _update_legend() -> void:
 	var legend: Dictionary = world.get_legend(mode_id)
 	legend_title.text = legend.get("title", "")
 	var ramp: Array = legend.get("ramp", [])
+	legend_bar.visible = ramp.size() >= 2
+	legend_ticks.visible = ramp.size() >= 2
 
+	if ramp.size() < 2:
+		ramp = [{"label": "", "color": Color.BLACK}, {"label": "", "color": Color.BLACK}]
 	var gradient := Gradient.new()
 	var offsets := PackedFloat32Array()
 	var colors := PackedColorArray()
@@ -442,6 +448,9 @@ func _show_cell(cell: int) -> void:
 		var value := Label.new()
 		value.text = pair[1]
 		cell_grid.add_child(value)
+	var native: PackedStringArray = world.get_native_species(cell)
+	species_label.visible = native.size() > 0
+	species_label.text = "Wild species: " + ", ".join(native)
 	var p: Dictionary = world.get_cell_pyramid(cell)
 	var people := 0
 	for n in p["female"]:
@@ -458,6 +467,8 @@ func _clear_cell_info() -> void:
 		cell_grid.remove_child(child)
 		child.queue_free()
 	cell_hint.visible = true
+	if species_label != null:
+		species_label.visible = false
 	if pyramid != null:
 		pyramid.visible = false
 
@@ -692,7 +703,7 @@ func _build_side_panel() -> Control:
 	var number := 1
 	for mode in modes:
 		var button := Button.new()
-		button.text = "%d  %s" % [number, mode["name"]]
+		button.text = ("%d  %s" % [number % 10, mode["name"]]) if number <= 10 else ("    " + mode["name"])
 		button.tooltip_text = mode["description"]
 		button.toggle_mode = true
 		button.button_group = group
@@ -701,7 +712,7 @@ func _build_side_panel() -> Control:
 		button.pressed.connect(_set_mode.bind(mode["id"]))
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.clip_text = true
-		button.add_theme_font_size_override("font_size", 13)
+		button.add_theme_font_size_override("font_size", 12)
 		mode_grid.add_child(button)
 		mode_buttons[mode["id"]] = button
 		number += 1
@@ -712,7 +723,16 @@ func _build_side_panel() -> Control:
 	coastline_check.toggled.connect(func(_on: bool) -> void:
 		map_dirty = true
 		render_cooldown = 0.0)
-	panel.add_child(coastline_check)
+	river_check = CheckBox.new()
+	river_check.text = "Rivers"
+	river_check.button_pressed = true
+	river_check.toggled.connect(func(_on: bool) -> void:
+		map_dirty = true
+		render_cooldown = 0.0)
+	var overlays := HBoxContainer.new()
+	overlays.add_child(coastline_check)
+	overlays.add_child(river_check)
+	panel.add_child(overlays)
 
 	panel.add_child(HSeparator.new())
 	legend_title = Label.new()
@@ -737,9 +757,15 @@ func _build_side_panel() -> Control:
 	cell_grid.columns = 2
 	cell_grid.add_theme_constant_override("h_separation", 12)
 	panel.add_child(cell_grid)
+	species_label = Label.new()
+	species_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	species_label.add_theme_font_size_override("font_size", 12)
+	species_label.custom_minimum_size.x = 300
+	species_label.visible = false
+	panel.add_child(species_label)
 
 	panel.add_child(HSeparator.new())
-	var keys := _label("Space play/pause  ·  1-9 map modes  ·  . step a year  ·  G globe  ·  F2 god mode  ·  F5/F9 quicksave/load")
+	var keys := _label("Space play/pause  ·  1-9, 0 map modes  ·  . step a year  ·  G globe  ·  F2 god mode  ·  F5/F9 quicksave/load")
 	keys.add_theme_font_size_override("font_size", 11)
 	keys.add_theme_color_override("font_color", Color(0.54, 0.53, 0.51))
 	keys.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

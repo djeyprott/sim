@@ -82,12 +82,14 @@ func _check_api() -> void:
 		_expect(image != null and image.get_width() == 256 and image.get_height() == 128,
 			"render_map(%s) returns a 256x128 image" % mode["id"])
 		var legend: Dictionary = w.get_legend(mode["id"])
-		_expect(legend.has("title") and legend["ramp"].size() >= 2, "legend for " + mode["id"])
+		_expect(legend.has("title") and (legend["ramp"].size() >= 2 or legend["swatches"].size() >= 3),
+			"legend for " + mode["id"])
 
 	var cell: int = w.cell_at(128, 64)
 	_expect(cell >= 0, "cell_at inside the map")
 	_expect(w.cell_at(-5, 0) == -1, "cell_at outside the map")
 	_expect(w.describe_cell(cell).size() >= 4, "describe_cell lists fields")
+	_expect(w.render_map("biome", true, false) != null, "render without rivers")
 	var h: Dictionary = w.get_history(100)
 	_expect(h["year"].size() == 50 and h["population"].size() == 50, "history has one row per year")
 	_expect(w.get_capacity() > 0.0, "capacity")

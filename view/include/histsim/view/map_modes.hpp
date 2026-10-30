@@ -60,6 +60,9 @@ struct CellField {
 };
 std::vector<CellField> describe_cell(const Simulation& sim, CellId cell);
 
+// Names of the wild species native to a cell.
+std::vector<std::string> native_species(const Simulation& sim, CellId cell);
+
 // Neutral colors shared by modes and overlays.
 Rgba ocean_neutral();
 Rgba coastline_color();

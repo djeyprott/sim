@@ -72,7 +72,7 @@ TEST(view_every_mode_colors_every_cell_and_has_a_legend) {
         CHECK(distinct.size() > 5);  // a mode that paints one flat color is broken
         const Legend l = legend(mode.id);
         CHECK(!l.title.empty());
-        CHECK(l.ramp.size() >= 2);
+        CHECK(l.ramp.size() >= 2 || l.swatches.size() >= 3);  // continuous or categorical
     }
     bool threw = false;
     try {

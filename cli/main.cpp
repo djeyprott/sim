@@ -47,6 +47,7 @@ struct Options {
     std::string out = "map";
     int width = 2048;
     bool coastlines = true;
+    bool rivers = true;
     // --at YEAR:ACTION:...: interventions, applied when the run reaches YEAR
     std::vector<std::pair<std::int64_t, std::string>> at;
 };
@@ -62,10 +63,10 @@ struct Options {
                  "  histsim resume FILE [--years Y] [--report-every Y] [--save FILE] [--hash-only]\n"
                  "  histsim world  [--seed N] [--level L] [--ocean F]\n"
                  "  histsim map    [--seed N] [--level L] [--ocean F] [--years Y] [--mode M|all]\n"
-                 "                 [--width W] [--out PREFIX] [--no-coastlines]\n"
-                 "                 writes PREFIX-<mode>.png; modes: terrain temperature\n"
-                 "                 temp_anomaly rainfall capacity game population crowding\n"
-                 "                 median_age\n"
+                 "                 [--width W] [--out PREFIX] [--no-coastlines] [--no-rivers]\n"
+                 "                 writes PREFIX-<mode>.png; modes: terrain biome population\n"
+                 "                 crowding temperature rainfall rain_season growing soil\n"
+                 "                 species capacity game temp_anomaly median_age\n"
                  "  histsim --version\n"
                  "\n"
                  "run, resume and map accept interventions, applied when the run reaches YEAR\n"
@@ -122,6 +123,7 @@ Options parse(const std::vector<std::string_view>& args, std::size_t first) {
         else if (a == "--out") o.out = std::string(value());
         else if (a == "--width") o.width = static_cast<int>(parse_int(value()));
         else if (a == "--no-coastlines") o.coastlines = false;
+        else if (a == "--no-rivers") o.rivers = false;
         else if (a == "--at") {
             const std::string spec(value());
             const auto colon = spec.find(':');
@@ -311,6 +313,7 @@ int map_images(const Options& o) {
     std::vector<std::uint8_t> rgba;
     histsim::view::RenderOptions ro;
     ro.coastlines = o.coastlines;
+    ro.rivers = o.rivers;
     for (const auto& id : modes) {
         histsim::view::color_cells(sim, id, colors);
         histsim::view::render(raster, sim.world(), colors, rgba, ro);

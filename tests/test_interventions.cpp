@@ -4,6 +4,7 @@
 #include <filesystem>
 
 #include "histsim/simulation.hpp"
+#include "histsim/systems/climate.hpp"
 #include "testing.hpp"
 
 using namespace histsim;
@@ -156,9 +157,14 @@ TEST(intervention_set_game_changes_capacity_now) {
     Simulation sim = small_sim();
     const CellId c = busiest_cell(sim);
     const double before = sim.state().env.capacity[c];
+    const double game_before = sim.state().env.game[c];
     CHECK(sim.apply(cmd(CommandType::SetGame, c, 0, 0.05)).ok);
     CHECK_NEAR(sim.state().env.game[c], 0.05, 1e-12);
-    CHECK(sim.state().env.capacity[c] < 0.6 * before);
+    // Capacity is recomputed at once; only the game share drops (fish and
+    // plants stay), so the loss is the game share times the land foods.
+    CHECK_NEAR(sim.state().env.capacity[c], environment_capacity(sim.world(), sim.state(), c), 1e-9);
+    CHECK(game_before > 0.3);
+    CHECK(sim.state().env.capacity[c] < before - 1e-6);
 }
 
 TEST(intervention_regional_drought_lasts_its_years) {

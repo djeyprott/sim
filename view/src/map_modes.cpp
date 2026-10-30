@@ -49,12 +49,61 @@ const ColorScale& rainfall_scale() {
 }
 const ColorScale& capacity_scale() {
     static const ColorScale s({{0, hex("#e3f4ec")},
-                               {0.05, hex("#9cdcc3")},
-                               {0.10, hex("#1baf7a")},
-                               {0.15, hex("#147e58")},
-                               {0.20, hex("#0b4a33")}});
+                               {0.075, hex("#9cdcc3")},
+                               {0.15, hex("#1baf7a")},
+                               {0.225, hex("#147e58")},
+                               {0.30, hex("#0b4a33")}});
     return s;
 }
+const ColorScale& rain_season_scale() {  // winter rain (violet) - even (gray) - summer rain (green)
+    static const ColorScale s({{-0.8, hex("#4a3aa7")},
+                               {-0.4, hex("#9587e6")},
+                               {0, hex("#f0efec")},
+                               {0.4, hex("#6fbf73")},
+                               {0.8, hex("#1f6b3a")}});
+    return s;
+}
+const ColorScale& growing_scale() {  // olive green, light to dark
+    static const ColorScale s({{0, hex("#f2f1e4")},
+                               {3, hex("#d6dca0")},
+                               {6, hex("#a3b85a")},
+                               {9, hex("#6a8a2c")},
+                               {12, hex("#36531a")}});
+    return s;
+}
+const ColorScale& soil_scale() {  // brown, light to dark
+    static const ColorScale s({{0, hex("#f5ede2")},
+                               {0.25, hex("#e0c39d")},
+                               {0.5, hex("#c1915b")},
+                               {0.75, hex("#8f5f33")},
+                               {1.0, hex("#5a3818")}});
+    return s;
+}
+const ColorScale& species_scale() {  // teal, light to dark
+    static const ColorScale s({{0, hex("#eef7f6")},
+                               {2, hex("#b6e1dc")},
+                               {4, hex("#6cbcb3")},
+                               {6, hex("#2f8a82")},
+                               {8, hex("#0f5753")}});
+    return s;
+}
+
+// Conventional biome colors: forests green, grasslands yellow-green,
+// drylands tan, ice white. Indexed by Biome.
+const std::array<Rgba, static_cast<std::size_t>(Biome::Count)> kBiomeColors = {
+    hex("#cfcec8"),  // Ocean (neutral)
+    hex("#eef3f6"),  // Ice sheet
+    hex("#b7c4b4"),  // Tundra
+    hex("#4f7a5a"),  // Boreal forest
+    hex("#3f8f4a"),  // Temperate forest
+    hex("#78b158"),  // Warm temperate forest
+    hex("#8f8a3a"),  // Mediterranean woodland
+    hex("#d8d27a"),  // Temperate grassland
+    hex("#d4a35a"),  // Dry shrubland
+    hex("#efe1b5"),  // Desert
+    hex("#b6c95a"),  // Tropical savanna
+    hex("#1f6b3a"),  // Tropical rainforest
+};
 const ColorScale& density_scale() {
     // Log scale: forager densities sit around 0.01-0.2 per km^2; farming and
     // cities will need the scale extended upward.
@@ -100,17 +149,29 @@ const ColorScale& age_scale() {  // magenta, light to dark
     return s;
 }
 
+// Order matters: keys 1-9 and 0 select the first ten.
 const std::vector<MapModeInfo> kModes = {
     {"terrain", "Terrain", "Elevation above and below sea level"},
-    {"temperature", "Temperature", "This year's mean temperature"},
-    {"temp_anomaly", "Temp. anomaly", "This year's temperature minus the long-run baseline"},
-    {"rainfall", "Rainfall", "This year's precipitation on land"},
-    {"capacity", "Forager capacity", "People per square km the land can feed by foraging this year"},
-    {"game", "Game", "Wild food abundance relative to undisturbed land"},
+    {"biome", "Biome", "Vegetation zone from the climate of each month"},
     {"population", "Population", "People per square km"},
     {"crowding", "Crowding", "Population relative to what the land can feed"},
+    {"temperature", "Temperature", "This year's mean temperature"},
+    {"rainfall", "Rainfall", "This year's precipitation on land"},
+    {"rain_season", "Rain season", "Whether rain falls in summer, in winter or all year"},
+    {"growing", "Growing season", "Months warm and wet enough for plants to grow"},
+    {"soil", "Soil", "Soil fertility"},
+    {"species", "Wild species", "Number of native wild species that could later be domesticated"},
+    {"capacity", "Forager capacity", "People per square km the land can feed by foraging this year"},
+    {"game", "Game", "Wild food abundance relative to undisturbed land"},
+    {"temp_anomaly", "Temp. anomaly", "This year's temperature minus the long-run baseline"},
     {"median_age", "Median age", "Median age of the people living in each cell"},
 };
+
+int species_count(std::uint32_t mask) {
+    int n = 0;
+    for (; mask != 0; mask &= mask - 1) ++n;
+    return n;
+}
 
 std::string fmt(const char* format, double v) {
     char buf[64];
@@ -210,8 +271,18 @@ void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rg
             out[c] = temperature_scale()(s.env.temperature_c[c]);
         } else if (id == "temp_anomaly") {
             out[c] = anomaly_scale()(s.env.temperature_c[c] - w.temperature_c[c]);
+        } else if (id == "biome") {
+            out[c] = kBiomeColors[w.biome[c]];
         } else if (!land) {
             out[c] = kOceanNeutral;  // remaining modes are land-only
+        } else if (id == "rain_season") {
+            out[c] = rain_season_scale()(w.rain_season[c]);
+        } else if (id == "growing") {
+            out[c] = growing_scale()(static_cast<double>(w.growing_months[c]));
+        } else if (id == "soil") {
+            out[c] = soil_scale()(w.soil_fertility[c]);
+        } else if (id == "species") {
+            out[c] = species_scale()(static_cast<double>(species_count(w.species_mask[c])));
         } else if (id == "rainfall") {
             out[c] = rainfall_scale()(s.env.precipitation_mm[c]);
         } else if (id == "capacity") {
@@ -239,6 +310,31 @@ Legend legend(std::string_view mode_id) {
         const auto land = ramp_entries(terrain_land(), "%.0f");
         l.ramp.insert(l.ramp.end(), land.begin(), land.end());
         l.swatches = {{"Ice (below -10 °C this year)", kIce}};
+    } else if (id == "biome") {
+        l.title = "Biome";
+        for (std::size_t b = 1; b < kBiomeColors.size(); ++b) {
+            l.swatches.push_back({biome_name(static_cast<Biome>(b)), kBiomeColors[b]});
+        }
+    } else if (id == "rain_season") {
+        l.title = "When the rain falls";
+        l.ramp = {{"Winter", rain_season_scale()(-0.8)}, {"", rain_season_scale()(-0.4)},
+                  {"All year", rain_season_scale()(0)}, {"", rain_season_scale()(0.4)},
+                  {"Summer", rain_season_scale()(0.8)}};
+        l.swatches = ocean;
+    } else if (id == "growing") {
+        l.title = "Growing season (months)";
+        l.ramp = ramp_entries(growing_scale(), "%.0f");
+        l.swatches = ocean;
+    } else if (id == "soil") {
+        l.title = "Soil fertility";
+        l.ramp = {{"Poor", soil_scale()(0)}, {"", soil_scale()(0.25)}, {"", soil_scale()(0.5)},
+                  {"", soil_scale()(0.75)}, {"Rich", soil_scale()(1.0)}};
+        l.swatches = ocean;
+    } else if (id == "species") {
+        l.title = "Native wild species that could be domesticated";
+        l.ramp = ramp_entries(species_scale(), "%.0f");
+        l.ramp.back().label = "8+";
+        l.swatches = ocean;
     } else if (id == "temperature") {
         l.title = "Mean temperature this year (°C)";
         l.ramp = ramp_entries(temperature_scale(), "%.0f");
@@ -295,6 +391,17 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
     f.push_back({"Temperature", fmt("%.1f °C", s.env.temperature_c[c]) + fmt(" (%+.1f)", anomaly)});
     if (!land) return f;
 
+    f.push_back({"Biome", biome_name(static_cast<Biome>(w.biome[c]))});
+    f.push_back({"Seasons", fmt("coldest month %.0f °C", w.coldest_month_c(c)) +
+                                fmt(", warmest %.0f °C", w.warmest_month_c(c))});
+    const double rs = w.rain_season[c];
+    f.push_back({"Rain season", rs > 0.35 ? "Summer rain" : (rs < -0.35 ? "Winter rain (Mediterranean)" : "Rain all year")});
+    f.push_back({"Growing season", with_commas(static_cast<long long>(w.growing_months[c])) + " months"});
+    f.push_back({"Soil", fmt("%.0f%% fertility", 100.0 * w.soil_fertility[c])});
+    if (is_river(w, c)) {
+        f.push_back({"River", with_commas(std::llround(w.discharge_m3s[c])) + " m³/s"});
+    }
+
     f.push_back({"Rainfall", with_commas(std::llround(s.env.precipitation_mm[c])) + " mm" +
                                  fmt(" (%+.0f%%)", 100.0 * (s.env.precipitation_mm[c] / std::max(1.0, w.precipitation_mm[c]) - 1.0))});
     f.push_back({"Game", fmt("%.0f%%", 100.0 * s.env.game[c])});
@@ -324,6 +431,17 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
     f.push_back({"Groups", with_commas(static_cast<long long>(groups.size())) + " (largest: group " +
                                with_commas(static_cast<long long>(main_group)) + ")"});
     return f;
+}
+
+std::vector<std::string> native_species(const Simulation& sim, CellId c) {
+    std::vector<std::string> out;
+    const World& w = sim.world();
+    if (c >= w.cell_count()) return out;
+    const auto& species = default_content().species;
+    for (std::size_t s = 0; s < species.size() && s < 32; ++s) {
+        if (w.species_mask[c] & (1u << s)) out.push_back(species[s].name);
+    }
+    return out;
 }
 
 }  // namespace histsim::view

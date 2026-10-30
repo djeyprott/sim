@@ -11,3 +11,6 @@
   tests/test_simulation.cpp and mention it in the commit message.
 - Systems are stateless; all changing data goes in SimState and must be saved
   in snapshots (bump kSnapshotVersion when the layout changes) and hashed.
+- Content lives in data/*.json and is compiled in; it is part of the world
+  hash, so changing it changes the golden hash too. Number values must be
+  exactly readable (≤15 significant digits).

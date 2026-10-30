@@ -5,6 +5,8 @@
 
 #include "histsim/view/map_modes.hpp"
 
+#include <algorithm>
+
 namespace histsim::view {
 
 namespace {
@@ -30,6 +32,59 @@ CellId nearest_from(const Grid& grid, CellId start, const Vec3& p) {
             return best;
         }
         best = next;
+    }
+}
+
+// Pixel position of a cell center on the equirectangular map (display math).
+void cell_pixel(const World& world, CellId c, int w, int h, double& x, double& y) {
+    const Vec3& p = world.grid.center(c);
+    const double lon = std::atan2(p.y, p.x) * 180.0 / kPi;
+    const double lat = std::asin(std::clamp(p.z, -1.0, 1.0)) * 180.0 / kPi;
+    x = (lon + 180.0) / 360.0 * w - 0.5;
+    y = (90.0 - lat) / 180.0 * h - 0.5;
+}
+
+void plot(std::vector<std::uint8_t>& rgba, int w, int h, int x, int y, const Rgba& c) {
+    if (y < 0 || y >= h) return;
+    x = ((x % w) + w) % w;
+    std::uint8_t* px = &rgba[(static_cast<std::size_t>(y) * w + x) * 4];
+    px[0] = c.r;
+    px[1] = c.g;
+    px[2] = c.b;
+    px[3] = c.a;
+}
+
+// A thick line by stamping squares along it.
+void line(std::vector<std::uint8_t>& rgba, int w, int h, double x0, double y0, double x1, double y1, int width,
+          const Rgba& c) {
+    const double len = std::max(std::fabs(x1 - x0), std::fabs(y1 - y0));
+    const int steps = std::max(1, static_cast<int>(std::ceil(len)));
+    const int r0 = -(width - 1) / 2, r1 = width / 2;
+    for (int i = 0; i <= steps; ++i) {
+        const double t = static_cast<double>(i) / steps;
+        const int x = static_cast<int>(std::lround(x0 + (x1 - x0) * t));
+        const int y = static_cast<int>(std::lround(y0 + (y1 - y0) * t));
+        for (int dy = r0; dy <= r1; ++dy) {
+            for (int dx = r0; dx <= r1; ++dx) plot(rgba, w, h, x + dx, y + dy, c);
+        }
+    }
+}
+
+void draw_rivers(const World& world, int w, int h, std::vector<std::uint8_t>& rgba) {
+    const Rgba blue = hex("#2a78d6");
+    const double scale = static_cast<double>(w) / 2048.0;
+    for (CellId c = 0; c < world.cell_count(); ++c) {
+        if (!is_river(world, c)) continue;
+        const CellId d = world.downstream[c];
+        if (d == kInvalidCell) continue;
+        double x0, y0, x1, y1;
+        cell_pixel(world, c, w, h, x0, y0);
+        cell_pixel(world, d, w, h, x1, y1);
+        if (std::fabs(x1 - x0) > 0.5 * w) continue;  // crosses the date line
+        const double q = world.discharge_m3s[c];
+        const int base = q < 3000.0 ? 1 : (q < 15000.0 ? 2 : 3);
+        const int width = std::max(1, static_cast<int>(std::lround(base * scale)));
+        line(rgba, w, h, x0, y0, x1, y1, width, blue);
     }
 }
 
@@ -110,6 +165,9 @@ void render(const MapRaster& raster, const World& world, const std::vector<Rgba>
             px[2] = color.b;
             px[3] = color.a;
         }
+    }
+    if (options.rivers) {
+        draw_rivers(world, w, h, rgba);
     }
 }
 

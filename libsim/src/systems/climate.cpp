@@ -102,10 +102,11 @@ void ClimateSystem::step(StepContext& ctx) {
 
 double environment_capacity(const World& w, const SimState& s, CellId c) {
     if (!w.is_land[c]) return 0.0;
-    const double climate_capacity =
-        forager_density(s.env.temperature_c[c], s.env.precipitation_mm[c]) * w.grid.area_km2(c);
+    // Land foods (plants and game) for this year's climate, plus fish and
+    // shellfish from coasts and rivers, which hunting does not deplete.
+    const double land = forager_density(s.env.temperature_c[c], s.env.precipitation_mm[c]) * w.grid.area_km2(c);
     constexpr double kShare = EnvironmentSystem::kGameShareOfCapacity;
-    return climate_capacity * ((1.0 - kShare) + kShare * s.env.game[c]);
+    return land * ((1.0 - kShare) + kShare * s.env.game[c] + w.aquatic_bonus[c]);
 }
 
 void EnvironmentSystem::step(StepContext& ctx) {
@@ -116,8 +117,8 @@ void EnvironmentSystem::step(StepContext& ctx) {
             s.env.capacity[c] = 0.0;
             continue;
         }
-        const double climate_capacity =
-            forager_density(s.env.temperature_c[c], s.env.precipitation_mm[c]) * w.grid.area_km2(c);
+        const double climate_capacity = forager_density(s.env.temperature_c[c], s.env.precipitation_mm[c]) *
+                                        w.grid.area_km2(c) * (1.0 + w.aquatic_bonus[c]);
         const double crowding =
             climate_capacity > 0.0 ? static_cast<double>(s.cell_population[c]) / climate_capacity : 0.0;
         double& g = s.env.game[c];
