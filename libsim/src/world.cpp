@@ -378,8 +378,9 @@ void build_trade_edges(World& w) {
         std::sort(coasts.begin(), coasts.end());
         for (CellId b : coasts) add(c, b, kTradeSea, 1.2 * w.grid.distance_km(c, b));
     }
-    // Merge links found both overland and by sea.
-    std::sort(edges.begin(), edges.end(), [](const World::TradeEdge& x, const World::TradeEdge& y) {
+    // Merge links found both overland and by sea; the overland one (found
+    // first, kept first by the stable sort) gives the length.
+    std::stable_sort(edges.begin(), edges.end(), [](const World::TradeEdge& x, const World::TradeEdge& y) {
         return x.a != y.a ? x.a < y.a : x.b < y.b;
     });
     w.trade_edges.clear();
