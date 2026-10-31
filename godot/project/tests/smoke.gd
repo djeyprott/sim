@@ -27,6 +27,10 @@ func _initialize() -> void:
 		main = null
 		return
 	root.add_child(main)
+	# The headless window is tiny: give the viewer a real size so layout and
+	# input can be checked.
+	main.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	main.size = Vector2(1600, 900)
 
 
 func _process(_delta: float) -> bool:
@@ -74,11 +78,74 @@ func _process(_delta: float) -> bool:
 		var back: Rect2 = main.map_rect.get_global_rect()
 		if back != map_rect_short:
 			failures.append("map moved when the inspector shrank: %s -> %s" % [map_rect_short, back])
-	if frames == 48:
+		_check_selection_and_zoom()
+		main._set_view(true)
+	if frames == 49:  # once the globe has been laid out
+		_check_globe_drag()
+		main._set_view(false)
+	if frames == 51:
 		_check_scene()
 		_finish(failures)
 		return true
 	return false
+
+
+# Clicking keeps a cell in the inspector while the mouse moves on; clicking
+# it again lets go. The flat map zooms about the cursor and resets.
+func _check_selection_and_zoom() -> void:
+	main.god_panel.set_tool("inspect")
+	var kept := _populated_cell()
+	var other := _ocean_cell()
+	main._on_cell_clicked(kept)
+	main._on_cell_hovered(other)
+	if main.selected_cell != kept or main._inspected_cell() != kept:
+		failures.append("a clicked cell is not kept in the inspector")
+	if main.cell_grid.get_child_count() < 2 or main.cell_grid.get_child(1).text != main._commas(kept):
+		failures.append("the inspector does not show the kept cell")
+	main._on_cell_clicked(kept)
+	if main.selected_cell != -1 or main._inspected_cell() != other:
+		failures.append("clicking the kept cell again does not let it go")
+	var at: Vector2 = main.map_view.size * 0.5 + Vector2(37, 21)
+	var before: int = main._cell_under(at)
+	main._zoom_map(2.0, at)
+	if absf(main.map_zoom - 2.0) > 1e-6 or main._cell_under(at) != before:
+		failures.append("zooming the map moves the cell under the cursor (%d -> %d)" % [before, main._cell_under(at)])
+	main._zoom_map(100.0, at)
+	if main.map_zoom > main.MAX_ZOOM:
+		failures.append("map zoom is not capped")
+	var r: Rect2 = Rect2(main.map_rect.position, main.map_rect.size)
+	if r.position.x > 0.0 or r.position.y > 0.0 or r.end.x < main.map_view.size.x or r.end.y < main.map_view.size.y:
+		failures.append("the zoomed map does not cover the view: %s" % r)
+	main._reset_map_view()
+	if main.map_zoom != 1.0:
+		failures.append("Home does not reset the map zoom")
+
+
+# Dragging the globe keeps the grabbed point under the cursor.
+func _check_globe_drag() -> void:
+	var g: GlobeView = main.globe
+	var start: Vector2 = g.size * 0.5 + Vector2(-20, 10)
+	var grabbed: Vector2i = g.pixel_at(start)
+	var press := InputEventMouseButton.new()
+	press.button_index = MOUSE_BUTTON_LEFT
+	press.pressed = true
+	press.position = start
+	g._gui_input(press)
+	var to := start
+	for step in 6:  # several small moves, as a real drag sends
+		var motion := InputEventMouseMotion.new()
+		motion.relative = Vector2(14, -9)
+		to += motion.relative
+		motion.position = to
+		g._gui_input(motion)
+	var release := InputEventMouseButton.new()
+	release.button_index = MOUSE_BUTTON_LEFT
+	release.pressed = false
+	release.position = to
+	g._gui_input(release)
+	var now: Vector2i = g.pixel_at(to)
+	if grabbed.x < 0 or absi(now.x - grabbed.x) > 3 or absi(now.y - grabbed.y) > 3:
+		failures.append("globe drag lost the grabbed point: %s -> %s" % [grabbed, now])
 
 
 func _check_api() -> void:

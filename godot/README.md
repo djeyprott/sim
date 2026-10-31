@@ -7,7 +7,7 @@ domesticates, disease, technology, polities, realms, war, towns, trade and
 resources, and
 more), overlays for coastlines, rivers, polity borders and trade routes, play/pause and
 speed controls, world charts of population vs. capacity and global
-temperature, a hover inspector with the cell's age pyramid and its peoples
+temperature, a cell inspector (hover to look, click to keep) with the cell's age pyramid and its peoples
 (language, lineage, sample words, culture and its ways, farming, crops and
 animals, domestication under way, techniques, diseases, deposits, what is on
 its market, its trade and trade route, its ruler's overlord, subjects, allies
@@ -51,13 +51,17 @@ godot --headless --path godot/project --script res://tests/smoke.gd
 | 1-9, 0 | Switch map mode (the rest are in the list) |
 | Rivers checkbox | Show / hide rivers (line width grows with flow) |
 | Borders checkbox | Show / hide the borders of chiefdoms and states |
-| G | Toggle map / globe (drag to turn, scroll to zoom) |
+| Trade routes checkbox | Show / hide the busiest trade routes |
+| Scroll, drag (map) | Zoom in and out around the cursor, pan when zoomed in |
+| Home | Zoom the map back out to the whole world |
+| G | Toggle map / globe (drag to turn, the grabbed point stays under the cursor; scroll to zoom) |
 | . (period) | Step one year while paused |
 | F2 | Show / hide god mode |
 | Click (god mode) | Apply the selected tool where you click (map or globe) |
-| Esc | Back to inspect-only |
+| Esc | Back to inspect-only; then let go of the kept cell |
 | F5 / F9 | Quicksave / quickload |
-| Hover | Inspect a cell |
+| Hover | Show a cell in the inspector |
+| Click | Keep that cell in the inspector (outlined) so the panel can be scrolled; click it again to let go |
 | New world / Random seed | Generate a new planet |
 
 ## God mode

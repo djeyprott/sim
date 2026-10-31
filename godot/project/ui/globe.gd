@@ -3,6 +3,11 @@ extends SubViewportContainer
 ## The map wrapped on a sphere. Drag to turn it, scroll to zoom. Emits
 ## `pixel_hovered` with the map pixel under the mouse (or (-1, -1)), so the
 ## viewer can look up the cell exactly as it does on the flat map.
+##
+## Dragging keeps the point grabbed under the cursor: the globe turns about
+## its own axis (yaw) and tilts toward the viewer (pitch), with north always
+## up, so the turn is solved exactly for the point rather than guessed from
+## how far the mouse moved.
 
 signal pixel_hovered(pixel: Vector2i)
 ## A click (press and release without dragging) on the globe.
@@ -18,7 +23,10 @@ var _yaw := 0.0
 var _pitch := 0.35
 var _distance := 3.2
 var _dragging := false
+var _moved := false  # the press has moved far enough to be a drag, not a click
 var _press_position := Vector2.ZERO
+var _grab := Vector3.ZERO  # the grabbed point, on the unit sphere, in globe coordinates
+var _has_grab := false
 
 
 func _ready() -> void:
@@ -56,7 +64,8 @@ func set_texture(texture: Texture2D) -> void:
 
 
 func _update_camera() -> void:
-	_pivot.rotation = Vector3(_pitch, _yaw, 0.0)
+	# Turn about the globe's own axis first, then tilt: north stays up.
+	_pivot.basis = Basis(Vector3.RIGHT, _pitch) * Basis(Vector3.UP, _yaw)
 	_camera.position = Vector3(0, 0, _distance)
 	_camera.look_at(Vector3.ZERO)
 
@@ -67,7 +76,12 @@ func _gui_input(event: InputEvent) -> void:
 			_dragging = event.pressed
 			if event.pressed:
 				_press_position = event.position
-			elif event.position.distance_to(_press_position) < 5.0:
+				_moved = false
+				var hit := _sphere_hit(event.position)
+				_has_grab = hit.size() > 0
+				if _has_grab:
+					_grab = _pivot.global_transform.basis.inverse() * hit[0]
+			elif not _moved:
 				var pixel := pixel_at(event.position)
 				if pixel.x >= 0:
 					pixel_clicked.emit(pixel)
@@ -79,29 +93,80 @@ func _gui_input(event: InputEvent) -> void:
 			_update_camera()
 	elif event is InputEventMouseMotion:
 		if _dragging:
-			_yaw += event.relative.x * 0.006
-			_pitch = clampf(_pitch + event.relative.y * 0.006, -1.4, 1.4)
-			_update_camera()
+			if event.position.distance_to(_press_position) >= 5.0:
+				_moved = true
+			_drag_to(event.position, event.relative)
 		pixel_hovered.emit(pixel_at(event.position))
+
+
+# Turn the globe so the grabbed point sits under `local`. Off the globe (or
+# when the press missed it) fall back to turning by the distance moved, at
+# the rate the globe's surface moves on screen at this zoom.
+func _drag_to(local: Vector2, relative: Vector2) -> void:
+	var hit := _sphere_hit(local) if _has_grab else []
+	if hit.size() > 0 and _solve_grab(hit[0]):
+		_update_camera()
+		return
+	var rate := (_distance - 1.0) * tan(deg_to_rad(_camera.fov) * 0.5) * 2.0 / maxf(1.0, size.y)
+	_yaw += relative.x * rate
+	_pitch = clampf(_pitch + relative.y * rate, -1.4, 1.4)
+	_update_camera()
+	if _has_grab:  # grab again where the cursor is, if it is on the globe
+		var again := _sphere_hit(local)
+		if again.size() > 0:
+			_grab = _pivot.global_transform.basis.inverse() * again[0]
+
+
+# Find pitch and yaw that carry the grabbed point to world point `w`:
+# Rx(pitch) * Ry(yaw) * grab = w. Rx keeps the height after Ry, so pitch
+# follows from matching heights, then yaw from the angle around the axis.
+func _solve_grab(w: Vector3) -> bool:
+	var r := sqrt(w.y * w.y + w.z * w.z)
+	if r < 1e-6:
+		return false
+	var c := clampf(_grab.y / r, -1.0, 1.0)
+	var phi := atan2(w.z, w.y)
+	var best := INF
+	var pitch := _pitch
+	for candidate in [phi + acos(c), phi - acos(c)]:
+		var p: float = wrapf(candidate, -PI, PI)
+		if absf(p) > 1.4:
+			continue
+		if absf(p - _pitch) < best:
+			best = absf(p - _pitch)
+			pitch = p
+	if best == INF:
+		return false
+	# Undo the tilt, then read the turn about the axis.
+	var untilted := Basis(Vector3.RIGHT, -pitch) * w
+	_pitch = pitch
+	_yaw = atan2(untilted.x, untilted.z) - atan2(_grab.x, _grab.z)
+	return true
+
+
+# The world point on the globe under a point in this control: [] if none.
+func _sphere_hit(local: Vector2) -> Array:
+	if size.x <= 0.0 or size.y <= 0.0:
+		return []
+	var p := local * (Vector2(_viewport.size) / size)
+	var origin := _camera.project_ray_origin(p)
+	var dir := _camera.project_ray_normal(p)
+	var b := origin.dot(dir)
+	var c := origin.dot(origin) - 1.0
+	var disc := b * b - c
+	if disc < 0.0:
+		return []
+	return [origin + dir * (-b - sqrt(disc))]
 
 
 # Map pixel under a point in this control, or (-1, -1) off the globe.
 # SphereMesh lays its texture out with u along the angle atan2(x, z) and v
 # from the top (+y, north) to the bottom, matching the flat map.
 func pixel_at(local: Vector2) -> Vector2i:
-	var scale_factor := Vector2(_viewport.size) / size
-	var p := local * scale_factor
-	var origin := _camera.project_ray_origin(p)
-	var dir := _camera.project_ray_normal(p)
-	# Ray-sphere intersection with the unit sphere at the origin.
-	var b := origin.dot(dir)
-	var c := origin.dot(origin) - 1.0
-	var disc := b * b - c
-	if disc < 0.0:
+	var hits := _sphere_hit(local)
+	if hits.is_empty():
 		return Vector2i(-1, -1)
-	var t := -b - sqrt(disc)
-	var hit := origin + dir * t
-	var local_hit := _pivot.global_transform.affine_inverse() * hit
+	var local_hit: Vector3 = _pivot.global_transform.affine_inverse() * hits[0]
 	var u := atan2(local_hit.x, local_hit.z) / TAU
 	if u < 0.0:
 		u += 1.0

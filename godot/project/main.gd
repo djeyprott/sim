@@ -1,7 +1,11 @@
 extends Control
 ## histsim viewer: a flat map or globe with switchable map modes, a legend,
-## playback controls, world charts, a hover inspector with an age pyramid, and
+## playback controls, world charts, a cell inspector with an age pyramid, and
 ## a god-mode panel for meddling with the world.
+##
+## Hovering shows a cell in the inspector; clicking keeps it there (so the
+## panel can be scrolled) until it is clicked again or Esc is pressed. The flat
+## map zooms with the wheel around the cursor and pans by dragging.
 ##
 ## All simulation and map rendering happens in C++ (the HistSimWorld class from
 ## the histsim GDExtension). This script only lays out the UI and forwards input.
@@ -19,6 +23,9 @@ const SIDE_PANEL_WIDTH := 360
 const CELL_KEY_WIDTH := 118  # fits the longest inspector key
 const CHART_POINTS := 400
 const QUICKSAVE_PATH := "user://quicksave.hsim"
+const MAX_ZOOM := 16.0
+const ZOOM_STEP := 1.25
+const DRAG_THRESHOLD := 5.0  # pixels a press may move and still count as a click
 
 var world: Object  # HistSimWorld; untyped so a missing extension gives a clear message
 var mode_id := "terrain"
@@ -28,6 +35,12 @@ var years_due := 0.0
 var map_dirty := true
 var render_cooldown := 0.0
 var hover_cell := -1
+var selected_cell := -1  # the cell kept in the inspector by a click (-1 none)
+var map_zoom := 1.0
+var map_offset := Vector2.ZERO  # top-left of the map image within the map view
+var map_press := Vector2.ZERO
+var map_pressed := false
+var map_dragging := false
 var map_texture: ImageTexture
 var rate_years := 0  # years simulated since the last speed sample
 var rate_time := 0.0
@@ -37,6 +50,7 @@ var showing_globe := false
 var highlight_cell := -1  # cell the god-mode preview outline is centred on
 
 # UI nodes
+var map_view: Control  # clips the zoomed map
 var map_rect: TextureRect
 var year_label: Label
 var population_label: Label
@@ -96,6 +110,7 @@ func _new_world() -> void:
 func _after_world_change() -> void:
 	years_due = 0.0
 	hover_cell = -1
+	selected_cell = -1
 	highlight_cell = -1
 	world.set_highlight(-1, 0.0)
 	god_panel.show_forcing(world.get_imposed_forcing())
@@ -149,14 +164,15 @@ func _render_map() -> void:
 		map_texture = ImageTexture.create_from_image(image)
 		map_rect.texture = map_texture
 		globe.set_texture(map_texture)
+		_layout_map()
 	else:
 		map_texture.update(image)
 	map_dirty = false
 	render_cooldown = RENDER_INTERVAL
 	if mode_id in DYNAMIC_LEGENDS:
 		_update_legend()  # lists the largest groups, which change as the run goes on
-	if hover_cell >= 0:
-		_show_cell(hover_cell)
+	if _inspected_cell() >= 0:
+		_show_cell(_inspected_cell())
 
 
 func _update_summary() -> void:
@@ -199,11 +215,13 @@ func _to_floats(values: PackedInt64Array) -> PackedFloat64Array:
 func _set_view(globe_view: bool) -> void:
 	showing_globe = globe_view
 	globe.visible = globe_view
-	map_rect.visible = not globe_view
+	map_view.visible = not globe_view
+	if not globe_view:
+		_layout_map()
 	map_button.button_pressed = not globe_view
 	globe_button.button_pressed = globe_view
 	hover_cell = -1
-	_clear_cell_info()
+	_refresh_inspector()
 	_update_preview(-1)
 
 
@@ -251,8 +269,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		_quicksave()
 	elif key == KEY_F9:
 		_quickload()
-	elif key == KEY_ESCAPE and god_panel.visible:
+	elif key == KEY_ESCAPE and god_panel.visible and god_panel.current_tool() != "inspect":
 		god_panel.set_tool("inspect")
+	elif key == KEY_ESCAPE and selected_cell >= 0:
+		_select(-1)
+	elif key == KEY_HOME:
+		_reset_map_view()
 	else:
 		return
 	get_viewport().set_input_as_handled()
@@ -261,41 +283,127 @@ func _unhandled_input(event: InputEvent) -> void:
 func _on_map_input(event: InputEvent) -> void:
 	if world == null or map_texture == null:
 		return
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		var clicked := _cell_under(event.position)
-		if clicked >= 0:
-			_apply_tool(clicked)
+	if event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
+			_zoom_map(ZOOM_STEP, event.position)
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
+			_zoom_map(1.0 / ZOOM_STEP, event.position)
+		elif event.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT]:
+			if event.pressed:
+				map_pressed = true
+				map_dragging = false
+				map_press = event.position
+			else:
+				var was_click: bool = map_pressed and not map_dragging and event.button_index == MOUSE_BUTTON_LEFT
+				map_pressed = false
+				map_dragging = false
+				if was_click:
+					_on_cell_clicked(_cell_under(event.position))
 		return
 	if not (event is InputEventMouseMotion):
 		return
-	var cell := _cell_under(event.position)
-	if cell != hover_cell:
-		hover_cell = cell
-		if cell >= 0:
-			_show_cell(cell)
-		else:
-			_clear_cell_info()
-		_update_preview(cell)
+	if map_pressed:
+		if not map_dragging and event.position.distance_to(map_press) >= DRAG_THRESHOLD:
+			map_dragging = true
+		if map_dragging:
+			map_offset += event.relative
+			_layout_map()
+	_on_cell_hovered(_cell_under(event.position))
 
 
 func _on_globe_pixel(pixel: Vector2i) -> void:
 	if world == null or map_texture == null:
 		return
-	var cell: int = world.cell_at(pixel.x, pixel.y) if pixel.x >= 0 else -1
-	if cell != hover_cell:
-		hover_cell = cell
-		if cell >= 0:
-			_show_cell(cell)
-		else:
-			_clear_cell_info()
-		_update_preview(cell)
+	_on_cell_hovered(world.cell_at(pixel.x, pixel.y) if pixel.x >= 0 else -1)
 
 
 func _on_globe_click(pixel: Vector2i) -> void:
 	if world != null and map_texture != null:
-		var cell: int = world.cell_at(pixel.x, pixel.y)
-		if cell >= 0:
-			_apply_tool(cell)
+		_on_cell_clicked(world.cell_at(pixel.x, pixel.y))
+
+
+func _on_cell_hovered(cell: int) -> void:
+	if cell == hover_cell:
+		return
+	hover_cell = cell
+	if selected_cell < 0:
+		_refresh_inspector()
+	_update_preview(cell)
+
+
+# A click applies the god-mode tool if one is chosen; otherwise it keeps the
+# cell in the inspector (or lets it go if it was already kept).
+func _on_cell_clicked(cell: int) -> void:
+	if cell < 0:
+		return
+	if _god_tool_active():
+		_apply_tool(cell)
+	else:
+		_select(-1 if cell == selected_cell else cell)
+
+
+func _select(cell: int) -> void:
+	selected_cell = cell
+	_refresh_inspector()
+	highlight_cell = -2  # force the outline to move
+	_update_preview(hover_cell)
+
+
+# The cell the inspector shows: the kept one, else the one under the mouse.
+func _inspected_cell() -> int:
+	return selected_cell if selected_cell >= 0 else hover_cell
+
+
+func _refresh_inspector() -> void:
+	var cell := _inspected_cell()
+	if cell >= 0:
+		_show_cell(cell)
+	else:
+		_clear_cell_info()
+	cell_hint.text = ("Kept by a click: click it again or press Esc to let go." if selected_cell >= 0
+		else "Hover over the map to look at a cell; click to keep it here.")
+	cell_hint.visible = true
+
+
+# ---------------------------------------------------------------- flat map view
+
+# Size and place the map image in the view: fitted to it at zoom 1, larger
+# when zoomed, and never pulled away from the view's edges.
+func _layout_map() -> void:
+	if map_view == null or map_rect == null:
+		return
+	var view := map_view.size
+	var aspect := float(MAP_WIDTH) / float(MAP_HEIGHT)
+	var fit := Vector2(view.x, view.x / aspect)
+	if fit.y > view.y:
+		fit = Vector2(view.y * aspect, view.y)
+	var map_size := fit * map_zoom
+	for axis in 2:
+		if map_size[axis] <= view[axis]:
+			map_offset[axis] = (view[axis] - map_size[axis]) * 0.5
+		else:
+			map_offset[axis] = clampf(map_offset[axis], view[axis] - map_size[axis], 0.0)
+	map_rect.position = map_offset
+	map_rect.size = map_size
+
+
+# Zoom by a factor, keeping the map point under `at` (view coordinates) still.
+func _zoom_map(factor: float, at: Vector2) -> void:
+	var zoom := clampf(map_zoom * factor, 1.0, MAX_ZOOM)
+	if zoom == map_zoom:
+		return
+	if map_rect.size.x <= 0.0 or map_rect.size.y <= 0.0:
+		_layout_map()
+	var point := (at - map_offset) / map_rect.size  # 0-1 across the map
+	map_zoom = zoom
+	_layout_map()
+	map_offset = at - point * map_rect.size
+	_layout_map()
+
+
+func _reset_map_view() -> void:
+	map_zoom = 1.0
+	_layout_map()
 
 
 # ---------------------------------------------------------------- god mode
@@ -310,15 +418,17 @@ func _set_god_mode(on: bool) -> void:
 	_update_preview(hover_cell)
 
 
-# Outline the cells the current tool would touch around the hovered cell.
+# Outline the cells the current tool would touch around the hovered cell, or
+# else the cell kept in the inspector.
 func _update_preview(cell: int) -> void:
 	if world == null:
 		return
-	var target := cell if _god_tool_active() else -1
-	if target == highlight_cell and target < 0:
+	var tool := _god_tool_active()
+	var target := cell if tool else selected_cell
+	if target == highlight_cell and (target < 0 or not tool):
 		return
 	highlight_cell = target
-	world.set_highlight(target, god_panel.preview_radius())
+	world.set_highlight(target, god_panel.preview_radius() if tool else 0.0)
 	map_dirty = true
 	render_cooldown = 0.0
 
@@ -344,8 +454,7 @@ func _report(result: Dictionary) -> void:
 		render_cooldown = 0.0
 		chart_cooldown = 0.0
 		_update_summary()
-		if hover_cell >= 0:
-			_show_cell(hover_cell)
+		_refresh_inspector()
 
 
 func _quicksave() -> void:
@@ -380,20 +489,18 @@ func _quickload() -> void:
 
 
 func _on_map_mouse_exited() -> void:
-	hover_cell = -1
-	_clear_cell_info()
-	_update_preview(-1)
+	map_pressed = false
+	map_dragging = false
+	_on_cell_hovered(-1)
 
 
-# Map a point in the TextureRect to a map pixel, accounting for the
-# keep-aspect-centered scaling, then ask the extension which cell is there.
+# Map a point in the map view to a map pixel, accounting for zoom and pan,
+# then ask the extension which cell is there.
 func _cell_under(local: Vector2) -> int:
 	var tex_size := Vector2(MAP_WIDTH, MAP_HEIGHT)
-	var scale := minf(map_rect.size.x / tex_size.x, map_rect.size.y / tex_size.y)
-	if scale <= 0.0:
+	if map_rect.size.x <= 0.0 or map_rect.size.y <= 0.0:
 		return -1
-	var offset := (map_rect.size - tex_size * scale) * 0.5
-	var pixel := (local - offset) / scale
+	var pixel := (local - map_offset) / map_rect.size * tex_size
 	if pixel.x < 0 or pixel.y < 0 or pixel.x >= tex_size.x or pixel.y >= tex_size.y:
 		return -1
 	return world.cell_at(int(pixel.x), int(pixel.y))
@@ -530,6 +637,7 @@ func _build_ui() -> void:
 	var view_group := ButtonGroup.new()
 	map_button = Button.new()
 	map_button.text = "Map"
+	map_button.tooltip_text = "Scroll to zoom, drag to pan, Home to see it all. Click a cell to keep it in the inspector."
 	map_button.toggle_mode = true
 	map_button.button_group = view_group
 	map_button.button_pressed = true
@@ -537,7 +645,7 @@ func _build_ui() -> void:
 	view_bar.add_child(map_button)
 	globe_button = Button.new()
 	globe_button.text = "Globe"
-	globe_button.tooltip_text = "G. Drag to turn, scroll to zoom."
+	globe_button.tooltip_text = "G. Drag to turn, scroll to zoom. Click a cell to keep it in the inspector."
 	globe_button.toggle_mode = true
 	globe_button.button_group = view_group
 	globe_button.pressed.connect(_set_view.bind(true))
@@ -561,14 +669,20 @@ func _build_ui() -> void:
 	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	column.add_child(stack)
 
+	map_view = Control.new()
+	map_view.clip_contents = true
+	map_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	map_view.mouse_filter = Control.MOUSE_FILTER_STOP
+	map_view.gui_input.connect(_on_map_input)
+	map_view.mouse_exited.connect(_on_map_mouse_exited)
+	map_view.resized.connect(_layout_map)
+	stack.add_child(map_view)
 	map_rect = TextureRect.new()
 	map_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	map_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	map_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	map_rect.mouse_filter = Control.MOUSE_FILTER_STOP
-	map_rect.gui_input.connect(_on_map_input)
-	map_rect.mouse_exited.connect(_on_map_mouse_exited)
-	stack.add_child(map_rect)
+	map_rect.stretch_mode = TextureRect.STRETCH_SCALE
+	map_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	map_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	map_view.add_child(map_rect)
 
 	globe = GlobeView.new()
 	globe.map_size = Vector2i(MAP_WIDTH, MAP_HEIGHT)
@@ -610,7 +724,7 @@ func _build_ui() -> void:
 	var pyramid_box := VBoxContainer.new()
 	pyramid_box.custom_minimum_size = Vector2(300, 0)
 	var pyramid_title := Label.new()
-	pyramid_title.text = "Ages in the cell under the mouse"
+	pyramid_title.text = "Ages in the inspected cell"
 	pyramid_title.add_theme_font_size_override("font_size", 13)
 	pyramid_box.add_child(pyramid_title)
 	pyramid = PyramidChart.new()
@@ -789,7 +903,7 @@ func _build_side_panel() -> Control:
 
 	panel.add_child(HSeparator.new())
 	panel.add_child(_heading("Cell"))
-	cell_hint = _label("Hover over the map to inspect a cell.")
+	cell_hint = _label("Hover over the map to look at a cell; click to keep it here.")
 	cell_hint.add_theme_color_override("font_color", Color(0.54, 0.53, 0.51))
 	panel.add_child(cell_hint)
 	cell_grid = GridContainer.new()
