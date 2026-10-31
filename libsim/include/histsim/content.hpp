@@ -37,6 +37,8 @@ enum class SpeciesKind : std::uint8_t { Plant, Animal };
 struct SpeciesDef {
     std::string id;
     std::string name;
+    std::string domesticated;  // name of the domesticated form, e.g. "Wheat and barley"
+    bool domesticated_before_start = false;  // e.g. dogs: known where native from the start
     SpeciesKind kind = SpeciesKind::Plant;
     std::string food;
     Trapezoid coldest_month_c;
@@ -126,7 +128,16 @@ inline constexpr std::size_t kMaxConcepts = 128;
 // ---------------------------------------------------------------- culture
 
 // Circumstances that push culture traits (see data/culture.json).
-enum class CultureVar : std::uint8_t { Crowding, Aquatic, Seasonality, GrowingSeason, Game, WildPlants, Count };
+enum class CultureVar : std::uint8_t {
+    Crowding,
+    Aquatic,
+    Seasonality,
+    GrowingSeason,
+    Game,
+    WildPlants,
+    Farming,
+    Count
+};
 inline constexpr std::size_t kCultureVarCount = static_cast<std::size_t>(CultureVar::Count);
 
 struct CultureTrait {

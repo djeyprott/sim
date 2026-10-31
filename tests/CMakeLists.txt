@@ -1,6 +1,7 @@
 add_executable(histsim_tests
     main.cpp
     test_culture.cpp
+    test_farming.cpp
     test_geography.cpp
     test_grid.cpp
     test_interventions.cpp

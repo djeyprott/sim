@@ -17,34 +17,37 @@
 //   growing_season  months warm and wet enough for plants / 12
 //   game            abundance of game, relative to undisturbed land
 //   wild_plants     wild ancestors of crops native to the cell (4 or more = 1)
+//   farming         share of the people's food from crops and herds
 //
 // The pushes follow forager ethnography: storable aquatic foods go with
 // settled, ranked societies (the Pacific Northwest); strong seasons with
-// food storage and wide sharing; crowding with raiding and clans.
+// food storage and wide sharing; crowding with raiding and clans. Farming
+// settles people, makes them store, rank and hold land by lineage, and gives
+// more to fight over.
 {
   "version": 1,
   "traits": [
     {"id": "mobility", "name": "Mobility", "low": "settled", "high": "nomadic",
      "drift": 0.05, "adapt": 0.25, "base": 0.75,
-     "push": {"aquatic": -0.6, "seasonality": 0.15, "crowding": -0.2}},
+     "push": {"aquatic": -0.6, "seasonality": 0.15, "crowding": -0.2, "farming": -0.6}},
     {"id": "plant_reliance", "name": "Plant foods", "low": "hunting", "high": "gathering",
      "drift": 0.05, "adapt": 0.25, "base": 0.3,
-     "push": {"growing_season": 0.4, "wild_plants": 0.25, "game": -0.2, "seasonality": -0.2}},
+     "push": {"growing_season": 0.4, "wild_plants": 0.25, "game": -0.2, "seasonality": -0.2, "farming": 0.4}},
     {"id": "storage", "name": "Food storage", "low": "eat now", "high": "store",
      "drift": 0.04, "adapt": 0.2, "base": 0.2,
-     "push": {"seasonality": 0.5, "aquatic": 0.3, "crowding": 0.1}},
+     "push": {"seasonality": 0.5, "aquatic": 0.3, "crowding": 0.1, "farming": 0.4}},
     {"id": "sharing", "name": "Sharing", "low": "household", "high": "whole band",
      "drift": 0.05, "adapt": 0.15, "base": 0.75,
-     "push": {"crowding": -0.25, "aquatic": -0.2, "seasonality": 0.1}},
+     "push": {"crowding": -0.25, "aquatic": -0.2, "seasonality": 0.1, "farming": -0.2}},
     {"id": "hierarchy", "name": "Hierarchy", "low": "egalitarian", "high": "ranked",
      "drift": 0.04, "adapt": 0.15, "base": 0.15,
-     "push": {"aquatic": 0.45, "crowding": 0.25}},
+     "push": {"aquatic": 0.45, "crowding": 0.25, "farming": 0.25}},
     {"id": "kinship", "name": "Kinship", "low": "loose ties", "high": "strong clans",
      "drift": 0.05, "adapt": 0.1, "base": 0.45,
-     "push": {"crowding": 0.25, "aquatic": 0.15}},
+     "push": {"crowding": 0.25, "aquatic": 0.15, "farming": 0.2}},
     {"id": "warfare", "name": "Warfare", "low": "peaceful", "high": "raiding",
      "drift": 0.06, "adapt": 0.2, "base": 0.25,
-     "push": {"crowding": 0.45, "game": -0.15}},
+     "push": {"crowding": 0.45, "game": -0.15, "farming": 0.1}},
     {"id": "openness", "name": "Openness", "low": "closed", "high": "open to outsiders",
      "drift": 0.06, "adapt": 0.1, "base": 0.55,
      "push": {"seasonality": 0.15, "crowding": -0.2}},

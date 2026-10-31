@@ -167,10 +167,14 @@ func _update_charts() -> void:
 	var h: Dictionary = world.get_history(CHART_POINTS)
 	population_chart.set_data(h["year"], [
 		{"name": "Population", "values": _to_floats(h["population"]), "color": Color("#3987e5")},
+		{"name": "Farmers", "values": h["farmers"], "color": Color("#7fa33a")},
 		{"name": "Capacity", "values": h["capacity"], "color": Color("#898781"), "width": 1.0},
 	])
-	population_chart.markers = world.get_event_years("intervention")
+	var marks: PackedInt64Array = world.get_event_years("intervention")
+	marks.append_array(world.get_event_years("domestication"))
+	population_chart.markers = marks
 	climate_chart.markers = world.get_event_years("eruption")
+	climate_chart.spans = world.get_bond_spans()
 	climate_chart.set_data(h["year"], [
 		{"name": "Global", "values": h["anomaly"], "color": Color("#d95926")},
 	])
@@ -321,7 +325,8 @@ func _apply_tool(cell: int) -> void:
 
 
 func _on_global_action(type: String, amount: float) -> void:
-	_report(world.apply_intervention(type, -1, 0.0, amount, 0.0, 0))
+	var years := 200 if type == "bond" else 0
+	_report(world.apply_intervention(type, -1, 0.0, amount, 0.0, years))
 
 
 func _report(result: Dictionary) -> void:
@@ -582,12 +587,12 @@ func _build_ui() -> void:
 	charts.add_theme_constant_override("separation", 24)
 	column.add_child(charts)
 	population_chart = LineChart.new()
-	population_chart.title = "World population and foraging capacity"
+	population_chart.title = "World population, farmers and capacity (marks: domestications)"
 	population_chart.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	population_chart.size_flags_stretch_ratio = 1.6
 	charts.add_child(population_chart)
 	climate_chart = LineChart.new()
-	climate_chart.title = "Global temperature vs. baseline (°C)"
+	climate_chart.title = "Global temperature (°C; blue: Bond events)"
 	climate_chart.value_format = "signed1"
 	climate_chart.zero_line = true
 	climate_chart.size_flags_horizontal = Control.SIZE_EXPAND_FILL

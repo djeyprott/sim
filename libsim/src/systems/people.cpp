@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "histsim/systems/culture.hpp"
+#include "histsim/systems/farming.hpp"
 #include "vital_rates.inc"
 
 namespace histsim {
@@ -69,7 +70,8 @@ void DemographySystem::step(StepContext& ctx) {
         Cohort& co = s.cohorts[i];
         const double crowding = crowding_of(s, co.cell);
         const double fert_mult = std::max(
-            kMinFertilityMultiplier, 1.0 - (1.0 - vital::kReplacementFertilityMultiplier) * crowding);
+            kMinFertilityMultiplier, 1.0 - (1.0 - vital::kReplacementFertilityMultiplier) * crowding) *
+            (1.0 + kFarmerExtraFertility * co.farming);
         const double mort_mult =
             crowding > 1.0 ? std::min(kMaxMortalityMultiplier, 1.0 + kFamineMortalityPerCrowding * (crowding - 1.0))
                            : 1.0;
@@ -124,6 +126,7 @@ void MigrationSystem::step(StepContext& ctx) {
     const std::size_t n = w.cell_count();
 
     std::vector<Cohort> arrivals;
+    std::vector<std::pair<CellId, std::uint32_t>> carried;  // (destination, domesticates)
     std::int64_t moved = 0;
     std::array<double, 8> weight{};
     std::array<CellId, 8> dest{};
@@ -169,9 +172,10 @@ void MigrationSystem::step(StepContext& ctx) {
             band.language = co.language;
             band.traits = co.traits;
             band.dialect = co.dialect;
+            band.farming = co.farming;
             std::int64_t band_size = 0;
             for (int b = 0; b < kAgeBins; ++b) {
-                const double share = std::min(1.0, rate * kMigrationByAge[b]);
+                const double share = std::min(1.0, rate * kMigrationByAge[b] * (1.0 - kFarmerStay * co.farming));
                 const auto mf = std::min<std::int64_t>(co.female[b], stochastic_round(share * co.female[b], rng));
                 const auto mm = std::min<std::int64_t>(co.male[b], stochastic_round(share * co.male[b], rng));
                 co.female[b] -= static_cast<std::uint32_t>(mf);
@@ -183,6 +187,10 @@ void MigrationSystem::step(StepContext& ctx) {
             if (band_size > 0) {
                 arrivals.push_back(band);
                 moved += band_size;
+                // Farming migrants bring their crops and herds.
+                if (co.farming > 0.1 && !s.domesticates.empty() && s.domesticates[c] != 0) {
+                    carried.emplace_back(band.cell, s.domesticates[c]);
+                }
             }
         }
     }
@@ -190,6 +198,15 @@ void MigrationSystem::step(StepContext& ctx) {
     s.cohorts.insert(s.cohorts.end(), arrivals.begin(), arrivals.end());
     s.normalize_cohorts(n);
     s.ledger.migrants += moved;
+    for (const auto& [to, known] : carried) {
+        std::uint32_t usable = 0;
+        for (std::size_t sp = 0; sp < w.content->species.size(); ++sp) {
+            if (((known >> sp) & 1u) && w.cultivated(to, sp) >= FarmingSystem::kMinSuitability) {
+                usable |= 1u << sp;
+            }
+        }
+        s.domesticates[to] |= usable;
+    }
 
     // Small groups join the largest group in their cell: a band of a few
     // dozen arriving among many takes up their language and customs at once.
@@ -211,6 +228,7 @@ void MigrationSystem::step(StepContext& ctx) {
             if (wb + ws > 0.0) {
                 const double f = ws / (wb + ws);
                 for (std::size_t t = 0; t < kMaxTraits; ++t) big.traits[t] += f * (s.cohorts[i].traits[t] - big.traits[t]);
+                big.farming += f * (s.cohorts[i].farming - big.farming);
             }
             for (int b = 0; b < kAgeBins; ++b) {
                 s.cohorts[largest].female[b] += s.cohorts[i].female[b];
@@ -242,12 +260,18 @@ void HistorySystem::step(StepContext& ctx) {
     r.deaths_total = s.ledger.deaths;
     r.migrants_total = s.ledger.migrants;
     for (std::uint32_t p : s.cell_population) r.inhabited_cells += p > 0 ? 1 : 0;
-    r.global_anomaly_c = s.climate.global_anomaly_c;
+    r.global_anomaly_c = s.climate.global_anomaly_c + s.climate.bond_anomaly_c;
     for (double k : s.env.capacity) r.capacity += k;
     const PeopleCounts p = count_peoples(s);
     r.languages = p.languages;
     r.language_families = p.families;
     r.cultures = p.cultures;
+    double farmers = 0.0;
+    for (const Cohort& co : s.cohorts) farmers += static_cast<double>(co.total()) * co.farming;
+    r.farmers = static_cast<std::int64_t>(farmers + 0.5);
+    std::uint32_t ever = 0;
+    for (const Domestication& d : s.domestications) ever |= 1u << d.species;
+    for (; ever != 0; ever &= ever - 1) ++r.domesticated;
     s.history.push_back(r);
 }
 

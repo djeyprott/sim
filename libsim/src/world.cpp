@@ -280,6 +280,36 @@ double species_suitability(const World& w, const SpeciesDef& s, CellId c) {
     return v;
 }
 
+// Suitability once domesticated: the wild niche widened (4 C on each
+// temperature, 30% on rainfall, 500 m on elevation), with river dependence
+// halved: farmers and herders extend a species' range.
+double cultivated_suitability(const World& w, const SpeciesDef& s, CellId c) {
+    if (!w.is_land[c]) return 0.0;
+    auto widen = [](Trapezoid t, double by) {
+        t.lo -= by;
+        t.best_lo -= by;
+        t.best_hi += by;
+        t.hi += by;
+        return t;
+    };
+    auto widen_rain = [](Trapezoid t) {
+        t.lo *= 0.7;
+        t.best_lo *= 0.7;
+        t.best_hi *= 1.3;
+        t.hi *= 1.3;
+        return t;
+    };
+    double v = widen(s.coldest_month_c, 4.0)(w.coldest_month_c(c)) * widen(s.warmest_month_c, 4.0)(w.warmest_month_c(c)) *
+               widen_rain(s.annual_precip_mm)(w.precipitation_mm[c]) * s.rain_season(w.rain_season[c]) *
+               widen(s.elevation_m, 500.0)(w.elevation_m[c]);
+    if (s.river_affinity > 0.0) {
+        const double river = std::min(1.0, w.discharge_m3s[c] / 1500.0);
+        const double a = 0.5 * s.river_affinity;
+        v *= (1.0 - a) + a * river;
+    }
+    return v;
+}
+
 // Native ranges: a few homelands among well-suited land, at least range_km
 // apart; from each the species spreads through suitable country up to
 // range_km away. Barriers (sea, desert, mountains) stop the spread, so the
@@ -289,6 +319,13 @@ void place_species(World& w, const Content& content) {
     const std::size_t count = content.species.size();
     w.species_mask.assign(n, 0);
     w.species_abundance.assign(n * count, 0);
+    w.cultivated_suitability.assign(n * count, 0);
+    for (std::size_t s = 0; s < count; ++s) {
+        for (CellId c = 0; c < n; ++c) {
+            const double v = cultivated_suitability(w, content.species[s], c);
+            w.cultivated_suitability[c * count + s] = static_cast<std::uint8_t>(std::min(255.0, std::floor(v * 255.0 + 0.5)));
+        }
+    }
     std::vector<double> suit(n);
     std::vector<std::uint8_t> reached(n);
     std::deque<CellId> queue;
@@ -351,6 +388,19 @@ void place_species(World& w, const Content& content) {
                 std::uint8_t& slot = w.species_abundance[c * count + s];
                 slot = std::max(slot, abundance);
                 if (slot > 0) w.species_mask[c] |= 1u << s;
+            }
+        }
+    }
+}
+
+void list_wild_stands(World& w, const Content& content) {
+    const std::size_t count = content.species.size();
+    w.wild_stands.clear();
+    for (CellId c = 0; c < w.cell_count(); ++c) {
+        for (std::size_t s = 0; s < count; ++s) {
+            if (((w.species_mask[c] >> s) & 1u) && content.species[s].domesticability > 0.0 &&
+                !content.species[s].domesticated_before_start) {
+                w.wild_stands.push_back({c, static_cast<std::uint8_t>(s)});
             }
         }
     }
@@ -639,6 +689,7 @@ World generate_test_world(const WorldParams& params, const Content& content) {
     }
 
     place_species(w, content);
+    list_wild_stands(w, content);
     assign_initial_groups(w);
     build_climate_mapping(w);
     return w;
@@ -669,6 +720,7 @@ std::uint64_t World::hash() const noexcept {
     h.span<double>(forager_capacity);
     h.span<std::uint32_t>(species_mask);
     h.span<std::uint8_t>(species_abundance);
+    h.span<std::uint8_t>(cultivated_suitability);
     h.span<std::uint32_t>(initial_group);
     h.u32(group_count);
     h.u64(climate_grid.geometry_hash());

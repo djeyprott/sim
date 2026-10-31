@@ -2,10 +2,12 @@
 
 A simple interface for the simulation: a flat map or a globe with switchable
 map modes and legends (terrain, biomes, climate, rivers, soils, wild species,
-population, languages, language families, cultures and more), play/pause and
+population, languages, language families, cultures, farming and known
+domesticates, and more), play/pause and
 speed controls, world charts of population vs. capacity and global
 temperature, a hover inspector with the cell's age pyramid and its peoples
-(language, lineage, sample words, culture and its ways), and a god-mode panel
+(language, lineage, sample words, culture and its ways, farming, crops and
+animals, domestication under way), and a god-mode panel
 for meddling with the world.
 
 The viewer is thin by design. All simulation and map rendering happen in C++:
@@ -62,6 +64,7 @@ run (see "Interventions" in the architecture doc), so saves and replays keep it.
 | --- | --- |
 | Erupt now | Volcanic eruption with the chosen forcing (Pinatubo 1991 peaked near 3 W/m²); cools the planet for a few years |
 | Set climate forcing | Persistent forcing in W/m² (about +3.7 for doubled CO₂); the planet warms or cools toward forcing ÷ 1.3 °C |
+| Start a Bond event | A 200-year Holocene cold spell: high northern latitudes cool by up to the chosen amount and monsoons weaken |
 | Drought, Wet years | Cut or add rainfall over an area for a number of years |
 | Cold snap, Heat wave | Lower or raise temperature over an area for a number of years |
 | Plague | A share of everyone in the area dies |
@@ -70,8 +73,9 @@ run (see "Interventions" in the architecture doc), so saves and replays keep it.
 | Deplete game, Restore game | Set wild game in the area to 5% or 100% |
 
 Hovering with a tool selected outlines the cells it will touch. Interventions
-show as yellow lines on the population chart, and eruptions on the
-temperature chart.
+and independent domestications show as yellow lines on the population chart
+(which also plots farmers), eruptions as lines and Bond events as blue bands
+on the temperature chart.
 
 ## How it draws
 

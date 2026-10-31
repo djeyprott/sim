@@ -5,6 +5,7 @@
 //   histsim resume FILE [--years Y] [--report-every Y] [--save FILE] [--hash-only]
 //   histsim world [--seed N] [--level L] [--ocean F]
 //   histsim languages [--seed N] [--level L] [--years Y] [--top N]
+//   histsim farming [--seed N] [--level L] [--years Y]
 //
 // With no arguments (for example, double-clicked in Explorer) it runs a short
 // demo and waits for Enter so the window stays open.
@@ -71,7 +72,10 @@ struct Options {
                  "                 writes PREFIX-<mode>.png; modes: terrain biome population\n"
                  "                 crowding temperature rainfall rain_season growing soil\n"
                  "                 species capacity game temp_anomaly median_age language\n"
-                 "                 language_family culture\n"
+                 "                 language_family culture farming domesticates\n"
+                 "  histsim farming [--seed N] [--level L] [--years Y]\n"
+                 "                 where and when species were domesticated, Bond events, and\n"
+                 "                 the share of farmers every 500 years\n"
                  "  histsim languages [--seed N] [--level L] [--years Y] [--top N]\n"
                  "                 family trees of the languages alive after Y years, largest\n"
                  "                 families first, with speakers and sample words\n"
@@ -87,6 +91,7 @@ struct Options {
                  "  --at YEAR:wipeout:CELL:KM       everyone there dies\n"
                  "  --at YEAR:settlers:CELL:COUNT   place a new group\n"
                  "  --at YEAR:game:CELL:KM:LEVEL    set game abundance (0-1)\n"
+                 "  --at YEAR:bond:DEG:YEARS        start a Bond event: north cools by up to DEG C\n"
                  "\n"
                  "With no arguments, runs a 1,000-year demo.\n");
     std::exit(2);
@@ -221,6 +226,11 @@ histsim::Command parse_command(const histsim::World& w, const std::string& spec)
         c.type = CommandType::Settlers;
         c.cell = resolve_cell(w, parts[1]);
         c.amount = parse_double(parts[2]);
+    } else if (action == "bond") {
+        need(2);
+        c.type = CommandType::BondEvent;
+        c.amount = parse_double(parts[1]);
+        c.years = parse_int(parts[2]);
     } else if (action == "game") {
         need(3);
         c.type = CommandType::SetGame;
@@ -271,11 +281,15 @@ void print_report(const Simulation& sim) {
     double capacity = 0.0;
     for (double k : sim.state().env.capacity) capacity += k;
     const histsim::PeopleCounts p = histsim::count_peoples(sim.state());
-    std::printf("year %6lld  population %11lld  capacity %11.0f (%5.1f%%)  inhabited %6zu  "
-                "languages %4u (%3u families)  cultures %4u  climate %+5.2f C  hash %016llx\n",
-                static_cast<long long>(sim.year()), static_cast<long long>(r.population), capacity,
+    const auto& h = sim.state().history;
+    const double farmers = h.empty() ? 0.0 : static_cast<double>(h.back().farmers);
+    const double anomaly = sim.state().climate.global_anomaly_c + sim.state().climate.bond_anomaly_c;
+    std::printf("year %6lld  population %11lld  farmers %5.1f%%  capacity %11.0f (%5.1f%%)  inhabited %6zu  "
+                "languages %4u (%3u families)  cultures %4u  climate %+5.2f C%s  hash %016llx\n",
+                static_cast<long long>(sim.year()), static_cast<long long>(r.population),
+                r.population > 0 ? 100.0 * farmers / static_cast<double>(r.population) : 0.0, capacity,
                 capacity > 0 ? 100.0 * static_cast<double>(r.population) / capacity : 0.0, r.inhabited_cells,
-                p.languages, p.families, p.cultures, sim.state().climate.global_anomaly_c,
+                p.languages, p.families, p.cultures, anomaly, sim.state().climate.bond.years > 0 ? " (Bond)" : "",
                 static_cast<unsigned long long>(r.state_hash));
 }
 
@@ -392,6 +406,38 @@ int languages(const Options& o) {
     return 0;
 }
 
+// Where and when species were domesticated, then how farming spread.
+int farming(const Options& o) {
+    Simulation sim = Simulation::create(o.params);
+    apply_due_now(sim, o, true);
+    advance(sim, o.years, o, true);
+    const histsim::SimState& s = sim.state();
+    const histsim::World& w = sim.world();
+    const auto& species = w.content->species;
+    std::printf("Independent domestications in %lld years:\n", static_cast<long long>(sim.year()));
+    for (const histsim::Domestication& d : s.domestications) {
+        const double lat = w.grid.latitude_deg_display(d.cell), lon = w.grid.longitude_deg_display(d.cell);
+        std::printf("  year %5lld  %-20s %5.1f%c %6.1f%c  by the %s (%s speakers)\n",
+                    static_cast<long long>(d.tick / histsim::kTicksPerYear), species[d.species].domesticated.c_str(),
+                    std::fabs(lat), lat >= 0 ? 'N' : 'S', std::fabs(lon), lon >= 0 ? 'E' : 'W',
+                    s.cultures[d.culture].name.c_str(), s.languages[d.language].name.c_str());
+    }
+    std::printf("\nBond events:\n");
+    for (const histsim::BondEvent& b : s.climate.bond_history) {
+        std::printf("  years %5lld-%-5lld  up to %.1f C colder in the north\n", static_cast<long long>(b.start_year),
+                    static_cast<long long>(b.start_year + b.years), b.strength_c);
+    }
+    std::printf("\nFarmers by century:\n");
+    for (const histsim::YearRecord& r : s.history) {
+        if (r.year % 500 != 0) continue;
+        std::printf("  year %5lld  population %11lld  farmers %5.1f%%  domesticated species %2u\n",
+                    static_cast<long long>(r.year), static_cast<long long>(r.population),
+                    r.population > 0 ? 100.0 * static_cast<double>(r.farmers) / static_cast<double>(r.population) : 0.0,
+                    r.domesticated);
+    }
+    return 0;
+}
+
 int world_info(const Options& o) {
     const histsim::World w = histsim::generate_test_world(o.params);
     std::size_t land = 0;
@@ -468,6 +514,9 @@ int main(int argc, char** argv) {
             if (args.size() < 3) usage("resume needs a snapshot file");
             const Options o = parse(args, 3);
             return run(Simulation::load(std::string(args[2])), o);
+        }
+        if (cmd == "farming") {
+            return farming(parse(args, 2));
         }
         if (cmd == "languages") {
             Options o = parse(args, 2);

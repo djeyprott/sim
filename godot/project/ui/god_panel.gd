@@ -98,6 +98,17 @@ func _ready() -> void:
 	box.add_child(set_forcing)
 	box.add_child(_forcing_hint)
 
+	var bond := _slider(0.5, 5, 0.5, 1.5)
+	var bond_value := _value_label()
+	box.add_child(_row("Bond event", bond, bond_value))
+	bond.value_changed.connect(func(v: float) -> void: bond_value.text = "%.1f °C" % v)
+	bond.value_changed.emit(bond.value)
+	var start_bond := Button.new()
+	start_bond.text = "Start a Bond event"
+	start_bond.pressed.connect(func() -> void: global_action.emit("bond", bond.value))
+	box.add_child(start_bond)
+	box.add_child(_muted("A 200-year Holocene cold spell: the north cools by up to this much and monsoons weaken (like the 8.2 and 4.2 ka events)."))
+
 	# ---- Local tools
 	box.add_child(HSeparator.new())
 	box.add_child(_heading("Click the map", 13))

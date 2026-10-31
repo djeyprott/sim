@@ -29,6 +29,7 @@ inline constexpr double kMaxRadiusKm = 5000.0;
 inline constexpr double kMaxEruptionWm2 = 30.0;
 inline constexpr double kMaxImposedForcingWm2 = 20.0;
 inline constexpr double kMaxRegionalTempC = 20.0;
+inline constexpr double kMaxBondCoolingC = 8.0;
 inline constexpr std::int64_t kMaxModifierYears = 500;
 inline constexpr std::int64_t kMaxSettlers = 1000000;
 

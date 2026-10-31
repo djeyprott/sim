@@ -9,6 +9,7 @@
 #include "histsim/hash.hpp"
 #include "histsim/systems/climate.hpp"
 #include "histsim/systems/culture.hpp"
+#include "histsim/systems/farming.hpp"
 #include "histsim/systems/people.hpp"
 #include "state_io.hpp"
 
@@ -30,6 +31,7 @@ void Simulation::install_systems() {
     scheduler_ = Scheduler{};
     scheduler_.add(std::make_unique<ClimateSystem>());
     scheduler_.add(std::make_unique<EnvironmentSystem>());
+    scheduler_.add(std::make_unique<FarmingSystem>());
     scheduler_.add(std::make_unique<DemographySystem>());
     scheduler_.add(std::make_unique<MigrationSystem>());
     scheduler_.add(std::make_unique<CultureSystem>());
@@ -49,6 +51,12 @@ Simulation Simulation::create(const WorldParams& params) {
     s.env.temperature_c = w.temperature_c;
     s.env.precipitation_mm = w.precipitation_mm;
     s.env.capacity = w.forager_capacity;
+    s.climate.next_bond_year = first_bond_year(params.seed);
+    // Nobody farms yet: the wild ancestors are there to be domesticated.
+    s.env.farming.assign(n, 0.0);
+    s.env.farm_capacity.assign(n, 0.0);
+    s.domesticates.assign(n, 0);
+    s.domestication.assign(w.wild_stands.size(), 0.0);
     s.env.game.assign(n, 1.0);
     for (CellId c = 0; c < n; ++c) {
         if (!w.is_land[c]) s.env.game[c] = 0.0;
@@ -91,6 +99,17 @@ Simulation Simulation::create(const WorldParams& params) {
         co.language = cell_language[co.cell];
     }
     s.normalize_cohorts(n);
+
+    // Species tamed long before the run (dogs) are known where they are
+    // native and people live.
+    for (CellId c = 0; c < n; ++c) {
+        if (s.cell_population[c] == 0) continue;
+        for (std::size_t sp = 0; sp < w.content->species.size(); ++sp) {
+            if (w.content->species[sp].domesticated_before_start && ((w.species_mask[c] >> sp) & 1u)) {
+                s.domesticates[c] |= 1u << sp;
+            }
+        }
+    }
     sim.install_systems();
     return sim;
 }

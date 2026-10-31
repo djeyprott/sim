@@ -78,6 +78,7 @@ const char* command_name(CommandType type) {
         case CommandType::Settlers: return "Settlers";
         case CommandType::WipeOut: return "Wipe out";
         case CommandType::SetGame: return "Set game";
+        case CommandType::BondEvent: return "Bond event";
     }
     return "Unknown";
 }
@@ -101,7 +102,8 @@ std::vector<WeightedCell> cells_within(const World& w, CellId center, double rad
 
 InterventionResult apply_command(const World& w, SimState& s, std::uint64_t seed, Command cmd) {
     const std::size_t n = w.cell_count();
-    const bool needs_cell = cmd.type != CommandType::Eruption && cmd.type != CommandType::ClimateForcing;
+    const bool needs_cell = cmd.type != CommandType::Eruption && cmd.type != CommandType::ClimateForcing &&
+                            cmd.type != CommandType::BondEvent;
     if (needs_cell && cmd.cell >= n) {
         return fail("Pick a cell on the map first.");
     }
@@ -121,6 +123,18 @@ InterventionResult apply_command(const World& w, SimState& s, std::uint64_t seed
             s.events.push_back({s.tick, EventType::Eruption, kInvalidCell, static_cast<std::int64_t>(cmd.amount * 1000.0)});
             r.message = "Volcanic eruption: " + fmt("%.1f W/m²", cmd.amount) +
                         " of forcing; the planet cools over the next year or two.";
+            break;
+        }
+        case CommandType::BondEvent: {
+            cmd.amount = std::clamp(std::fabs(cmd.amount), 0.2, kMaxBondCoolingC);
+            cmd.years = std::clamp<std::int64_t>(cmd.years, 20, kMaxModifierYears);
+            // Replaces any event under way; the natural cycle keeps its schedule.
+            s.climate.bond = BondEvent{s.tick / kTicksPerYear, cmd.years, cmd.amount};
+            s.climate.bond_history.push_back(s.climate.bond);
+            s.events.push_back({s.tick, EventType::BondEvent, kInvalidCell, static_cast<std::int64_t>(cmd.amount * 1000.0)});
+            r.message = "Bond event: the north cools by up to " + fmt("%.1f °C", cmd.amount) +
+                        " and monsoons weaken, building over " + commas(cmd.years / 4) + " years and lasting " +
+                        commas(cmd.years) + ".";
             break;
         }
         case CommandType::ClimateForcing: {

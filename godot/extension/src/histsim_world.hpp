@@ -78,6 +78,7 @@ public:
     int64_t get_intervention_count() const;
     // Years (since the run began) of events of a kind: "eruption" or "intervention".
     godot::PackedInt64Array get_event_years(const godot::String& kind) const;
+    godot::PackedInt64Array get_bond_spans() const;  // [start, end, start, end, ...] years of Bond events
 
     // Outline the cells within radius_km of a cell on the next render_map
     // (cell < 0 clears it).

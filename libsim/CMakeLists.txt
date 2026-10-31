@@ -17,6 +17,7 @@ add_library(histsim
     src/json.cpp
     src/language.cpp
     src/systems/culture.cpp
+    src/systems/farming.cpp
     src/rng.cpp
     src/scheduler.cpp
     src/simulation.cpp

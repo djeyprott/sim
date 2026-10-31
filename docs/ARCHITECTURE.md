@@ -47,6 +47,7 @@ godot viewer ── view ───┘                                   │
 | `systems/climate.hpp` | Climate (global energy balance, regional anomalies) and environment (yearly capacity, game). |
 | `systems/people.hpp` | Cohort demography, migration and the yearly history record. |
 | `language.hpp` | Languages as objects: proto-language generation, regular sound changes, word replacement, lexical similarity, names. |
+| `systems/farming.hpp` | Domestication, knowledge of domesticates, farming share, farmland capacity and harvests. |
 | `systems/culture.hpp` | Culture and dialect drift, contact, adaptation, language shift, assimilation, splits, extinctions; founding new peoples. |
 | `view/` (separate library) | Map modes, color scales, legends, pixel-to-cell rasterizing and PNG output. Display only: it reads state and never writes it, so the determinism rules do not apply to it. |
 | `godot/extension/` | GDExtension class `HistSimWorld`: the Sim API plus `view/`, exposed to GDScript. |
@@ -85,8 +86,8 @@ deaths` holds exactly.
 
 | System | Model |
 | --- | --- |
-| Climate | One-box energy balance, C dT/dt = F - λT, with C = 8 W·yr·m⁻²·K⁻¹ and λ = 1.3 W·m⁻²·K⁻¹. Forcing: four Milankovitch terms (small in the global mean), solar wander, and volcanic eruptions (about one large eruption per 60 years, -1 to -4 W/m², clearing in about a year). Regional AR(1) temperature and rainfall anomalies on a 162-cell coarse grid, interpolated to every cell. |
-| Environment | Capacity = forager density for this year's temperature and rainfall × area × (0.4 + 0.6 × game + aquatic bonus). Game regrows logistically and is depleted when people exceed 60% of the climate's capacity. |
+| Climate | One-box energy balance, C dT/dt = F - λT, with C = 8 W·yr·m⁻²·K⁻¹ and λ = 1.3 W·m⁻²·K⁻¹. Forcing: four Milankovitch terms (small in the global mean), solar wander, and volcanic eruptions (about one large eruption per 60 years, -1 to -4 W/m², clearing in about a year). Regional AR(1) temperature and rainfall anomalies on a 162-cell coarse grid, interpolated to every cell. Bond events (below). |
+| Environment | Forager capacity = forager density for this year's temperature and rainfall × area × (0.4 + 0.6 × game + aquatic bonus); a cell's capacity mixes it with farmland by its farming share (below). Game regrows logistically and is depleted when people exceed 60% of the climate's capacity. |
 | Demography | Average hunter-gatherer life table (Siler fit, Gurven & Kaplan 2007: life expectancy 31 at birth, 38 more at 15) and a natural-fertility age pattern with total fertility 5.4 (Marlowe 2005), precomputed by `tools/vital_rates.py`. Fertility falls linearly to replacement (total fertility 4.4) as a cell reaches capacity; past capacity, famine raises mortality. Empty land grows about 0.7% a year. |
 | Migration | 0.5% of people a year explore; crowded cells send more (rising with crowding squared); a cell with no food empties. Each cohort's movers travel as one band to a neighbor picked by spare capacity over climbing cost. Young adults move most. Groups under 20 people or 10% of their cell join the cell's largest group. |
 | History | One row per year: population, cumulative births, deaths and migrants, inhabited cells, global temperature anomaly, total capacity. |
@@ -138,6 +139,45 @@ traits (`data/culture.json`, 0–1 each) and a dialect point (8 numbers).
 At level 5 a run settles at about 580 languages (5 cells each) in ~70
 families, with splits and extinctions roughly balanced (about 100 of each per
 thousand years). `histsim languages` prints the family trees.
+
+### Bond events and farming (M2)
+
+**Bond events** are the Holocene's abrupt cold spells (Bond et al. 1997, 2001;
+the 8.2 and 4.2 ka events). The climate system starts one about every 1,470
+years (± 500), the first within 1,600 years of the start. Each lasts 150–400
+years: intensity rises over the first quarter, holds to 60%, then fades. At its
+peak high northern latitudes (north of ~50°) are 0.8–2 °C colder, fading to
+the subtropics and 10% of that elsewhere, and summer-rain lands at low
+latitudes get up to ~25% less rain (weaker monsoons). The effect on the global
+mean is reported with the temperature anomaly. God mode and `--at
+YEAR:bond:DEG:YEARS` start one on demand.
+
+**Domestication** (`FarmingSystem`, production phase). Wherever a domesticable
+species grows wild, progress toward domesticating it grows each year by 0.005 ×
+wild abundance × domesticability × engagement × food pressure, and fades by
+0.2% of itself. Engagement comes from the people's ways: plant foods (or, for
+animals, 0.6 × (1 − ½ plant foods)) × (0.5 + storage) × (1.2 − mobility) × (0.5
++ innovation); pressure is people ÷ forager capacity (0.3–1.3). Only steady
+engagement reaches 1, which takes centuries. A domestication more than 1,000
+km from anyone who knows the species is an independent origin and is logged
+(event and `SimState::domestications`). Dogs are tamed before the run
+(`domesticated_before_start`).
+
+| Process | Model |
+| --- | --- |
+| Knowledge | Per cell, the domesticates its people know. Learned from any neighbour that knows one (0.15% a year × (0.5 + openness), ~1 km/year as across Neolithic Europe), and carried by farming migrants, if the species can be raised there; lost when a cell empties. |
+| Crops and herds | A species can be raised where its wild niche, widened by 4 °C, 30% rainfall and 500 m, still fits (`World::cultivated_suitability`). |
+| Farmland | People per km² = 0.6 × best crop (suitability × food value) × soil (0.35 + 0.65 fertility) × floodplain (up to +50% on big rivers) × season (growing months), plus half of 0.15 × best herd; herds alone feed pastoralists. A regional average for early farming; later techniques raise it. Each year × harvest (rain 40–115% of normal, −12% per °C off normal). |
+| Farming share | Per cohort. Grows by 1% a year × (0.3 + innovation) × (1.2 − mobility) × (strain − 0.6) × (1 − share), where strain = people ÷ forager capacity: farming spreads when foraging alone stops being enough, and raises the population so it is needed more (the Neolithic ratchet). Falls when farmland yields less than foraging; drops to zero where nothing can be farmed. |
+| Capacity | forager capacity × (1 − share) + farmland × share, with the cell's population-weighted share. Hunting pressure on game comes from foragers only. |
+| Farmers | 25% more births at full farming; 60% less migration. Culture: farming pushes toward settled, plant-reliant, storing, ranked, clan-based and less sharing ways. |
+
+At level 5 the first crops appear around year 900 (often rice or yams in the
+wet tropics), independent origins continue for thousands of years (squash,
+lentils, sorghum, maize, sheep and goats, cattle, millets, potatoes...),
+farmers are about 20% of people at year 1,500, 45% at 2,000 and two-thirds by
+3,000, and population roughly doubles by year 3,000. `histsim farming` lists
+the origins, Bond events and the share of farmers.
 
 ### Interventions
 
@@ -226,7 +266,7 @@ generator can fill it without changing systems.
 | --- | --- | --- | --- |
 | M0 Foundations (done) | Grid, test-world generator, scheduler, RNG, snapshots, headless runner | Sim API, map viewer | Identical replays on Windows, Linux and macOS |
 | M1 Living planet (done) | Climate and environment systems, cohort demography, migration, foragers | Globe, climate and population map modes, pyramid, charts | Forager populations settle near carrying capacity (`m1_gate_populations_settle_near_capacity`) |
-| **M2 Neolithic** (in progress: world geography, content packs, culture and language done) | Agriculture, herding, disease, culture and language drift, early tech | Culture and language map modes, language tree | Farming arises in several plausible regions |
+| **M2 Neolithic** (gate passes: `m2_gate_farming_arises_in_several_plausible_regions`; disease and early tech to come) | Agriculture, herding, disease, culture and language drift, early tech | Culture and language map modes, language tree | Farming arises in several plausible regions |
 | M3 States and trade | Goods, markets, transport, polities, war, religion, notable agents, forced labor and the slave trade | Trade flows, inspectors, explain view, timeline | Polity sizes track Seshat ranges by era |
 | M4 Modern era | Energy, carbon cycle, demographic transition, Earth importer, procedural generator | God mode, branch comparison, modding tools | Full runs to the near future on Earth and generated worlds |
 

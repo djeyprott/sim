@@ -35,7 +35,29 @@ public:
     static constexpr double kRegionalPrecipSd = 0.15;  // fraction, year-to-year
     static constexpr double kRegionalPrecipPersistence = 0.4;
     static constexpr double kPrecipPerDegree = 0.03;   // global rainfall +3% per K
+
+    // Bond events: about every 1,470 years (+-500), lasting 150-400 years,
+    // cooling high northern latitudes by 0.8-2 degrees C at their peak and
+    // weakening monsoons (summer rain at low latitudes) by up to ~30%.
+    static constexpr double kBondPacingYears = 1470.0;
+    static constexpr double kBondPacingJitterYears = 1000.0;  // full width
+    static constexpr double kBondFirstWithinYears = 1500.0;
 };
+
+// How strong a Bond event is in a given year of it: 0 before and after,
+// rising over its first quarter, holding to 60%, then fading.
+double bond_intensity(const BondEvent& bond, std::int64_t year);
+
+// Its effect on one cell this year: degrees C added and the factor rainfall
+// is multiplied by.
+struct BondEffect {
+    double temp_c = 0.0;
+    double rain_factor = 1.0;
+};
+BondEffect bond_effect(const World& world, const BondEvent& bond, std::int64_t year, CellId cell);
+
+// When the natural cycle brings the first Bond event of a run.
+std::int64_t first_bond_year(std::uint64_t seed);
 
 class EnvironmentSystem final : public System {
 public:
@@ -51,8 +73,13 @@ public:
     static constexpr double kGameShareOfCapacity = 0.6;  // capacity = climate x (0.4 + 0.6 game)
 };
 
-// Foraging capacity of a land cell from this year's climate and its game
-// stock (used by the environment system and by interventions).
+// People a land cell can feed by foraging alone this year, from its climate
+// and game stock.
+double forage_capacity(const World& world, const SimState& state, CellId cell);
+
+// People it can feed this year: foraging for the share of food not farmed,
+// plus farmland for the share that is (state.env.farming, farm_capacity).
+// Used by the environment and farming systems and by interventions.
 double environment_capacity(const World& world, const SimState& state, CellId cell);
 
 // Orbital forcing in W/m^2 at a given year of the run, for a world seed.

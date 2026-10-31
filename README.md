@@ -11,8 +11,10 @@ migrate and settle near what the land can feed. M2 is under way: the world
 has seasons, biomes, rivers, soils and the native ranges of wild plants and
 animals that farming will grow from, and its peoples have cultures and
 languages that drift, split, shift and die out, with family trees, sound
-changes and generated words. A Godot viewer shows it as a map or globe with
-seventeen map modes, world charts and a cell inspector. Farming comes next.
+changes and generated words. Foragers domesticate the wild species around them
+in several independent centres and farming spreads, while Holocene Bond events
+bring cold, dry centuries. A Godot viewer shows it as a map or globe with
+nineteen map modes, world charts and a cell inspector. Disease comes next.
 
 ## Download
 
@@ -59,6 +61,9 @@ ctest --test-dir build --output-on-failure
 ./build/cli/histsim run --seed 1 --years 300 --report-every 50 \
     --at 100:eruption:10 --at 150:plague:2.4,27.7:800:0.4 \
     --at 200:climate:2.4,27.7:1000:0:-0.5:20
+
+# Where and when farming began, Bond events, and the share of farmers
+./build/cli/histsim farming --years 3000
 
 # Language family trees after 1,000 years, largest five families
 ./build/cli/histsim languages --years 1000 --top 5

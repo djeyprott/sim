@@ -31,6 +31,38 @@ constexpr OrbitalTerm kOrbital[] = {
 
 }  // namespace
 
+double bond_intensity(const BondEvent& b, std::int64_t year) {
+    if (b.years <= 0) return 0.0;
+    const double t = static_cast<double>(year - b.start_year) / static_cast<double>(b.years);
+    if (t < 0.0 || t >= 1.0) return 0.0;
+    if (t < 0.25) return t / 0.25;
+    if (t < 0.6) return 1.0;
+    return (1.0 - t) / 0.4;
+}
+
+BondEffect bond_effect(const World& w, const BondEvent& b, std::int64_t year, CellId c) {
+    BondEffect e;
+    const double i = bond_intensity(b, year);
+    if (i <= 0.0) return e;
+    const double z = w.grid.center(c).z;
+    // Strongest north of ~50 N (z = 0.75), fading to the subtropics; a little
+    // everywhere else.
+    const double north = std::clamp((z - 0.25) / 0.5, 0.0, 1.0);
+    e.temp_c = -b.strength_c * i * (0.1 + 0.9 * north);
+    // Weaker monsoons: summer-rain lands in the tropics and subtropics dry
+    // out (as in the 4.2 ka drought from the Nile to the Indus).
+    const double az = std::fabs(z);
+    const double monsoon = w.rain_season[c] > 0.2 && az > 0.08 && az < 0.6 ? std::min(1.0, w.rain_season[c] / 0.5) : 0.0;
+    const double scale = b.strength_c / 2.0;
+    e.rain_factor = std::max(0.5, 1.0 - i * scale * (0.25 * monsoon + 0.1 * north));
+    return e;
+}
+
+std::int64_t first_bond_year(std::uint64_t seed) {
+    RngStream rng(seed, 0, Stream::Climate, 0x0C000000u);
+    return 100 + static_cast<std::int64_t>(rng.uniform() * ClimateSystem::kBondFirstWithinYears);
+}
+
 double orbital_forcing(std::uint64_t seed, std::int64_t year) {
     double f = 0.0;
     for (std::uint32_t i = 0; i < std::size(kOrbital); ++i) {
@@ -89,6 +121,32 @@ void ClimateSystem::step(StepContext& ctx) {
             w.precipitation_mm[c] * std::max(0.05, (1.0 + kPrecipPerDegree * cl.global_anomaly_c) * (1.0 + pa));
     }
 
+    // ---- Bond events: the natural cycle starts one when it is due.
+    if (cl.bond.years > 0 && year >= cl.bond.start_year + cl.bond.years) cl.bond = BondEvent{};
+    if (cl.bond.years == 0 && year >= cl.next_bond_year) {
+        RngStream br = ctx.rng(Stream::Climate, 0x0C000001u);
+        cl.bond.start_year = year;
+        cl.bond.years = 150 + static_cast<std::int64_t>(250.0 * br.uniform());
+        cl.bond.strength_c = 0.8 + 1.2 * br.uniform();
+        cl.next_bond_year =
+            year + static_cast<std::int64_t>(kBondPacingYears + kBondPacingJitterYears * (br.uniform() - 0.5));
+        s.events.push_back({ctx.tick, EventType::BondEvent, kInvalidCell,
+                            static_cast<std::int64_t>(cl.bond.strength_c * 1000.0)});
+        cl.bond_history.push_back(cl.bond);
+    }
+    cl.bond_anomaly_c = 0.0;
+    if (cl.bond.years > 0) {
+        double area = 0.0, sum = 0.0;
+        for (CellId c = 0; c < w.cell_count(); ++c) {
+            const BondEffect e = bond_effect(w, cl.bond, year, c);
+            s.env.temperature_c[c] += e.temp_c;
+            s.env.precipitation_mm[c] *= e.rain_factor;
+            sum += e.temp_c * w.grid.area_km2(c);
+            area += w.grid.area_km2(c);
+        }
+        cl.bond_anomaly_c = sum / area;
+    }
+
     // ---- Regional events imposed by interventions
     for (ClimateModifier& m : cl.modifiers) {
         for (const WeightedCell& wc : cells_within(w, m.center, m.radius_km, /*taper=*/true)) {
@@ -100,13 +158,20 @@ void ClimateSystem::step(StepContext& ctx) {
     std::erase_if(cl.modifiers, [](const ClimateModifier& m) { return m.years_left <= 0; });
 }
 
-double environment_capacity(const World& w, const SimState& s, CellId c) {
+double forage_capacity(const World& w, const SimState& s, CellId c) {
     if (!w.is_land[c]) return 0.0;
     // Land foods (plants and game) for this year's climate, plus fish and
     // shellfish from coasts and rivers, which hunting does not deplete.
     const double land = forager_density(s.env.temperature_c[c], s.env.precipitation_mm[c]) * w.grid.area_km2(c);
     constexpr double kShare = EnvironmentSystem::kGameShareOfCapacity;
     return land * ((1.0 - kShare) + kShare * s.env.game[c] + w.aquatic_bonus[c]);
+}
+
+double environment_capacity(const World& w, const SimState& s, CellId c) {
+    const double forage = forage_capacity(w, s, c);
+    const double f = s.env.farming.empty() ? 0.0 : s.env.farming[c];
+    if (f <= 0.0) return forage;
+    return forage * (1.0 - f) + s.env.farm_capacity[c] * f;
 }
 
 void EnvironmentSystem::step(StepContext& ctx) {
@@ -119,8 +184,10 @@ void EnvironmentSystem::step(StepContext& ctx) {
         }
         const double climate_capacity = forager_density(s.env.temperature_c[c], s.env.precipitation_mm[c]) *
                                         w.grid.area_km2(c) * (1.0 + w.aquatic_bonus[c]);
-        const double crowding =
-            climate_capacity > 0.0 ? static_cast<double>(s.cell_population[c]) / climate_capacity : 0.0;
+        // Hunting pressure comes from the people who still forage.
+        const double hunters =
+            static_cast<double>(s.cell_population[c]) * (1.0 - (s.env.farming.empty() ? 0.0 : s.env.farming[c]));
+        const double crowding = climate_capacity > 0.0 ? hunters / climate_capacity : 0.0;
         double& g = s.env.game[c];
         g += kGameRegrowth * g * (1.0 - g) + kGameInflow * (1.0 - g) -
              kHuntingPressure * std::max(0.0, crowding - kSustainableCrowding) * g;

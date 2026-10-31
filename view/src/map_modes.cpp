@@ -107,6 +107,24 @@ const std::array<Rgba, static_cast<std::size_t>(Biome::Count)> kBiomeColors = {
     hex("#b6c95a"),  // Tropical savanna
     hex("#1f6b3a"),  // Tropical rainforest
 };
+const ColorScale& farming_scale() {  // wheat gold, light to dark
+    static const ColorScale s({{0, hex("#f6efd9")},
+                               {0.25, hex("#e8d08a")},
+                               {0.5, hex("#cfa640")},
+                               {0.75, hex("#a07a1c")},
+                               {1.0, hex("#654a0c")}});
+    return s;
+}
+const ColorScale& domesticates_scale() {  // green, light to dark
+    static const ColorScale s({{1, hex("#e4f2d9")},
+                               {2, hex("#b5dc96")},
+                               {4, hex("#7dbb53")},
+                               {6, hex("#4d8a2a")},
+                               {8, hex("#2a5513")}});
+    return s;
+}
+const Rgba kForagers = hex("#dcd9cf");  // inhabited, no farming / nothing domesticated
+
 const ColorScale& density_scale() {
     // Log scale: forager densities sit around 0.01-0.2 per km^2; farming and
     // cities will need the scale extended upward.
@@ -171,6 +189,8 @@ const std::vector<MapModeInfo> kModes = {
     {"language", "Language", "Main language spoken; related languages share a hue"},
     {"language_family", "Language family", "Family of the main language"},
     {"culture", "Culture", "Main culture; related cultures share a hue"},
+    {"farming", "Farming", "Share of people's food from crops and herds"},
+    {"domesticates", "Domesticates", "Domesticated crops and animals the people know"},
 };
 
 // ---- Colors for languages and cultures.
@@ -401,6 +421,12 @@ void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rg
             out[c] = inhabited ? density_scale()(density(w, s, c)) : kEmptyLand;
         } else if (id == "crowding") {
             out[c] = inhabited ? crowding_scale()(crowding(s, c)) : kEmptyLand;
+        } else if (id == "farming") {
+            const double f = s.env.farming.empty() ? 0.0 : s.env.farming[c];
+            out[c] = !inhabited ? kEmptyLand : (f < 0.01 ? kForagers : farming_scale()(f));
+        } else if (id == "domesticates") {
+            const std::uint32_t known = s.domesticates.empty() ? 0 : s.domesticates[c];
+            out[c] = !inhabited ? kEmptyLand : (known == 0 ? kForagers : domesticates_scale()(species_count(known)));
         } else if (id == "language" || id == "language_family" || id == "culture") {
             out[c] = inhabited ? people_color(s, main_people(s, c), id) : kEmptyLand;
         } else {  // median_age
@@ -473,6 +499,16 @@ Legend legend(std::string_view mode_id) {
         l.title = "Population ÷ capacity (1 = at capacity)";
         l.ramp = ramp_entries(crowding_scale(), "%g");
         l.swatches = empty_and_ocean;
+    } else if (id == "farming") {
+        l.title = "Share of food from farming";
+        l.ramp = {{"1%", farming_scale()(0.0)}, {"25%", farming_scale()(0.25)}, {"50%", farming_scale()(0.5)},
+                  {"75%", farming_scale()(0.75)}, {"100%", farming_scale()(1.0)}};
+        l.swatches = {{"Foragers", kForagers}, {"Uninhabited", kEmptyLand}, {"Ocean", kOceanNeutral}};
+    } else if (id == "domesticates") {
+        l.title = "Domesticated species known";
+        l.ramp = ramp_entries(domesticates_scale(), "%.0f");
+        l.ramp.back().label = "8+";
+        l.swatches = {{"None", kForagers}, {"Uninhabited", kEmptyLand}, {"Ocean", kOceanNeutral}};
     } else if (id == "language") {
         l.title = "Main language";
         l.swatches = empty_and_ocean;
@@ -628,6 +664,36 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
         for (std::size_t i = 0; i < marked.size() && i < 4; ++i) text += (i ? ", " : "") + marked[i].second;
         if (!text.empty()) f.push_back({"Ways", text});
         break;
+    }
+
+    // Farming.
+    const double farming = s.env.farming.empty() ? 0.0 : s.env.farming[c];
+    f.push_back({"Farming", farming < 0.005 ? "none: foragers" : fmt("%.0f%% of food", 100.0 * farming)});
+    const std::uint32_t known = s.domesticates.empty() ? 0 : s.domesticates[c];
+    std::string crops, animals;
+    for (std::size_t sp = 0; sp < content.species.size(); ++sp) {
+        if (!((known >> sp) & 1u)) continue;
+        std::string& list = content.species[sp].kind == SpeciesKind::Plant ? crops : animals;
+        list += (list.empty() ? "" : ", ") + content.species[sp].domesticated;
+    }
+    if (!crops.empty()) f.push_back({"Crops", crops});
+    if (!animals.empty()) f.push_back({"Animals", animals});
+    if (!s.env.farm_capacity.empty() && s.env.farm_capacity[c] > 0.0) {
+        f.push_back({"Farmland", fmt("%.2f people per km² if all farmed", s.env.farm_capacity[c] / w.grid.area_km2(c))});
+    }
+    // Domestication under way here, and origins.
+    std::string underway;
+    for (std::size_t k = 0; k < w.wild_stands.size() && k < s.domestication.size(); ++k) {
+        if (w.wild_stands[k].cell != c || s.domestication[k] < 0.05 || s.domestication[k] >= 1.0) continue;
+        underway += (underway.empty() ? "" : ", ") + content.species[w.wild_stands[k].species].name +
+                    fmt(" %.0f%%", 100.0 * s.domestication[k]);
+    }
+    if (!underway.empty()) f.push_back({"Domesticating", underway});
+    for (const Domestication& d : s.domestications) {
+        if (d.cell != c) continue;
+        f.push_back({"Origin", content.species[d.species].domesticated + " first domesticated here in year " +
+                                   with_commas(static_cast<long long>(d.tick / kTicksPerYear)) + " by the " +
+                                   s.cultures[d.culture].name});
     }
     return f;
 }

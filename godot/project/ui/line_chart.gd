@@ -22,6 +22,9 @@ const TOOLTIP_BG := Color("#2c2c2a")
 ## Years to mark with thin vertical lines (e.g. eruptions, interventions).
 var markers := PackedInt64Array()
 var marker_color := Color("#c98500")
+## Year ranges to shade, as [start, end, start, end, ...] (e.g. Bond events).
+var spans := PackedInt64Array()
+var span_color := Color(0.42, 0.65, 0.93, 0.3)
 
 var _x := PackedInt64Array()
 var _series: Array = []
@@ -116,7 +119,15 @@ func _draw() -> void:
 	draw_string(_font, Vector2(_plot.position.x, size_.y - 4), "year %d" % _x[0], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, INK_MUTED)
 	draw_string(_font, Vector2(_plot.end.x - 80, size_.y - 4), "year %d" % _x[_x.size() - 1], HORIZONTAL_ALIGNMENT_RIGHT, 80, 11, INK_MUTED)
 
-	# Event markers, behind the series.
+	# Shaded spans, then event markers, behind the series.
+	for i in range(0, spans.size() - 1, 2):
+		var a := maxf(float(spans[i]), x0)
+		var b := minf(float(spans[i + 1]), x1)
+		if b <= a:
+			continue
+		var ax: float = to_screen.call(a, lo).x
+		var bx: float = to_screen.call(b, lo).x
+		draw_rect(Rect2(ax, _plot.position.y, bx - ax, _plot.size.y), span_color)
 	for year in markers:
 		if year < _x[0] or year > _x[_x.size() - 1]:
 			continue

@@ -54,6 +54,8 @@ void load_species(Content& c, std::string_view text) {
         SpeciesDef d;
         d.id = s.at("id").as_string();
         d.name = s.at("name").as_string();
+        d.domesticated = s.string_or("domesticated", d.name);
+        d.domesticated_before_start = s.has("domesticated_before_start") && s.at("domesticated_before_start").as_bool();
         const std::string& kind = s.at("kind").as_string();
         if (kind == "plant") d.kind = SpeciesKind::Plant;
         else if (kind == "animal") d.kind = SpeciesKind::Animal;
@@ -297,7 +299,8 @@ void load_phonology(Content& c, std::string_view text) {
 
 // ---- culture
 
-constexpr const char* kVars[] = {"crowding", "aquatic", "seasonality", "growing_season", "game", "wild_plants"};
+constexpr const char* kVars[] = {"crowding", "aquatic",     "seasonality", "growing_season",
+                                 "game",     "wild_plants", "farming"};
 
 void load_culture(Content& c, std::string_view text) {
     const json::Value doc = json::parse(text, "data/culture.json");
@@ -316,7 +319,7 @@ void load_culture(Content& c, std::string_view text) {
             while (i < kCultureVarCount && key != kVars[i]) ++i;
             if (i == kCultureVarCount) {
                 fail(val, "is not a culture variable (crowding, aquatic, seasonality, growing_season, game, "
-                          "wild_plants)");
+                          "wild_plants, farming)");
             }
             t.push[i] = val.as_number();
             if (t.push[i] < -1.0 || t.push[i] > 1.0) fail(val, "must be between -1 and 1");

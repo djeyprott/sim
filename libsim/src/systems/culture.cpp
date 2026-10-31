@@ -138,6 +138,7 @@ std::array<double, kCultureVarCount> culture_variables(const World& w, const Sim
         if (species[i].kind == SpeciesKind::Plant && ((w.species_mask[c] >> i) & 1u)) ++plants;
     }
     v[static_cast<int>(CultureVar::WildPlants)] = clamp01(plants / 4.0);
+    v[static_cast<int>(CultureVar::Farming)] = s.env.farming.empty() ? 0.0 : clamp01(s.env.farming[c]);
     return v;
 }
 
@@ -492,6 +493,7 @@ void CultureSystem::step(StepContext& ctx) {
             moved.language = top_lang;
             moved.traits = new_traits[i];
             moved.dialect = s.cohorts[top_lang_cohort].dialect;
+            moved.farming = co.farming;
             std::int64_t moved_n = 0;
             Cohort& src = s.cohorts[i];
             for (int b = 0; b < kAgeBins; ++b) {
@@ -516,6 +518,7 @@ void CultureSystem::step(StepContext& ctx) {
             moved.language = co.language;
             moved.traits = s.cohorts[top_culture_cohort].traits;
             moved.dialect = new_dialect[i];
+            moved.farming = co.farming;
             std::int64_t moved_n = 0;
             Cohort& src = s.cohorts[i];
             for (int b = 0; b < kAgeBins; ++b) {

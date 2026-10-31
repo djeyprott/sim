@@ -151,6 +151,7 @@ void serialize(Ar& ar, SimState& s) {
         for (auto& n : c.male) ar.u32(n);
         for (auto& t : c.traits) ar.f64(t);
         for (auto& d : c.dialect) ar.f64(d);
+        ar.f64(c.farming);
     });
     vec(ar, s.ever_settled, [&](std::uint8_t& v) { ar.u8(v); });
 
@@ -167,11 +168,23 @@ void serialize(Ar& ar, SimState& s) {
         ar.f64(m.precip_frac);
         ar.i64(m.years_left);
     });
+    ar.i64(s.climate.bond.start_year);
+    ar.i64(s.climate.bond.years);
+    ar.f64(s.climate.bond.strength_c);
+    ar.i64(s.climate.next_bond_year);
+    vec(ar, s.climate.bond_history, [&](BondEvent& b) {
+        ar.i64(b.start_year);
+        ar.i64(b.years);
+        ar.f64(b.strength_c);
+    });
+    ar.f64(s.climate.bond_anomaly_c);
 
     doubles(ar, s.env.temperature_c);
     doubles(ar, s.env.precipitation_mm);
     doubles(ar, s.env.game);
     doubles(ar, s.env.capacity);
+    doubles(ar, s.env.farming);
+    doubles(ar, s.env.farm_capacity);
 
     ar.i64(s.ledger.initial_population);
     ar.i64(s.ledger.births);
@@ -229,6 +242,15 @@ void serialize(Ar& ar, SimState& s) {
         str(ar, c.name);
     });
     ar.id64(s.next_cognate);
+    vec(ar, s.domesticates, [&](std::uint32_t& m) { ar.u32(m); });
+    doubles(ar, s.domestication);
+    vec(ar, s.domestications, [&](Domestication& d) {
+        ar.i64(d.tick);
+        ar.u32(d.cell);
+        ar.u32(d.species);
+        ar.u32(d.culture);
+        ar.u32(d.language);
+    });
     vec(ar, s.history, [&](YearRecord& r) {
         ar.i64(r.year);
         ar.i64(r.population);
@@ -241,6 +263,8 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(r.languages);
         ar.u32(r.language_families);
         ar.u32(r.cultures);
+        ar.i64(r.farmers);
+        ar.u32(r.domesticated);
     });
 }
 

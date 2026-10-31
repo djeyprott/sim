@@ -77,6 +77,17 @@ struct World {
     std::vector<double> forager_capacity;       // baseline people supported by foraging
     std::vector<std::uint32_t> species_mask;    // bit s set if species s is native here
     std::vector<std::uint8_t> species_abundance;  // cell * species_count + s, 0-255
+    // How well each species does here once domesticated (its niche widened),
+    // cell * species_count + s, 0-255. Crops and herds can be raised far
+    // beyond where their wild ancestors grew.
+    std::vector<std::uint8_t> cultivated_suitability;
+    // Every (cell, species) where a domesticable species grows wild, sorted by
+    // cell then species: where domestication can begin.
+    struct WildStand {
+        CellId cell = 0;
+        std::uint8_t species = 0;
+    };
+    std::vector<WildStand> wild_stands;
 
     // Starting peoples: each land cell's forager group at the start of the run
     // (0 for ocean). Groups are contiguous regions; M2 turns them into
@@ -96,6 +107,9 @@ struct World {
     }
     [[nodiscard]] double abundance(CellId c, std::size_t species) const noexcept {
         return species_abundance[c * species_count() + species] / 255.0;
+    }
+    [[nodiscard]] double cultivated(CellId c, std::size_t species) const noexcept {
+        return cultivated_suitability[c * species_count() + species] / 255.0;
     }
 
     // Baseline climate of month m (0 = January) at cell c. Months follow the

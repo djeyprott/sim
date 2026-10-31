@@ -34,6 +34,7 @@ struct Cohort {
     std::array<std::uint32_t, kAgeBins> male{};
     std::array<double, kMaxTraits> traits{};       // 0-1 each, as in Content::traits
     std::array<double, kDialectDims> dialect{};
+    double farming = 0.0;  // share of its food from crops and herds (0 = foragers)
 
     [[nodiscard]] std::int64_t total() const noexcept {
         std::int64_t t = 0;
@@ -100,6 +101,15 @@ struct ClimateModifier {
     std::int64_t years_left = 0;
 };
 
+// A Bond event: one of the Holocene's abrupt cold spells (Bond et al. 1997,
+// 2001), such as the 8.2 and 4.2 ka events, recurring about every 1,500
+// years. `years` == 0 means none is under way.
+struct BondEvent {
+    std::int64_t start_year = 0;
+    std::int64_t years = 0;
+    double strength_c = 0.0;  // peak cooling at high northern latitudes
+};
+
 // Global and regional climate state carried from year to year.
 struct ClimateState {
     double global_anomaly_c = 0.0;   // global mean temperature minus baseline
@@ -109,6 +119,10 @@ struct ClimateState {
     std::vector<double> regional_temp_anomaly;    // per coarse climate cell, degrees C
     std::vector<double> regional_precip_anomaly;  // per coarse climate cell, fraction
     std::vector<ClimateModifier> modifiers;       // active regional events
+    BondEvent bond;                               // under way, if years > 0
+    std::vector<BondEvent> bond_history;          // every Bond event so far, in order
+    std::int64_t next_bond_year = 0;              // when the natural cycle brings the next one
+    double bond_anomaly_c = 0.0;                  // its effect on this year's global mean temperature
 };
 
 // This year's conditions on every cell, written by the climate and environment
@@ -117,7 +131,18 @@ struct Environment {
     std::vector<double> temperature_c;
     std::vector<double> precipitation_mm;
     std::vector<double> game;      // wild food abundance, 0..1 of the undisturbed level
-    std::vector<double> capacity;  // people the cell can feed by foraging this year
+    std::vector<double> capacity;  // people the cell can feed this year, foraging and farming
+    std::vector<double> farming;   // share of the cell's food from farming (population-weighted)
+    std::vector<double> farm_capacity;  // people the cell could feed if everyone farmed, this year
+};
+
+// The first time a cell domesticated a species.
+struct Domestication {
+    Tick tick = 0;
+    CellId cell = kInvalidCell;
+    std::uint32_t species = 0;
+    std::uint32_t culture = 0;   // main culture of the cell then
+    std::uint32_t language = 0;  // and its main language
 };
 
 // ---------------------------------------------------------------- records
@@ -132,6 +157,8 @@ enum class EventType : std::uint32_t {
     CultureSplit = 6,     // a regional culture became distinct; value = new culture id
     LanguageExtinct = 7,  // last speakers gone; value = language id
     CultureExtinct = 8,   // value = culture id
+    Domestication = 9,    // a species became domesticated in a cell; value = species index
+    BondEvent = 10,       // a Bond cold event began; value = peak cooling in milli-degrees C
 };
 
 struct Event {
@@ -164,6 +191,7 @@ enum class CommandType : std::uint32_t {
     Settlers = 5,         // cell; amount = number of people (a new group)
     WipeOut = 6,          // cell, radius; everyone there dies
     SetGame = 7,          // cell, radius; amount = game abundance (0-1)
+    BondEvent = 8,        // amount = peak cooling in degrees C; years = duration
 };
 
 struct Command {
@@ -191,6 +219,8 @@ struct YearRecord {
     std::uint32_t languages = 0;          // living languages
     std::uint32_t language_families = 0;  // families with a living language
     std::uint32_t cultures = 0;           // living cultures
+    std::int64_t farmers = 0;             // people, weighted by their share of food from farming
+    std::uint32_t domesticated = 0;       // species domesticated somewhere so far
 };
 
 // ---------------------------------------------------------------- state
@@ -215,6 +245,13 @@ struct SimState {
     std::vector<Language> languages;
     std::vector<Culture> cultures;
     std::uint64_t next_cognate = 1;
+
+    // Farming. Per cell: the domesticated species its people know (bit s =
+    // species s). Per wild stand (World::wild_stands): how far people there
+    // have come toward domesticating it (1 = domesticated).
+    std::vector<std::uint32_t> domesticates;
+    std::vector<double> domestication;
+    std::vector<Domestication> domestications;  // in the order they happened
 
     // ---- Derived data: rebuilt by refresh(), never saved or hashed.
     std::vector<std::uint32_t> cell_population;

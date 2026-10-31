@@ -152,7 +152,7 @@ Dictionary HistSimWorld::get_people_counts() const {
 Dictionary HistSimWorld::get_history(int64_t max_points) const {
     Dictionary d;
     PackedInt64Array years, population;
-    PackedFloat64Array capacity, anomaly;
+    PackedFloat64Array capacity, anomaly, farmers;
     if (sim_ && max_points > 1) {
         const auto& h = sim_->state().history;
         const std::size_t n = h.size();
@@ -163,19 +163,32 @@ Dictionary HistSimWorld::get_history(int64_t max_points) const {
             population.push_back(h[i].population);
             capacity.push_back(h[i].capacity);
             anomaly.push_back(h[i].global_anomaly_c);
+            farmers.push_back(static_cast<double>(h[i].farmers));
         }
         if (n > 0 && (n - 1) % step != 0) {  // always include the latest year
             years.push_back(h[n - 1].year);
             population.push_back(h[n - 1].population);
             capacity.push_back(h[n - 1].capacity);
             anomaly.push_back(h[n - 1].global_anomaly_c);
+            farmers.push_back(static_cast<double>(h[n - 1].farmers));
         }
     }
     d["year"] = years;
     d["population"] = population;
     d["capacity"] = capacity;
     d["anomaly"] = anomaly;
+    d["farmers"] = farmers;
     return d;
+}
+
+PackedInt64Array HistSimWorld::get_bond_spans() const {
+    PackedInt64Array out;
+    if (!sim_) return out;
+    for (const histsim::BondEvent& b : sim_->state().climate.bond_history) {
+        out.push_back(b.start_year);
+        out.push_back(b.start_year + b.years);
+    }
+    return out;
 }
 
 String HistSimWorld::get_state_hash() const {
@@ -309,6 +322,7 @@ Dictionary HistSimWorld::apply_intervention(const String& type, int64_t cell, do
     else if (t == "wipeout") c.type = CommandType::WipeOut;
     else if (t == "settlers") c.type = CommandType::Settlers;
     else if (t == "game") c.type = CommandType::SetGame;
+    else if (t == "bond") c.type = CommandType::BondEvent;
     else {
         d["message"] = to_godot("Unknown intervention: " + t);
         return d;
@@ -340,8 +354,10 @@ PackedInt64Array HistSimWorld::get_event_years(const String& kind) const {
     PackedInt64Array out;
     if (!sim_) return out;
     const std::string k = to_std(kind);
-    const histsim::EventType type =
-        k == "eruption" ? histsim::EventType::Eruption : histsim::EventType::Intervention;
+    const histsim::EventType type = k == "eruption"        ? histsim::EventType::Eruption
+                                    : k == "domestication" ? histsim::EventType::Domestication
+                                    : k == "bond"          ? histsim::EventType::BondEvent
+                                                           : histsim::EventType::Intervention;
     for (const histsim::Event& e : sim_->state().events) {
         if (e.type == type) out.push_back(e.tick / histsim::kTicksPerYear);
     }
@@ -384,6 +400,7 @@ void HistSimWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_imposed_forcing"), &HistSimWorld::get_imposed_forcing);
     ClassDB::bind_method(D_METHOD("get_intervention_count"), &HistSimWorld::get_intervention_count);
     ClassDB::bind_method(D_METHOD("get_event_years", "kind"), &HistSimWorld::get_event_years);
+    ClassDB::bind_method(D_METHOD("get_bond_spans"), &HistSimWorld::get_bond_spans);
     ClassDB::bind_method(D_METHOD("set_highlight", "cell", "radius_km"), &HistSimWorld::set_highlight);
     ClassDB::bind_method(D_METHOD("get_modes"), &HistSimWorld::get_modes);
     ClassDB::bind_method(D_METHOD("get_legend", "mode"), &HistSimWorld::get_legend);

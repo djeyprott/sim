@@ -62,8 +62,10 @@ jobs:
           meddled=$("$exe" run --seed 2 --level 4 --years 300 --hash-only \
             --at 50:eruption:12 --at 80:plague:1439:2000:0.5 --at 100:forcing:3 \
             --at 120:climate:1439:1500:-3:-0.4:25 --at 130:settlers:1439:3000 \
-            --at 140:game:1439:900:0.1 --at 150:wipeout:1439:300 | tr -d '\r')
-          echo "$plain $meddled" > hash-${{ matrix.name }}.txt
+            --at 140:game:1439:900:0.1 --at 150:wipeout:1439:300 --at 160:bond:2:200 | tr -d '\r')
+          # Long enough for domestication, farming and Bond events.
+          farmed=$("$exe" run --seed 3 --level 4 --years 2500 --hash-only | tr -d '\r')
+          echo "$plain $meddled $farmed" > hash-${{ matrix.name }}.txt
           echo "::notice title=determinism hash::${{ matrix.name }} $(cat hash-${{ matrix.name }}.txt)"
 
       - uses: actions/upload-artifact@v4
@@ -110,6 +112,8 @@ jobs:
           fi
           echo "::notice title=determinism::All platforms agree:$summary"
 
+  # Optimized with debug info: the sanitizers catch the same errors, and the
+  # long-run tests (the M1 and M2 gates) finish in minutes rather than tens.
   sanitizers:
     name: linux-sanitizers
     runs-on: ubuntu-latest
@@ -118,7 +122,7 @@ jobs:
       - name: Configure
         run: >
           cmake -S . -B build
-          -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
           -DCMAKE_CXX_COMPILER=clang++
           -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
       - name: Build
