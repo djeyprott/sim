@@ -158,6 +158,29 @@ enum class Bond : std::uint8_t {
     Vassal = 2,     // also fights in the overlord's wars and may be absorbed
 };
 
+// What weighs on a polity's stability (PolitySystem): each 0-1.
+enum class Pressure : std::uint8_t {
+    Famine = 0,     // share of its people beyond what the land and imports feed
+    War = 1,        // recent defeats, land lost, war dead and raids
+    Overreach = 2,  // provinces held loosely, far from the capital
+    Poverty = 3,    // little trade passing through the realm
+    Epidemic = 4,   // disease deaths beyond the usual
+    Division = 5,   // people of other cultures than the rulers'
+    Count
+};
+inline constexpr std::size_t kPressureCount = static_cast<std::size_t>(Pressure::Count);
+
+// How a polity ended. Append; never renumber.
+enum class PolityFate : std::uint8_t {
+    Living = 0,
+    Collapsed = 1,  // broke up; `fate_cause` says what drove it
+    Conquered = 2,  // annexed or overrun in war
+    Absorbed = 3,   // a vassal folded into its overlord
+    Dwindled = 4,   // lost its last land to secession or emptiness
+};
+// fate_cause for a collapse: a Pressure, or kSuccessionCrisis.
+inline constexpr std::uint8_t kSuccessionCrisis = 255;
+
 // A polity: a chiefdom, state or empire ruling a set of cells from a capital.
 struct Polity {
     std::uint32_t id = 0;
@@ -172,6 +195,14 @@ struct Polity {
     std::uint32_t overlord = 0;  // the polity it is bound to (0 = none)
     Bond bond = Bond::None;
     Tick bond_since = 0;
+    // Stability (0-1) moves each year toward a level set by its resilience
+    // (hierarchy, ritual, writing, bureaucracy) less the pressures on it; a
+    // fragile polity breaks up. `shock` is the recent toll of war (decays).
+    double stability = 0.6;
+    double shock = 0.0;
+    std::array<double, kPressureCount> pressure{};  // this year's pressures
+    PolityFate fate = PolityFate::Living;
+    std::uint8_t fate_cause = 0;
 };
 
 // A defensive alliance: each joins a war against the other.

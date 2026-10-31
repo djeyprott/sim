@@ -104,6 +104,35 @@ PolitySize polity_size(const World& w, const SimState& s, std::uint32_t id) {
     return z;
 }
 
+const char* pressure_name(Pressure p) {
+    switch (p) {
+        case Pressure::Famine: return "famine";
+        case Pressure::War: return "war";
+        case Pressure::Overreach: return "overreach";
+        case Pressure::Poverty: return "poverty";
+        case Pressure::Epidemic: return "epidemic";
+        case Pressure::Division: return "division";
+        case Pressure::Count: break;
+    }
+    return "";
+}
+
+std::string polity_fate_text(const Polity& p) {
+    switch (p.fate) {
+        case PolityFate::Living: return p.ended == kNever ? "living" : "ended";
+        case PolityFate::Collapsed:
+            if (p.fate_cause == kSuccessionCrisis) return "broke up in a succession crisis";
+            if (p.fate_cause < kPressureCount) {
+                return std::string("collapsed under ") + pressure_name(static_cast<Pressure>(p.fate_cause));
+            }
+            return "collapsed";
+        case PolityFate::Conquered: return "conquered";
+        case PolityFate::Absorbed: return "absorbed by its overlord";
+        case PolityFate::Dwindled: return "dwindled away";
+    }
+    return "";
+}
+
 // ------------------------------------------------------------------ towns
 
 void SettlementSystem::step(StepContext& ctx) {
@@ -196,6 +225,8 @@ void PolitySystem::step(StepContext& ctx) {
         if (p.ended != kNever) continue;
         if (cells[id].empty()) {
             p.ended = ctx.tick;
+            // Overrun if it had been losing a war; else it simply dwindled.
+            if (p.fate == PolityFate::Living) p.fate = p.shock > 0.2 ? PolityFate::Conquered : PolityFate::Dwindled;
             s.events.push_back({ctx.tick, EventType::PolityEnded, p.capital, static_cast<std::int64_t>(id)});
             continue;
         }
@@ -247,21 +278,116 @@ void PolitySystem::step(StepContext& ctx) {
         }
     }
 
-    // ---- Collapse: the whole polity dissolves into stateless villages.
+    // ---- Stability: resilience against this year's pressures.
+    const std::size_t i_ritual = trait_index(content, "ritual");
+    std::size_t writing = content.techniques.size(), bureaucracy = content.techniques.size();
+    for (std::size_t k = 0; k < content.techniques.size(); ++k) {
+        if (content.techniques[k].id == "writing") writing = k;
+        if (content.techniques[k].id == "bureaucracy") bureaucracy = k;
+    }
     for (std::size_t id = 1; id < np; ++id) {
         Polity& pol = s.polities[id];
         if (pol.ended != kNever) continue;
-        const double k = s.env.capacity[pol.capital];
-        const double crowding = k > 0.0 ? static_cast<double>(s.cell_population[pol.capital]) / k : 2.0;
-        const double strain = 1.0 + 3.0 * std::max(0.0, crowding - 1.0);
-        const double base = polity_has_writing(w, s, static_cast<std::uint32_t>(id)) ? kStateCollapse : kChiefdomCollapse;
-        RngStream rng = ctx.rng(Stream::Polity, kCollapseEntity | static_cast<std::uint32_t>(id));
-        if (rng.uniform() < base * strain) {
-            for (CellId c : cells[id]) {
-                if (s.polity_of[c] == id) s.polity_of[c] = 0;
+        const std::uint32_t root = s.cultures[pol.culture].root;
+        double people = 0.0, unfed = 0.0, held = 0.0, trade = 0.0, sick = 0.0, others = 0.0;
+        for (CellId c : cells[id]) {
+            const double pop = static_cast<double>(s.cell_population[c]);
+            people += pop;
+            unfed += std::max(0.0, pop - s.env.capacity[c]);
+            held += pop * control_of(id, c);
+            if (!s.trade_value.empty()) trade += s.trade_value[c];
+            if (!s.disease_deaths.empty()) sick += s.disease_deaths[c];
+            for (const Cohort& co : s.cohorts_in(c)) {
+                if (s.cultures[co.culture].root != root) others += static_cast<double>(co.total());
             }
-            pol.ended = ctx.tick;
-            s.events.push_back({ctx.tick, EventType::PolityEnded, pol.capital, static_cast<std::int64_t>(id)});
+        }
+        pol.shock *= 1.0 - kShockDecay;
+        auto& pr = pol.pressure;
+        pr.fill(0.0);
+        if (people > 0.0) {
+            pr[static_cast<std::size_t>(Pressure::Famine)] = std::min(1.0, kFamineScale * unfed / people);
+            pr[static_cast<std::size_t>(Pressure::Overreach)] = 1.0 - held / people;
+            pr[static_cast<std::size_t>(Pressure::Poverty)] =
+                std::clamp(1.0 - trade / people / kTradePerPerson, 0.0, 1.0);
+            pr[static_cast<std::size_t>(Pressure::Epidemic)] =
+                std::clamp(kEpidemicScale * (sick / people - kUsualDiseaseDeaths), 0.0, 1.0);
+            pr[static_cast<std::size_t>(Pressure::Division)] = others / people;
+        }
+        pr[static_cast<std::size_t>(Pressure::War)] = std::min(1.0, pol.shock);
+        const std::uint64_t known = techniques_in(s, pol.capital);
+        double target = kStabilityBase + kHierarchyWeight * cell_trait(s, pol.capital, i_hierarchy) +
+                        kRitualWeight * cell_trait(s, pol.capital, i_ritual) +
+                        (writing < 64 && ((known >> writing) & 1u) ? kWritingWeight : 0.0) +
+                        (bureaucracy < 64 && ((known >> bureaucracy) & 1u) ? kBureaucracyWeight : 0.0);
+        for (std::size_t k = 0; k < kPressureCount; ++k) target -= kPressureWeight[k] * pr[k];
+        target = std::clamp(target, 0.0, 1.0);
+        pol.stability += (target < pol.stability ? kStabilityFall : kStabilityRise) * (target - pol.stability);
+    }
+
+    // ---- Break-up of fragile polities, and succession disputes.
+    for (std::size_t id = 1; id < np; ++id) {
+        if (s.polities[id].ended != kNever) continue;
+        const bool state = polity_has_writing(w, s, static_cast<std::uint32_t>(id));
+        const double stability = s.polities[id].stability;
+        const double fragile = stability < kFragile ? (kFragile - stability) / kFragile : 0.0;
+        const double crisis = kCollapse * fragile * fragile;
+        const double succession = state ? kStateSuccession : kChiefdomSuccession;
+        RngStream rng = ctx.rng(Stream::Polity, kCollapseEntity | static_cast<std::uint32_t>(id));
+        const double roll = rng.uniform();
+        if (roll >= crisis + succession) continue;
+        // The cause: the heaviest pressure, unless the polity was sound.
+        std::uint8_t cause = kSuccessionCrisis;
+        if (roll < crisis) {
+            double worst = 0.0;
+            for (std::size_t k = 0; k < kPressureCount; ++k) {
+                const double weight = kPressureWeight[k] * s.polities[id].pressure[k];
+                if (weight > worst) worst = weight, cause = static_cast<std::uint8_t>(k);
+            }
+        }
+        const CellId capital = s.polities[id].capital;
+        const bool nomadic = s.polities[id].nomadic;
+        std::vector<CellId> mine;
+        for (CellId c : cells[id]) {
+            if (s.polity_of[c] == id) mine.push_back(c);
+        }
+        Polity& pol = s.polities[id];
+        pol.ended = ctx.tick;
+        pol.fate = PolityFate::Collapsed;
+        pol.fate_cause = cause;
+        s.events.push_back({ctx.tick, EventType::PolityEnded, capital, static_cast<std::int64_t>(id)});
+        for (CellId c : mine) s.polity_of[c] = 0;
+        if (!state) continue;  // a chiefdom dissolves into its villages
+        // A state leaves a core under its old capital and successors where
+        // towns can hold a following.
+        std::vector<CellId> core, rest;
+        for (CellId c : mine) (control_of(id, c) >= kCoreControl || c == capital ? core : rest).push_back(c);
+        std::vector<CellId> seats;
+        std::stable_sort(rest.begin(), rest.end(),
+                         [&](CellId a, CellId b) { return s.cell_population[a] > s.cell_population[b]; });
+        for (CellId c : rest) {
+            const double farming = s.env.farming.empty() ? 0.0 : s.env.farming[c];
+            const double density = static_cast<double>(s.cell_population[c]) / w.grid.area_km2(c);
+            if (farming < kMinFarming || density < kMinDensity || cell_trait(s, c, i_hierarchy) < kMinHierarchy) continue;
+            bool near = w.grid.distance_km(c, capital) < kSuccessorKm;
+            for (CellId seat : seats) near = near || w.grid.distance_km(c, seat) < kSuccessorKm;
+            if (!near) seats.push_back(c);
+        }
+        const std::uint32_t heir = found(capital, static_cast<std::uint32_t>(id), nomadic);
+        s.polities[heir].stability = kSuccessorStability;
+        for (CellId c : core) s.polity_of[c] = heir;
+        std::vector<std::uint32_t> successor(seats.size());
+        for (std::size_t i = 0; i < seats.size(); ++i) {
+            successor[i] = found(seats[i], static_cast<std::uint32_t>(id), nomadic);
+            s.polities[successor[i]].stability = kSuccessorStability;
+        }
+        for (CellId c : rest) {
+            double best = kSuccessorKm;
+            std::uint32_t to = 0;
+            for (std::size_t i = 0; i < seats.size(); ++i) {
+                const double d = w.grid.distance_km(c, seats[i]);
+                if (d < best || (d == best && successor[i] < to)) best = d, to = successor[i];
+            }
+            if (to != 0) s.polity_of[c] = to;
         }
     }
 
@@ -274,15 +400,16 @@ void PolitySystem::step(StepContext& ctx) {
         for (CellId c : cells[id]) {
             if (s.polity_of[c] == id) mine.push_back(c);
         }
+        const double unrest = 2.0 * (1.0 - pol.stability);
         double mean_control = 0.0;
         for (CellId c : mine) {
             const double ctl = control_of(id, c);
             mean_control += ctl;
-            if (c != pol.capital && ctl < kSecedeBelow && rng.uniform32() < kSecession) s.polity_of[c] = 0;
+            if (c != pol.capital && ctl < kSecedeBelow && rng.uniform32() < kSecession * unrest) s.polity_of[c] = 0;
         }
         if (mine.size() >= kCivilWarCells) {
             mean_control /= static_cast<double>(mine.size());
-            if (rng.uniform() < kCivilWar * (1.0 - mean_control)) {
+            if (rng.uniform() < kCivilWar * (1.0 - mean_control) * unrest) {
                 // The half farther from the capital breaks away under its
                 // largest town.
                 std::vector<std::pair<double, CellId>> by_distance;

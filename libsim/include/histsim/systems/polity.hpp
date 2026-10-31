@@ -17,7 +17,19 @@
 // weakly held stateless neighbours, lose provinces they barely control, and
 // now and then split in civil war; land changes hands between polities only
 // in war (war.hpp).
+//
+// Polities do not fall by a set chance: each has a stability that tracks its
+// resilience (a taste for hierarchy and ritual, writing, bureaucracy) against
+// what weighs on it now: famine, the toll of war, overreach, poverty,
+// epidemics and subjects of other cultures. Fragile polities lose provinces,
+// fall into civil war and break up, and the cause is recorded. A chiefdom
+// breaks into its villages; a state leaves a core under its capital and
+// successor states around its other towns. Only succession disputes, until
+// rulers are simulated, remain a small chance.
 #pragma once
+
+#include <array>
+#include <string>
 
 #include "histsim/scheduler.hpp"
 
@@ -67,11 +79,48 @@ public:
     // of at least kCivilWarCells cells.
     static constexpr double kCivilWar = 0.004;
     static constexpr std::size_t kCivilWarCells = 6;
-    // Collapse: chiefdoms rise and fall within a century or two ("chiefly
-    // cycling", Anderson 1994); states last longer. Chance a year, raised by
-    // famine at the capital (x (1 + 3 x (crowding - 1)) above capacity).
-    static constexpr double kChiefdomCollapse = 0.006;
-    static constexpr double kStateCollapse = 0.0015;
+    // Stability. Each year it moves toward a target (by kStabilityRise of
+    // the gap when rising, kStabilityFall when falling):
+    //   target = kStabilityBase + resilience - sum of weight x pressure
+    //   resilience = kHierarchyWeight x hierarchy + kRitualWeight x ritual
+    //                (of the people at the capital) + kWritingWeight with
+    //                writing + kBureaucracyWeight with bureaucracy
+    // Pressures (0-1): famine = kFamineScale x share of people beyond
+    // capacity; war = shock; overreach = 1 - people-weighted mean control;
+    // poverty = 1 - (trade value per person / kTradePerPerson); epidemic =
+    // kEpidemicScale x (disease deaths per person - kUsualDiseaseDeaths);
+    // division = share of people whose culture is of another lineage.
+    static constexpr double kStabilityBase = 0.45;
+    static constexpr double kStabilityRise = 0.1;
+    static constexpr double kStabilityFall = 0.3;
+    static constexpr double kHierarchyWeight = 0.25;
+    static constexpr double kRitualWeight = 0.15;
+    static constexpr double kWritingWeight = 0.1;
+    static constexpr double kBureaucracyWeight = 0.1;
+    static constexpr std::array<double, kPressureCount> kPressureWeight = {1.0, 0.8, 0.5, 0.15, 0.6, 0.3};
+    static constexpr double kFamineScale = 3.0;
+    static constexpr double kTradePerPerson = 0.05;
+    static constexpr double kEpidemicScale = 40.0;
+    static constexpr double kUsualDiseaseDeaths = 0.005;
+    static constexpr double kShockDecay = 0.2;  // share of the war shock that fades a year
+    // A polity below kFragile stability breaks up with chance kCollapse x
+    // ((kFragile - stability) / kFragile)^2 a year. Fragility also speeds
+    // secession and civil war (x 2 x (1 - stability)).
+    static constexpr double kFragile = 0.3;
+    static constexpr double kCollapse = 0.3;
+    // Succession disputes: until rulers are simulated (M3 part 6), a small
+    // chance a year that a ruler's death splits the polity whatever its
+    // state, larger for chiefdoms (rule by kin) than for states.
+    static constexpr double kChiefdomSuccession = 0.0005;
+    static constexpr double kStateSuccession = 0.0002;
+    // When a state breaks up, its core (cells it controls at least kCoreControl)
+    // stays together under the old capital; elsewhere, towns of enough
+    // farming, density and hierarchy become seats of successor polities that
+    // take the cells within kSuccessorKm; the rest is left without a ruler.
+    // A chiefdom (no writing) simply dissolves.
+    static constexpr double kCoreControl = 0.5;
+    static constexpr double kSuccessorKm = 250.0;
+    static constexpr double kSuccessorStability = 0.5;
     // Nomad confederations form where herds give at least kNomadPastoral of
     // the farm food, people ride horses and warfare is at least
     // kNomadWarfare: chance kNomadFormation x warfare per check. Their rule
@@ -108,6 +157,11 @@ struct PolitySize {
     double area_km2 = 0.0;
 };
 PolitySize polity_size(const World& world, const SimState& state, std::uint32_t polity);
+
+// "famine", "war", ... for a pressure; "a succession crisis" for that cause.
+const char* pressure_name(Pressure pressure);
+// How a polity ended, in words: "collapsed in famine", "conquered", ...
+std::string polity_fate_text(const Polity& polity);
 
 // Whether a polity's capital knows writing (what makes it a state).
 bool polity_has_writing(const World& world, const SimState& state, std::uint32_t polity);

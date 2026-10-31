@@ -224,11 +224,16 @@ years; copper and horse riding come late.
 | Formation | Every 5 years, a stateless cell with farming ≥ 50%, at least 0.4 people per km² and hierarchy ≥ 0.3 founds a polity with chance 1% × hierarchy × (0.5 + circumscription) × density factor, where circumscription is the share of neighbours that are sea or much poorer land (Carneiro). |
 | Reach | Control of a cell = 1 / (1 + (distance from the capital / reach)²); reach = 100 km × (1 + administration) × (1 + 0.3 contact). Writing (+1), bureaucracy (+0.7), roads (+0.5) and bronze (+0.1) add administration. A chiefdom holds about one cell; a state with writing a ring around its capital. |
 | Expansion | Each year a polity tries the stateless neighbouring cell it would control best (at least 30%), with chance 3% × control × (0.5 + warfare) × strength ratio. Land changes hands between polities only in war (below). |
-| Breakdown | Provinces under 20% control secede (1% a year); polities of 6 or more cells split in civil war (0.4% × (1 − mean control)), the far half breaking away and fighting a war of independence; and whole polities collapse, chiefdoms 0.6% a year and states 0.15%, more under famine. Chiefdoms rise and fall within a century or two (chiefly cycling), states last longer. |
+| Stability | Each polity's stability (0–1) moves toward a target each year (10% of the gap when rising, 30% when falling): 0.45 + 0.25 × hierarchy + 0.15 × ritual (people at the capital) + 0.1 with writing + 0.1 with bureaucracy, minus weighted pressures: famine (× 1.0; three times the share of people beyond what the land and food imports feed), war (× 0.8; the toll of land lost, war dead, lost wars and raids, fading 20% a year), overreach (× 0.5; 1 − the people-weighted mean control), epidemic (× 0.6; disease deaths beyond 0.5% a year, × 40), division (× 0.3; share of people of another cultural lineage than the rulers) and poverty (× 0.15; little trade per person). |
+| Breakdown | Provinces under 20% control secede (1% a year) and polities of 6 or more cells split in civil war (0.4% × (1 − mean control)), the far half breaking away and fighting a war of independence; both are multiplied by 2 × (1 − stability). Below 30% stability a polity breaks up with chance 0.3 × ((0.3 − stability) ÷ 0.3)² a year, its heaviest pressure recorded as the cause. A chiefdom dissolves into its villages. A state leaves a core (cells it controls at least half) under its old capital, successor polities seated at the most populous dense, farming, hierarchical towns at least 250 km apart, each taking the cells within 250 km, and unruled land beyond. Until rulers are simulated (part 6), succession disputes break up chiefdoms at 0.05% and states at 0.02% a year whatever their state. A polity that loses its last cell was conquered (if the toll of war on it was heavy) or dwindled away. |
 | Culture | Being ruled pushes hierarchy, warfare and ritual up. |
 
 Writing needs granaries, a calendar and a town of 20,000 people to be
-invented (not to be kept). At level 5 chiefdoms appear a few centuries after
+invented (not to be kept). At level 5 a polity lasts about 120 years at the
+median (a quarter outlast 350). Of those that end, over half are conquered,
+about one in six collapses in famine, about one in ten in epidemics or from
+overreach, and about one in six breaks up in a succession dispute; break-ups
+cluster in Bond events and epidemics. Chiefdoms appear a few centuries after
 farming, thousands rise and fall, and the first states (with writing) appear
 around 3,500–7,000 years after the first crops; the largest early states hold
 0.2–0.8 million km², the range of archaic states in Seshat. `histsim

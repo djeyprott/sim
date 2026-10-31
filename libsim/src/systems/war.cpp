@@ -269,6 +269,16 @@ void WarSystem::step(StepContext& ctx) {
         return reach[id] > 0.0 ? polity_control(w.grid.distance_km(s.polities[id].capital, c), reach[id]) : 0.0;
     };
     const Armies armies = raise_armies(w, s);
+    // People of each polity at the start of the year, to weigh its losses.
+    std::vector<double> people_of(np, 0.0);
+    for (std::uint32_t id = 1; id < np; ++id) {
+        for (CellId c : cells[id]) people_of[id] += static_cast<double>(s.cell_population[c]);
+    }
+    // The toll of war on a polity's stability (PolitySystem): losses as a
+    // share of its people.
+    auto blow = [&](std::uint32_t id, double amount) {
+        if (id != 0 && id < np && people_of[id] > 0.0) s.polities[id].shock += amount / people_of[id];
+    };
     std::vector<double> power = armies.strength;
     for (std::uint32_t id = 1; id < np; ++id) {
         const Polity& p = s.polities[id];
@@ -377,6 +387,8 @@ void WarSystem::step(StepContext& ctx) {
             if (target == kInvalidCell || ratio <= 1.0) return false;
             if (rng.uniform() >= kSeize * std::min(2.0, ratio - 1.0)) return false;
             const std::uint32_t loser = s.polity_of[target];
+            // Losing land shakes the loser in proportion to the people lost.
+            blow(loser, kShockLand * static_cast<double>(s.cell_population[target]));
             // The sack, and refugees to the nearest cell their side still holds.
             war.deaths += kill(s, target, kSackDeaths, false, rng);
             CellId refuge = kInvalidCell;
@@ -412,7 +424,9 @@ void WarSystem::step(StepContext& ctx) {
                 if (men <= 0) return;
                 const double share = std::min(0.5, dead / static_cast<double>(men));
                 for (CellId c : front) {
-                    war.deaths += kill(s, c, share, true, rng);
+                    const std::int64_t fallen = kill(s, c, share, true, rng);
+                    war.deaths += fallen;
+                    blow(s.polity_of[c], kShockDead * static_cast<double>(fallen));
                     if (s.strife[c] == 0) s.strife[c] = 1;
                 }
             };
@@ -450,10 +464,13 @@ void WarSystem::step(StepContext& ctx) {
             for (CellId c = 0; c < n; ++c) {
                 if (s.polity_of[c] == loser) s.polity_of[c] = winner;
             }
+            s.polities[loser].fate = PolityFate::Conquered;
         };
         const std::uint32_t winner = outcome == WarOutcome::AttackersWon ? lead_a : lead_d;
         const std::uint32_t loser = outcome == WarOutcome::AttackersWon ? lead_d : lead_a;
         if (outcome != WarOutcome::Stalemate) {
+            s.polities[loser].shock += kShockDefeat;
+            s.polities[winner].shock = std::max(0.0, s.polities[winner].shock - kVictoryRelief);
             if (war.goal == WarGoal::Independence) {
                 if (winner == lead_a) {
                     Polity& rebel = s.polities[lead_a];
@@ -504,6 +521,7 @@ void WarSystem::step(StepContext& ctx) {
             }
             p.overlord = 0;
             p.bond = Bond::None;
+            p.fate = PolityFate::Absorbed;
             s.events.push_back({tick, EventType::Absorbed, p.capital, static_cast<std::int64_t>(id)});
         }
     }
@@ -618,6 +636,7 @@ void WarSystem::step(StepContext& ctx) {
         ++s.raids;
         s.strife[target] = 3;
         kill(s, target, kRaidDeaths, false, rng);
+        if (owner != 0) s.polities[owner].shock += kShockRaid;
         if (have_stocks) {
             for (std::size_t g = 0; g < ng; ++g) {
                 if (g == content.food_good) continue;

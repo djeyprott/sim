@@ -300,6 +300,11 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(p.overlord);
         u8(ar, p.bond);
         ar.i64(p.bond_since);
+        ar.f64(p.stability);
+        ar.f64(p.shock);
+        for (double& x : p.pressure) ar.f64(x);
+        u8(ar, p.fate);
+        ar.u8(p.fate_cause);
     });
     doubles(ar, s.stocks);
     doubles(ar, s.prices);

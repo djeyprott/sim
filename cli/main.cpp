@@ -18,6 +18,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
+#include <map>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -79,9 +80,9 @@ struct Options {
                  "                 crowding temperature rainfall rain_season growing soil\n"
                  "                 species capacity game temp_anomaly median_age language\n"
                  "                 language_family culture farming domesticates disease\n"
-                 "                 technology polity towns realms war trade resources (polity\n"
-                 "                 borders are drawn on all, trade routes on trade and\n"
-                 "                 resources)\n"
+                 "                 technology polity towns realms war stability trade resources\n"
+                 "                 (polity borders are drawn on all, trade routes on trade\n"
+                 "                 and resources)\n"
                  "  histsim farming [--seed N] [--level L] [--years Y]\n"
                  "                 where and when species were domesticated, techniques\n"
                  "                 invented and diseases emerged, Bond events, and farmers,\n"
@@ -513,13 +514,30 @@ int polities(const Options& o) {
     std::vector<histsim::PolitySize> size(s.polities.size());
     for (std::uint32_t id : living) size[id] = histsim::polity_size(w, s, id);
     std::stable_sort(living.begin(), living.end(), [&](auto a, auto b) { return size[a].people > size[b].people; });
+    // How polities ended, and how long they lasted.
+    std::map<std::string, std::size_t> fates;
+    std::vector<double> lives;
+    for (std::uint32_t id = 1; id < s.polities.size(); ++id) {
+        const histsim::Polity& p = s.polities[id];
+        if (p.ended == histsim::kNever) continue;
+        ++fates[histsim::polity_fate_text(p)];
+        lives.push_back(static_cast<double>(p.ended - p.founded) / histsim::kTicksPerYear);
+    }
+    std::sort(lives.begin(), lives.end());
+    std::printf("\nHow the %zu polities that ended did so (median life %.0f years, a quarter outlived %.0f):\n",
+                lives.size(), lives.empty() ? 0.0 : lives[lives.size() / 2],
+                lives.empty() ? 0.0 : lives[lives.size() * 3 / 4]);
+    std::vector<std::pair<std::size_t, std::string>> by_count;
+    for (const auto& [text, count] : fates) by_count.emplace_back(count, text);
+    std::stable_sort(by_count.begin(), by_count.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+    for (const auto& [count, text] : by_count) std::printf("  %6zu  %s\n", count, text.c_str());
     std::printf("\nLargest polities in year %lld (%zu living, %zu ever):\n", static_cast<long long>(sim.year()),
                 living.size(), s.polities.size() - 1);
     for (std::size_t i = 0; i < living.size() && i < 15; ++i) {
         const histsim::Polity& p = s.polities[living[i]];
         const std::uint32_t city = s.city_of[p.capital];
-        std::printf("  %-14s %-8s %3zu cells %9.0f km^2 %9lld people  capital %s  since year %lld  (%s)\n",
-                    p.name.c_str(), histsim::polity_level(w, s, living[i]), size[living[i]].cells,
+        std::printf("  %-14s %-8s stability %3.0f%% %3zu cells %9.0f km^2 %9lld people  capital %s  since year %lld  (%s)\n",
+                    p.name.c_str(), histsim::polity_level(w, s, living[i]), 100.0 * p.stability, size[living[i]].cells,
                     size[living[i]].area_km2, static_cast<long long>(size[living[i]].people),
                     city != 0 ? s.cities[city].name.c_str() : "(no city)",
                     static_cast<long long>(p.founded / histsim::kTicksPerYear), s.cultures[p.culture].name.c_str());

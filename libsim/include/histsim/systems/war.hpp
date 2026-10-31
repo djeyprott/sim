@@ -16,7 +16,8 @@
 // is gone, or by exhaustion (more likely the longer they last). The winner
 // keeps what it took; a beaten defender whose capital fell becomes a vassal
 // (or is annexed if little is left), and one beaten in a war for tribute
-// becomes a tributary. A truce follows.
+// becomes a tributary. A truce follows. Every loss shakes the loser's
+// stability (polity.hpp), which can bring it down.
 //
 // Diplomacy. A polity facing a much stronger neighbour seeks a defensive
 // ally among its other neighbours, more readily one of related culture.
@@ -86,6 +87,14 @@ public:
     static constexpr double kRaidLoot = 0.3;
     static constexpr double kRaidDeaths = 0.01;
     static constexpr double kRaidTribute = 0.1;
+    // The toll of war on stability (Polity::shock, which PolitySystem lets
+    // fade): land lost (per share of people in it), war dead (per share of
+    // people), a lost war, a raid; a won war eases it.
+    static constexpr double kShockLand = 1.0;
+    static constexpr double kShockDead = 5.0;
+    static constexpr double kShockDefeat = 0.3;
+    static constexpr double kShockRaid = 0.05;
+    static constexpr double kVictoryRelief = 0.1;
 };
 
 // Each living polity's own fighting strength (levy x quality), by polity id.

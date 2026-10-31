@@ -154,6 +154,14 @@ const ColorScale& trade_scale() {  // value carried a year, log: teal, light to 
     return s;
 }
 const Rgba kNoTrade = hex("#dcd9cf");
+const ColorScale& stability_scale() {  // fragile (red) to steady (green)
+    static const ColorScale s({{0, hex("#9e1f1a")},
+                               {0.3, hex("#e0784f")},
+                               {0.5, hex("#f2e2a8")},
+                               {0.7, hex("#8cc07a")},
+                               {1.0, hex("#2f7a3d")}});
+    return s;
+}
 // Deposits shown on the resources map, most valuable first wins a cell.
 struct ResourceColor {
     const char* good;
@@ -260,6 +268,7 @@ const std::vector<MapModeInfo> kModes = {
     {"towns", "Towns", "Share of people living in towns and cities"},
     {"realms", "Realms", "Polities with their vassals and tributaries (lighter), each realm its own color"},
     {"war", "War", "Wars, battles, conquests and nomad raids this year"},
+    {"stability", "Stability", "How steady each polity is against famine, war, overreach and other pressures"},
     {"trade", "Trade", "Value of goods sent and received this year"},
     {"resources", "Resources", "Deposits of salt, stone, ores, gold and shell; the most valuable shown"},
 };
@@ -540,6 +549,9 @@ void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rg
             out[c] = !inhabited ? kEmptyLand
                      : p == 0   ? kStateless
                                 : (top == p ? polity_color(s, top) : lighten(polity_color(s, top), 0.45));
+        } else if (id == "stability") {
+            const std::uint32_t p = s.polity_of.empty() ? 0 : s.polity_of[c];
+            out[c] = !inhabited ? kEmptyLand : (p == 0 ? kStateless : stability_scale()(s.polities[p].stability));
         } else if (id == "war") {
             const std::uint8_t strife = s.strife.size() == n ? s.strife[c] : 0;
             if (!inhabited) {
@@ -670,6 +682,11 @@ Legend legend(std::string_view mode_id) {
         l.title = "Realms (subjects in lighter shades)";
         l.swatches = {{"No ruler (bands, tribes, villages)", kStateless}, {"Uninhabited", kEmptyLand},
                       {"Ocean", kOceanNeutral}};
+    } else if (id == "stability") {
+        l.title = "Stability of the ruling polity (below 30% it may break up)";
+        l.ramp = {{"0%", stability_scale()(0)}, {"30%", stability_scale()(0.3)}, {"50%", stability_scale()(0.5)},
+                  {"70%", stability_scale()(0.7)}, {"100%", stability_scale()(1.0)}};
+        l.swatches = {{"No ruler", kStateless}, {"Uninhabited", kEmptyLand}, {"Ocean", kOceanNeutral}};
     } else if (id == "war") {
         l.title = "War this year";
         l.swatches = {{"Changed hands in war", kTaken}, {"Battles", kFighting}, {"Raided by nomads", kRaided},
@@ -950,6 +967,17 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
         f.push_back({"Realm", with_commas(static_cast<long long>(z.cells)) + " cells, " +
                                   with_commas(std::llround(z.area_km2)) + " km², " + with_commas(z.people) +
                                   " people; since year " + with_commas(static_cast<long long>(pol.founded / kTicksPerYear))});
+        {
+            std::string why;
+            for (std::size_t k = 0; k < kPressureCount; ++k) {
+                if (PolitySystem::kPressureWeight[k] * pol.pressure[k] < 0.05) continue;
+                why += (why.empty() ? "" : ", ") + std::string(pressure_name(static_cast<Pressure>(k))) +
+                       fmt(" %.0f%%", 100.0 * pol.pressure[k]);
+            }
+            f.push_back({"Stability", fmt("%.0f%%", 100.0 * pol.stability) +
+                                          (pol.stability < PolitySystem::kFragile ? " (fragile)" : "") +
+                                          (why.empty() ? "" : "; strained by " + why)});
+        }
         if (pol.overlord != 0 && pol.overlord < s.polities.size()) {
             f.push_back({"Overlord", std::string(pol.bond == Bond::Vassal ? "vassal of " : "pays tribute to ") +
                                          s.polities[pol.overlord].name + " since year " +

@@ -122,3 +122,100 @@ TEST(polity_chiefdoms_cycle_and_states_form_with_writing) {
         if (s.urban[c] > 0.02) CHECK(s.env.farming[c] > 0.3);
     }
 }
+
+namespace {
+
+// A world at its start with one polity ruling a cell and its neighbours.
+struct OnePolity {
+    Simulation sim;
+    SimState s;
+    CellId capital = kInvalidCell;
+};
+
+OnePolity one_polity() {
+    WorldParams p;
+    p.grid_level = 4;
+    OnePolity x{Simulation::create(p), {}, kInvalidCell};
+    x.s = x.sim.state();
+    const World& w = x.sim.world();
+    for (CellId c = 0; c < w.cell_count() && x.capital == kInvalidCell; ++c) {
+        if (x.s.cell_population[c] < 1000) continue;
+        bool all = true;
+        for (CellId nb : w.grid.neighbors(c)) all = all && x.s.cell_population[nb] >= 1000;
+        if (all) x.capital = c;
+    }
+    x.s.polities.resize(2);
+    Polity& pol = x.s.polities[1];
+    pol.id = 1;
+    pol.name = "Testland";
+    pol.capital = x.capital;
+    pol.culture = x.s.cohorts_in(x.capital).front().culture;
+    x.s.polity_of[x.capital] = 1;
+    for (CellId nb : w.grid.neighbors(x.capital)) x.s.polity_of[nb] = 1;
+    return x;
+}
+
+void run_polities(const World& w, SimState& s, int years) {
+    PolitySystem polities;
+    for (int y = 0; y < years; ++y) {
+        StepContext ctx{w, s, 11, s.tick};
+        polities.step(ctx);
+        s.tick += kTicksPerYear;
+    }
+}
+
+}  // namespace
+
+TEST(polity_stability_falls_in_famine_and_names_the_cause) {
+    OnePolity x = one_polity();
+    const World& w = x.sim.world();
+    SimState fed = x.s;
+    run_polities(w, fed, 1);
+    CHECK_EQ(fed.polities[1].pressure[static_cast<std::size_t>(Pressure::Famine)], 0.0);
+    // The land feeds only half its people.
+    SimState hungry = x.s;
+    for (CellId c = 0; c < w.cell_count(); ++c) {
+        if (hungry.polity_of[c] == 1) hungry.env.capacity[c] = 0.5 * hungry.cell_population[c];
+    }
+    run_polities(w, hungry, 1);
+    CHECK(hungry.polities[1].pressure[static_cast<std::size_t>(Pressure::Famine)] > 0.5);
+    CHECK(hungry.polities[1].stability < fed.polities[1].stability);
+    // Kept hungry, it breaks up, and the famine is named as the cause.
+    for (int y = 0; y < 200 && hungry.polities[1].ended == kNever; ++y) {
+        for (CellId c = 0; c < w.cell_count(); ++c) {
+            if (hungry.cell_population[c] > 0) hungry.env.capacity[c] = 0.5 * hungry.cell_population[c];
+        }
+        run_polities(w, hungry, 1);
+    }
+    const Polity& pol = hungry.polities[1];
+    CHECK(pol.ended != kNever);
+    CHECK(pol.fate == PolityFate::Collapsed);
+    CHECK_EQ(pol.fate_cause, static_cast<std::uint8_t>(Pressure::Famine));
+    CHECK(polity_fate_text(pol) == "collapsed under famine");
+    // A chiefdom dissolves: nobody rules its land.
+    for (CellId c = 0; c < w.cell_count(); ++c) {
+        if (hungry.polity_of[c] != 0) CHECK(hungry.polities[hungry.polity_of[c]].founded > pol.founded);
+    }
+}
+
+TEST(polity_a_broken_state_leaves_a_core_under_its_capital) {
+    OnePolity x = one_polity();
+    const World& w = x.sim.world();
+    SimState& s = x.s;
+    const auto& techs = w.content->techniques;
+    for (std::size_t k = 0; k < techs.size(); ++k) {
+        if (techs[k].id == "writing") s.techniques[x.capital] |= std::uint64_t{1} << k;
+    }
+    CHECK(polity_has_writing(w, s, 1));
+    s.polities[1].stability = 0.0;
+    for (CellId c = 0; c < w.cell_count(); ++c) {
+        if (s.polity_of[c] == 1) s.env.capacity[c] = 0.2 * s.cell_population[c];
+    }
+    for (int y = 0; y < 100 && s.polities[1].ended == kNever; ++y) run_polities(w, s, 1);
+    CHECK(s.polities[1].fate == PolityFate::Collapsed);
+    const std::uint32_t heir = s.polity_of[x.capital];
+    CHECK(heir > 1);
+    CHECK_EQ(s.polities[heir].parent, 1u);
+    CHECK_EQ(s.polities[heir].capital, x.capital);
+    CHECK_EQ(s.polities[heir].ended, kNever);
+}
