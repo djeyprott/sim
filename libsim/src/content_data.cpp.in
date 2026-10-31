@@ -9,6 +9,10 @@ extern const unsigned char kPhonologyJson[];
 extern const std::size_t kPhonologyJsonSize;
 extern const unsigned char kCultureJson[];
 extern const std::size_t kCultureJsonSize;
+extern const unsigned char kDiseasesJson[];
+extern const std::size_t kDiseasesJsonSize;
+extern const unsigned char kTechniquesJson[];
+extern const std::size_t kTechniquesJsonSize;
 
 const unsigned char kSpeciesJson[] = {@HISTSIM_SPECIES_BYTES@ 0x00};
 const std::size_t kSpeciesJsonSize = sizeof(kSpeciesJson) - 1;
@@ -16,5 +20,9 @@ const unsigned char kPhonologyJson[] = {@HISTSIM_PHONOLOGY_BYTES@ 0x00};
 const std::size_t kPhonologyJsonSize = sizeof(kPhonologyJson) - 1;
 const unsigned char kCultureJson[] = {@HISTSIM_CULTURE_BYTES@ 0x00};
 const std::size_t kCultureJsonSize = sizeof(kCultureJson) - 1;
+const unsigned char kDiseasesJson[] = {@HISTSIM_DISEASES_BYTES@ 0x00};
+const std::size_t kDiseasesJsonSize = sizeof(kDiseasesJson) - 1;
+const unsigned char kTechniquesJson[] = {@HISTSIM_TECHNIQUES_BYTES@ 0x00};
+const std::size_t kTechniquesJsonSize = sizeof(kTechniquesJson) - 1;
 
 }  // namespace histsim

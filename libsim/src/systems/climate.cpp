@@ -5,6 +5,7 @@
 
 #include "histsim/interventions.hpp"
 #include "histsim/portable_math.hpp"
+#include "histsim/systems/technology.hpp"
 
 namespace histsim {
 
@@ -162,9 +163,12 @@ double forage_capacity(const World& w, const SimState& s, CellId c) {
     if (!w.is_land[c]) return 0.0;
     // Land foods (plants and game) for this year's climate, plus fish and
     // shellfish from coasts and rivers, which hunting does not deplete.
+    // Techniques (bow, nets, canoes, pottery) add to each.
     const double land = forager_density(s.env.temperature_c[c], s.env.precipitation_mm[c]) * w.grid.area_km2(c);
     constexpr double kShare = EnvironmentSystem::kGameShareOfCapacity;
-    return land * ((1.0 - kShare) + kShare * s.env.game[c] + w.aquatic_bonus[c]);
+    const TechEffects tech = technique_effects(w, c, techniques_in(s, c));
+    return land * (((1.0 - kShare) + kShare * s.env.game[c]) * (1.0 + tech.forage) +
+                   w.aquatic_bonus[c] * (1.0 + tech.aquatic));
 }
 
 double environment_capacity(const World& w, const SimState& s, CellId c) {

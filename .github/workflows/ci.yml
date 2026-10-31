@@ -62,7 +62,8 @@ jobs:
           meddled=$("$exe" run --seed 2 --level 4 --years 300 --hash-only \
             --at 50:eruption:12 --at 80:plague:1439:2000:0.5 --at 100:forcing:3 \
             --at 120:climate:1439:1500:-3:-0.4:25 --at 130:settlers:1439:3000 \
-            --at 140:game:1439:900:0.1 --at 150:wipeout:1439:300 --at 160:bond:2:200 | tr -d '\r')
+            --at 140:game:1439:900:0.1 --at 150:wipeout:1439:300 --at 160:bond:2:200 \
+            --at 170:outbreak:1439:800:pox | tr -d '\r')
           # Long enough for domestication, farming and Bond events.
           farmed=$("$exe" run --seed 3 --level 4 --years 2500 --hash-only | tr -d '\r')
           echo "$plain $meddled $farmed" > hash-${{ matrix.name }}.txt

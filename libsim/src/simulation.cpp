@@ -9,7 +9,9 @@
 #include "histsim/hash.hpp"
 #include "histsim/systems/climate.hpp"
 #include "histsim/systems/culture.hpp"
+#include "histsim/systems/disease.hpp"
 #include "histsim/systems/farming.hpp"
+#include "histsim/systems/technology.hpp"
 #include "histsim/systems/people.hpp"
 #include "state_io.hpp"
 
@@ -32,9 +34,11 @@ void Simulation::install_systems() {
     scheduler_.add(std::make_unique<ClimateSystem>());
     scheduler_.add(std::make_unique<EnvironmentSystem>());
     scheduler_.add(std::make_unique<FarmingSystem>());
+    scheduler_.add(std::make_unique<DiseaseSystem>());  // sets this year's disease mortality
     scheduler_.add(std::make_unique<DemographySystem>());
     scheduler_.add(std::make_unique<MigrationSystem>());
     scheduler_.add(std::make_unique<CultureSystem>());
+    scheduler_.add(std::make_unique<TechnologySystem>());
     scheduler_.add(std::make_unique<HistorySystem>());
 }
 
@@ -99,6 +103,40 @@ Simulation Simulation::create(const WorldParams& params) {
         co.language = cell_language[co.cell];
     }
     s.normalize_cohorts(n);
+
+    // Techniques: some starting peoples already know the old forager ones
+    // (the bow, nets, canoes), where they can use them.
+    s.techniques.assign(n, 0);
+    for (std::uint32_t g = 1; g <= w.group_count; ++g) {
+        RngStream rng(params.seed, 0, Stream::Technology, 0x80000000u | g);
+        std::uint64_t knows = 0;
+        for (std::size_t k = 0; k < w.content->techniques.size(); ++k) {
+            if (rng.uniform() < w.content->techniques[k].start_chance) knows |= std::uint64_t{1} << k;
+        }
+        for (CellId c : group_cells[g]) {
+            if (s.cell_population[c] == 0) continue;
+            for (std::size_t k = 0; k < w.content->techniques.size(); ++k) {
+                if (((knows >> k) & 1u) && technique_usable(w, w.content->techniques[k], c, knows, 0)) {
+                    s.techniques[c] |= std::uint64_t{1} << k;
+                }
+            }
+        }
+    }
+
+    // Diseases: nobody has immunity; endemic diseases that were already
+    // established are present in their niche.
+    const auto& diseases = w.content->diseases;
+    s.disease_present.assign(n * diseases.size(), 0);
+    s.susceptible.assign(n * diseases.size(), 1.0);
+    s.disease_deaths.assign(n, 0);
+    for (CellId c = 0; c < n; ++c) {
+        if (s.cell_population[c] == 0) continue;
+        for (std::size_t d = 0; d < diseases.size(); ++d) {
+            if (diseases[d].present_at_start && disease_suitability(w, diseases[d], c) > 0.0) {
+                s.disease_present[c * diseases.size() + d] = 1;
+            }
+        }
+    }
 
     // Species tamed long before the run (dogs) are known where they are
     // native and people live.

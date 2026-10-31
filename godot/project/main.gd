@@ -97,6 +97,7 @@ func _after_world_change() -> void:
 	highlight_cell = -1
 	world.set_highlight(-1, 0.0)
 	god_panel.show_forcing(world.get_imposed_forcing())
+	god_panel.set_diseases(world.get_disease_names())
 	_clear_cell_info()
 	_update_legend()
 	charts_dirty = true

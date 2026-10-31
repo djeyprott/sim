@@ -4,17 +4,22 @@ An open-source human history simulator. A to-scale planet, populations with
 demographics, languages and cultures, goods and trade, technology, polities and
 climate, all interacting so that history emerges rather than being scripted.
 
-The project has finished **milestone M1 (living planet)**: a deterministic
-simulation core on a geodesic world grid, with a changing climate, foraging
-capacity and game, and forager cohorts with age-sex pyramids that grow, die,
-migrate and settle near what the land can feed. M2 is under way: the world
-has seasons, biomes, rivers, soils and the native ranges of wild plants and
-animals that farming will grow from, and its peoples have cultures and
-languages that drift, split, shift and die out, with family trees, sound
-changes and generated words. Foragers domesticate the wild species around them
-in several independent centres and farming spreads, while Holocene Bond events
-bring cold, dry centuries. A Godot viewer shows it as a map or globe with
-nineteen map modes, world charts and a cell inspector. Disease comes next.
+The project has finished **milestone M2 (Neolithic)**. A deterministic
+simulation core on a geodesic world grid has:
+- a changing climate, with Holocene Bond events;
+- seasons, biomes, rivers, soils and wild species;
+- forager cohorts with age-sex pyramids, which grow, die, migrate and settle
+  near what the land can feed;
+- cultures and languages that drift, split, shift and die out, with family
+  trees, sound changes and generated words;
+- domestication in several independent centres, and farming spreading from
+  them;
+- endemic diseases and epidemics;
+- early techniques, invented, borrowed and forgotten.
+
+A Godot viewer shows it as a map or globe with twenty-one map modes, world
+charts, a cell inspector and a god mode. States, trade and cities come next,
+in M3.
 
 ## Download
 

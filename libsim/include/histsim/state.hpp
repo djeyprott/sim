@@ -134,6 +134,25 @@ struct Environment {
     std::vector<double> capacity;  // people the cell can feed this year, foraging and farming
     std::vector<double> farming;   // share of the cell's food from farming (population-weighted)
     std::vector<double> farm_capacity;  // people the cell could feed if everyone farmed, this year
+    // Extra chance of dying from disease this year, per cell and age group
+    // (cell * kDiseaseAgeGroups + group), set by the disease system and
+    // applied by demography.
+    std::vector<double> disease_mortality;
+};
+
+// Where a technique was invented independently.
+struct Invention {
+    Tick tick = 0;
+    CellId cell = kInvalidCell;
+    std::uint32_t technique = 0;
+    std::uint32_t culture = 0;  // main culture of the cell then
+};
+
+// Where a disease emerged (far from anywhere it already was).
+struct DiseaseOrigin {
+    Tick tick = 0;
+    CellId cell = kInvalidCell;
+    std::uint32_t disease = 0;
 };
 
 // The first time a cell domesticated a species.
@@ -159,6 +178,8 @@ enum class EventType : std::uint32_t {
     CultureExtinct = 8,   // value = culture id
     Domestication = 9,    // a species became domesticated in a cell; value = species index
     BondEvent = 10,       // a Bond cold event began; value = peak cooling in milli-degrees C
+    DiseaseEmerged = 11,  // a disease appeared far from anywhere it already was; value = disease index
+    Invention = 12,       // a technique was invented independently; value = technique index
 };
 
 struct Event {
@@ -192,6 +213,7 @@ enum class CommandType : std::uint32_t {
     WipeOut = 6,          // cell, radius; everyone there dies
     SetGame = 7,          // cell, radius; amount = game abundance (0-1)
     BondEvent = 8,        // amount = peak cooling in degrees C; years = duration
+    Outbreak = 9,         // cell, radius; amount = disease index
 };
 
 struct Command {
@@ -220,6 +242,8 @@ struct YearRecord {
     std::uint32_t language_families = 0;  // families with a living language
     std::uint32_t cultures = 0;           // living cultures
     std::int64_t farmers = 0;             // people, weighted by their share of food from farming
+    std::int64_t disease_deaths_total = 0;  // running total of deaths from diseases
+    std::uint32_t techniques = 0;           // techniques known somewhere
     std::uint32_t domesticated = 0;       // species domesticated somewhere so far
 };
 
@@ -252,6 +276,19 @@ struct SimState {
     std::vector<std::uint32_t> domesticates;
     std::vector<double> domestication;
     std::vector<Domestication> domestications;  // in the order they happened
+
+    // Disease, per cell x disease (cell * disease count + d): whether it is
+    // present, and for epidemics the share of people who can still catch it.
+    std::vector<std::uint8_t> disease_present;
+    std::vector<double> susceptible;
+    std::vector<std::uint32_t> disease_deaths;  // per cell, this year
+    std::int64_t disease_deaths_total = 0;
+    std::vector<DiseaseOrigin> disease_origins;
+
+    // Technology: per cell, the techniques its people know (bit t =
+    // Content::techniques[t]); and where each was invented independently.
+    std::vector<std::uint64_t> techniques;
+    std::vector<Invention> inventions;
 
     // ---- Derived data: rebuilt by refresh(), never saved or hashed.
     std::vector<std::uint32_t> cell_population;

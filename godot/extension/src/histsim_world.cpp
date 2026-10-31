@@ -140,6 +140,13 @@ double HistSimWorld::get_capacity() const {
 
 double HistSimWorld::get_global_anomaly() const { return sim_ ? sim_->state().climate.global_anomaly_c : 0.0; }
 
+PackedStringArray HistSimWorld::get_disease_names() const {
+    PackedStringArray out;
+    const histsim::Content& c = sim_ ? *sim_->world().content : histsim::default_content();
+    for (const auto& d : c.diseases) out.push_back(to_godot(d.name));
+    return out;
+}
+
 Dictionary HistSimWorld::get_people_counts() const {
     Dictionary d;
     const histsim::PeopleCounts p = sim_ ? histsim::count_peoples(sim_->state()) : histsim::PeopleCounts{};
@@ -323,6 +330,7 @@ Dictionary HistSimWorld::apply_intervention(const String& type, int64_t cell, do
     else if (t == "settlers") c.type = CommandType::Settlers;
     else if (t == "game") c.type = CommandType::SetGame;
     else if (t == "bond") c.type = CommandType::BondEvent;
+    else if (t == "outbreak") c.type = CommandType::Outbreak;
     else {
         d["message"] = to_godot("Unknown intervention: " + t);
         return d;
@@ -357,6 +365,7 @@ PackedInt64Array HistSimWorld::get_event_years(const String& kind) const {
     const histsim::EventType type = k == "eruption"        ? histsim::EventType::Eruption
                                     : k == "domestication" ? histsim::EventType::Domestication
                                     : k == "bond"          ? histsim::EventType::BondEvent
+                                    : k == "disease"       ? histsim::EventType::DiseaseEmerged
                                                            : histsim::EventType::Intervention;
     for (const histsim::Event& e : sim_->state().events) {
         if (e.type == type) out.push_back(e.tick / histsim::kTicksPerYear);
@@ -392,6 +401,7 @@ void HistSimWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_capacity"), &HistSimWorld::get_capacity);
     ClassDB::bind_method(D_METHOD("get_global_anomaly"), &HistSimWorld::get_global_anomaly);
     ClassDB::bind_method(D_METHOD("get_people_counts"), &HistSimWorld::get_people_counts);
+    ClassDB::bind_method(D_METHOD("get_disease_names"), &HistSimWorld::get_disease_names);
     ClassDB::bind_method(D_METHOD("get_state_hash"), &HistSimWorld::get_state_hash);
     ClassDB::bind_method(D_METHOD("get_history", "max_points"), &HistSimWorld::get_history);
     ClassDB::bind_method(D_METHOD("get_cell_pyramid", "cell"), &HistSimWorld::get_cell_pyramid);

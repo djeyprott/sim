@@ -1,6 +1,7 @@
 add_executable(histsim_tests
     main.cpp
     test_culture.cpp
+    test_disease.cpp
     test_farming.cpp
     test_geography.cpp
     test_grid.cpp
@@ -8,6 +9,7 @@ add_executable(histsim_tests
     test_m1.cpp
     test_rng.cpp
     test_simulation.cpp
+    test_technology.cpp
     test_view.cpp
     test_world.cpp
 )

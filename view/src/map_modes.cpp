@@ -123,7 +123,23 @@ const ColorScale& domesticates_scale() {  // green, light to dark
                                {8, hex("#2a5513")}});
     return s;
 }
-const Rgba kForagers = hex("#dcd9cf");  // inhabited, no farming / nothing domesticated
+const Rgba kForagers = hex("#dcd9cf");
+const ColorScale& technology_scale() {  // slate blue, light to dark
+    static const ColorScale s({{0, hex("#eceff7")},
+                               {2, hex("#bcc6e3")},
+                               {5, hex("#8394c9")},
+                               {8, hex("#4f62a6")},
+                               {12, hex("#26326a")}});
+    return s;
+}
+const ColorScale& disease_scale() {  // deaths per 1,000 a year: plum, light to dark
+    static const ColorScale s({{0, hex("#f6eef4")},
+                               {1, hex("#e2bfd8")},
+                               {3, hex("#c47fb0")},
+                               {10, hex("#93407e")},
+                               {30, hex("#55163f")}});
+    return s;
+}  // inhabited, no farming / nothing domesticated
 
 const ColorScale& density_scale() {
     // Log scale: forager densities sit around 0.01-0.2 per km^2; farming and
@@ -191,6 +207,8 @@ const std::vector<MapModeInfo> kModes = {
     {"culture", "Culture", "Main culture; related cultures share a hue"},
     {"farming", "Farming", "Share of people's food from crops and herds"},
     {"domesticates", "Domesticates", "Domesticated crops and animals the people know"},
+    {"disease", "Disease", "Deaths from disease this year, per 1,000 people"},
+    {"technology", "Technology", "Number of techniques the people know"},
 };
 
 // ---- Colors for languages and cultures.
@@ -424,6 +442,16 @@ void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rg
         } else if (id == "farming") {
             const double f = s.env.farming.empty() ? 0.0 : s.env.farming[c];
             out[c] = !inhabited ? kEmptyLand : (f < 0.01 ? kForagers : farming_scale()(f));
+        } else if (id == "technology") {
+            const std::uint64_t t = s.techniques.empty() ? 0 : s.techniques[c];
+            int count = 0;
+            for (std::uint64_t b = t; b != 0; b &= b - 1) ++count;
+            out[c] = inhabited ? technology_scale()(count) : kEmptyLand;
+        } else if (id == "disease") {
+            const double per_1000 = s.disease_deaths.empty() || !inhabited
+                                        ? 0.0
+                                        : 1000.0 * s.disease_deaths[c] / static_cast<double>(s.cell_population[c]);
+            out[c] = inhabited ? disease_scale()(per_1000) : kEmptyLand;
         } else if (id == "domesticates") {
             const std::uint32_t known = s.domesticates.empty() ? 0 : s.domesticates[c];
             out[c] = !inhabited ? kEmptyLand : (known == 0 ? kForagers : domesticates_scale()(species_count(known)));
@@ -504,6 +532,16 @@ Legend legend(std::string_view mode_id) {
         l.ramp = {{"1%", farming_scale()(0.0)}, {"25%", farming_scale()(0.25)}, {"50%", farming_scale()(0.5)},
                   {"75%", farming_scale()(0.75)}, {"100%", farming_scale()(1.0)}};
         l.swatches = {{"Foragers", kForagers}, {"Uninhabited", kEmptyLand}, {"Ocean", kOceanNeutral}};
+    } else if (id == "technology") {
+        l.title = "Techniques known";
+        l.ramp = ramp_entries(technology_scale(), "%.0f");
+        l.ramp.back().label = "12+";
+        l.swatches = empty_and_ocean;
+    } else if (id == "disease") {
+        l.title = "Deaths from disease this year (per 1,000 people)";
+        l.ramp = ramp_entries(disease_scale(), "%.0f");
+        l.ramp.back().label = "30+";
+        l.swatches = empty_and_ocean;
     } else if (id == "domesticates") {
         l.title = "Domesticated species known";
         l.ramp = ramp_entries(domesticates_scale(), "%.0f");
@@ -681,6 +719,41 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
     if (!s.env.farm_capacity.empty() && s.env.farm_capacity[c] > 0.0) {
         f.push_back({"Farmland", fmt("%.2f people per km² if all farmed", s.env.farm_capacity[c] / w.grid.area_km2(c))});
     }
+    // Techniques.
+    if (!s.techniques.empty() && s.techniques[c] != 0) {
+        std::string known_techs;
+        for (std::size_t k = 0; k < content.techniques.size(); ++k) {
+            if ((s.techniques[c] >> k) & 1u) known_techs += (known_techs.empty() ? "" : ", ") + content.techniques[k].name;
+        }
+        f.push_back({"Techniques", known_techs});
+    }
+    for (const Invention& v : s.inventions) {
+        if (v.cell != c) continue;
+        f.push_back({"Invented", content.techniques[v.technique].name + " here in year " +
+                                     with_commas(static_cast<long long>(v.tick / kTicksPerYear)) + " by the " +
+                                     s.cultures[v.culture].name});
+    }
+
+    // Disease.
+    const std::size_t nd = content.diseases.size();
+    if (s.disease_present.size() == w.cell_count() * nd) {
+        std::string present;
+        for (std::size_t d = 0; d < nd; ++d) {
+            if (!s.disease_present[c * nd + d]) continue;
+            const DiseaseDef& def = content.diseases[d];
+            present += (present.empty() ? "" : ", ") + def.name;
+            if (def.kind == DiseaseKind::Epidemic) {
+                present += fmt(" (epidemic, %.0f%% immune)", 100.0 * (1.0 - s.susceptible[c * nd + d]));
+            }
+        }
+        f.push_back({"Diseases", present.empty() ? "none beyond the usual" : present});
+        if (!s.disease_deaths.empty() && s.cell_population[c] > 0) {
+            f.push_back({"Disease deaths", with_commas(static_cast<long long>(s.disease_deaths[c])) + " this year" +
+                                               fmt(" (%.1f per 1,000)", 1000.0 * s.disease_deaths[c] /
+                                                                            static_cast<double>(s.cell_population[c]))});
+        }
+    }
+
     // Domestication under way here, and origins.
     std::string underway;
     for (std::size_t k = 0; k < w.wild_stands.size() && k < s.domestication.size(); ++k) {

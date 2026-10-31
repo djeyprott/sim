@@ -6,6 +6,7 @@
 
 #include "histsim/systems/climate.hpp"
 #include "histsim/systems/culture.hpp"
+#include "histsim/systems/technology.hpp"
 
 namespace histsim {
 
@@ -25,7 +26,7 @@ std::size_t trait_index(const Content& c, const char* id) {
 
 }  // namespace
 
-double farm_density(const World& w, CellId c, std::uint32_t known) {
+double farm_density(const World& w, CellId c, std::uint32_t known, std::uint64_t techniques) {
     if (!w.is_land[c] || known == 0) return 0.0;
     const auto& species = w.content->species;
     double crop = 0.0, herd = 0.0;
@@ -39,8 +40,9 @@ double farm_density(const World& w, CellId c, std::uint32_t known) {
     const double soil = 0.35 + 0.65 * w.soil_fertility[c];
     const double flood = is_river(w, c) ? 1.0 + FarmingSystem::kFloodplainBonus * std::min(1.0, w.discharge_m3s[c] / 5000.0) : 1.0;
     const double season = std::min(1.0, (w.growing_months[c] + 1.0) / 5.0);
-    const double crops = FarmingSystem::kCropDensity * crop * soil * flood * season;
-    const double herds = FarmingSystem::kHerdDensity * herd;
+    const TechEffects tech = technique_effects(w, c, techniques);
+    const double crops = FarmingSystem::kCropDensity * crop * soil * flood * season * (1.0 + tech.crop_yield);
+    const double herds = FarmingSystem::kHerdDensity * herd * (1.0 + tech.herd_yield);
     // Herds add to crops (milk, manure, meat), or carry pastoralists alone.
     return crops > 0.0 ? crops + 0.5 * herds : herds;
 }
@@ -49,7 +51,10 @@ double harvest_factor(const World& w, const SimState& s, CellId c) {
     if (!w.is_land[c]) return 0.0;
     const double rain = std::clamp(s.env.precipitation_mm[c] / std::max(1.0, w.precipitation_mm[c]), 0.4, 1.15);
     const double warmth = std::max(0.3, 1.0 - 0.12 * std::fabs(s.env.temperature_c[c] - w.temperature_c[c]));
-    return rain * warmth;
+    const double f = rain * warmth;
+    if (f >= 1.0) return f;
+    const double buffer = technique_effects(w, c, techniques_in(s, c)).harvest_buffer;
+    return 1.0 - (1.0 - f) * (1.0 - buffer);
 }
 
 void FarmingSystem::step(StepContext& ctx) {
@@ -90,6 +95,12 @@ void FarmingSystem::step(StepContext& ctx) {
     }
     auto trait = [&](CellId c, std::size_t t) { return t < nt ? ways[c][t] : 0.5; };
 
+    // Foraging capacity of each inhabited cell this year (used many times).
+    std::vector<double> forage_of(n, 0.0);
+    for (CellId c = 0; c < n; ++c) {
+        if (s.cell_population[c] > 0) forage_of[c] = forage_capacity(w, s, c);
+    }
+
     // ---- Domestication where species grow wild.
     for (std::size_t k = 0; k < w.wild_stands.size(); ++k) {
         const auto [c, sp] = w.wild_stands[k];
@@ -102,7 +113,7 @@ void FarmingSystem::step(StepContext& ctx) {
             const double lean = def.kind == SpeciesKind::Plant ? plants : 0.6 * (1.0 - 0.5 * plants);
             const double engagement = lean * (0.5 + trait(c, i_storage)) * (1.2 - trait(c, i_mobility)) *
                                       (0.5 + trait(c, i_innovation));
-            const double forage = forage_capacity(w, s, c);
+            const double forage = forage_of[c];
             const double strain = forage > 0.0 ? static_cast<double>(s.cell_population[c]) / forage : 1.0;
             const double pressure = std::clamp(0.3 + strain, 0.3, 1.3);
             gain = kDomesticationRate * w.abundance(c, sp) * def.domesticability * engagement * pressure;
@@ -141,7 +152,9 @@ void FarmingSystem::step(StepContext& ctx) {
         offered &= ~known[c];
         if (offered == 0) continue;
         const double area_scale = kReferenceCellAreaKm2 / w.grid.area_km2(c);
-        const double p = std::min(1.0, kLearning * (0.5 + trait(c, i_openness)) * std::sqrt(area_scale));
+        const double contact = technique_effects(w, c, techniques_in(s, c)).contact;
+        const double p =
+            std::min(1.0, kLearning * (0.5 + trait(c, i_openness)) * (1.0 + contact) * std::sqrt(area_scale));
         RngStream rng = ctx.rng(Stream::Farming, kLearningEntity | c);
         for (std::size_t sp = 0; sp < content.species.size(); ++sp) {
             if (!((offered >> sp) & 1u)) continue;
@@ -154,14 +167,15 @@ void FarmingSystem::step(StepContext& ctx) {
     for (CellId c = 0; c < n; ++c) {
         s.env.farm_capacity[c] = s.domesticates[c] == 0
                                      ? 0.0
-                                     : farm_density(w, c, s.domesticates[c]) * w.grid.area_km2(c) * harvest_factor(w, s, c);
+                                     : farm_density(w, c, s.domesticates[c], techniques_in(s, c)) * w.grid.area_km2(c) *
+                                           harvest_factor(w, s, c);
     }
 
     // ---- Each cohort's share of food from farming.
     for (std::size_t i = 0; i < s.cohorts.size(); ++i) {
         Cohort& co = s.cohorts[i];
         const CellId c = co.cell;
-        const double forage = forage_capacity(w, s, c);
+        const double forage = forage_of[c];
         const double farm = s.env.farm_capacity[c];
         if (farm <= 0.0) {
             co.farming = 0.0;  // nothing here to farm: back to foraging at once

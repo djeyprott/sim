@@ -88,6 +88,9 @@ struct World {
         std::uint8_t species = 0;
     };
     std::vector<WildStand> wild_stands;
+    // How well each disease's niche fits each cell (cell * disease count + d,
+    // 0-1; 1 for diseases without a niche, 0 on ocean).
+    std::vector<double> disease_niche;
 
     // Starting peoples: each land cell's forager group at the start of the run
     // (0 for ocean). Groups are contiguous regions; M2 turns them into

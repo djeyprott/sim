@@ -71,7 +71,8 @@ TEST(view_every_mode_colors_every_cell_and_has_a_legend) {
         }();
         // A mode that paints one flat color is broken. Farming has barely
         // begun after 20 years, so those modes show only a few classes yet.
-        const bool early = mode.id == "farming" || mode.id == "domesticates";
+        const bool early = mode.id == "farming" || mode.id == "domesticates" || mode.id == "technology" ||
+                           mode.id == "disease";
         CHECK(distinct.size() > (early ? 2u : 5u));
         const Legend l = legend(sim, mode.id);
         CHECK(!l.title.empty());

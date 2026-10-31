@@ -1,0 +1,81 @@
+// Techniques: knowledge held by populations (each cell's people know a set).
+//
+// A technique can be invented where its requirements are met: the
+// techniques it builds on (`requires`, listed earlier in this file), crops or
+// herds the people keep (`requires_crops`, `requires_herds`), one of some
+// domesticated species (`requires_species`), and the place (`where`):
+//   river   a river runs through the cell        coast   it touches the sea
+//   water   river or coast                       dry     under 900 mm of rain
+//   hills   above 600 m                          forest  a forest biome
+// Each year the chance of inventing it is `rate` x sqrt(people / 10,000) x
+// (0.5 + innovation) x the culture's affinity: 1 + sum of weight x 2 x
+// (trait - 0.5) over `affinity` (at least 0.1). Neighbours who know it teach
+// it (borrowing); populations under 500 people forget a little each year
+// (the Tasmanian effect: Henrich 2004), and techniques whose requirements are
+// gone fade.
+//
+// `start_chance`: share of the starting peoples who already know it.
+//
+// Effects (add up over techniques, where each applies):
+//   crop_yield      farmland crops x (1 + sum)
+//   herd_yield      herds x (1 + sum)
+//   forage          land foraging (plants and game) x (1 + sum)
+//   aquatic         fish and shellfish x (1 + sum)
+//   harvest_buffer  share of a bad harvest's shortfall made good (stores)
+//   famine          famine mortality x (1 + sum), so negative is better
+//   contact         learning from and teaching neighbours x (1 + sum)
+{
+  "version": 1,
+  "techniques": [
+    {"id": "bow", "name": "Bow and arrow", "rate": 0.00002, "start_chance": 0.5,
+     "affinity": {"plant_reliance": -0.5},
+     "effects": {"forage": 0.08}},
+    {"id": "nets", "name": "Fishing nets and weirs", "where": "water", "rate": 0.00003, "start_chance": 0.4,
+     "affinity": {"mobility": -0.5},
+     "effects": {"aquatic": 0.25}},
+    {"id": "canoes", "name": "Dugout canoes", "where": "water", "rate": 0.00002, "start_chance": 0.3,
+     "effects": {"aquatic": 0.1, "contact": 0.2}},
+    {"id": "pottery", "name": "Pottery", "rate": 0.00004, "start_chance": 0.05,
+     "affinity": {"storage": 1.0, "mobility": -1.0},
+     "effects": {"famine": -0.2, "forage": 0.03, "harvest_buffer": 0.1}},
+    {"id": "sickles", "name": "Sickles and querns", "requires_crops": true, "rate": 0.0002,
+     "affinity": {"plant_reliance": 0.5},
+     "effects": {"crop_yield": 0.1}},
+    {"id": "seed_selection", "name": "Seed selection", "requires_crops": true, "rate": 0.00015,
+     "affinity": {"innovation": 0.5},
+     "effects": {"crop_yield": 0.15}},
+    {"id": "granaries", "name": "Granaries and storage pits", "requires": ["pottery"], "requires_crops": true, "rate": 0.0002,
+     "affinity": {"storage": 1.0, "hierarchy": 0.3},
+     "effects": {"harvest_buffer": 0.25, "famine": -0.3}},
+    {"id": "polished_axes", "name": "Polished stone axes", "requires_crops": true, "where": "forest", "rate": 0.0002,
+     "effects": {"crop_yield": 0.2}},
+    {"id": "secondary_products", "name": "Milk, wool and cheese", "requires_herds": true, "rate": 0.0001,
+     "requires_species": ["wild_sheep_goats", "aurochs", "wild_camels", "highland_camelids", "water_buffalo"],
+     "effects": {"herd_yield": 0.5, "harvest_buffer": 0.05}},
+    {"id": "irrigation", "name": "Irrigation canals", "requires": ["sickles"], "requires_crops": true,
+     "where": "river", "rate": 0.00008,
+     "affinity": {"hierarchy": 0.5, "kinship": 0.3},
+     "effects": {"crop_yield": 0.6, "harvest_buffer": 0.3}},
+    {"id": "terraces", "name": "Terraced fields", "requires": ["sickles"], "requires_crops": true, "where": "hills",
+     "rate": 0.00008, "affinity": {"kinship": 0.5},
+     "effects": {"crop_yield": 0.3}},
+    {"id": "plough", "name": "Ox-drawn plough", "requires": ["sickles"], "requires_crops": true,
+     "requires_species": ["aurochs", "water_buffalo", "wild_horses"], "rate": 0.00004,
+     "effects": {"crop_yield": 0.35}},
+    {"id": "horse_riding", "name": "Horse riding", "requires_species": ["wild_horses"], "rate": 0.0001,
+     "affinity": {"mobility": 0.8},
+     "effects": {"herd_yield": 0.25, "contact": 0.5}},
+    {"id": "sailing", "name": "Sailing boats", "requires": ["canoes"], "where": "coast", "rate": 0.000004,
+     "affinity": {"openness": 0.5},
+     "effects": {"aquatic": 0.15, "contact": 0.5}},
+    {"id": "wheel", "name": "Wheel and cart", "requires": ["plough"], "rate": 0.00003,
+     "effects": {"contact": 0.4, "crop_yield": 0.05}},
+    {"id": "calendar", "name": "Farming calendar", "requires_crops": true, "rate": 0.00006,
+     "affinity": {"ritual": 0.6},
+     "effects": {"harvest_buffer": 0.1, "crop_yield": 0.05}},
+    {"id": "copper", "name": "Copper smelting", "requires": ["granaries"], "requires_crops": true, "where": "hills",
+     "rate": 0.00002,
+     "affinity": {"hierarchy": 0.5, "innovation": 0.5},
+     "effects": {"crop_yield": 0.03}}
+  ]
+}

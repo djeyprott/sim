@@ -72,10 +72,12 @@ struct Options {
                  "                 writes PREFIX-<mode>.png; modes: terrain biome population\n"
                  "                 crowding temperature rainfall rain_season growing soil\n"
                  "                 species capacity game temp_anomaly median_age language\n"
-                 "                 language_family culture farming domesticates\n"
+                 "                 language_family culture farming domesticates disease\n"
+                 "                 technology\n"
                  "  histsim farming [--seed N] [--level L] [--years Y]\n"
-                 "                 where and when species were domesticated, Bond events, and\n"
-                 "                 the share of farmers every 500 years\n"
+                 "                 where and when species were domesticated, techniques\n"
+                 "                 invented and diseases emerged, Bond events, and farmers,\n"
+                 "                 techniques and disease deaths every 500 years\n"
                  "  histsim languages [--seed N] [--level L] [--years Y] [--top N]\n"
                  "                 family trees of the languages alive after Y years, largest\n"
                  "                 families first, with speakers and sample words\n"
@@ -92,6 +94,8 @@ struct Options {
                  "  --at YEAR:settlers:CELL:COUNT   place a new group\n"
                  "  --at YEAR:game:CELL:KM:LEVEL    set game abundance (0-1)\n"
                  "  --at YEAR:bond:DEG:YEARS        start a Bond event: north cools by up to DEG C\n"
+                 "  --at YEAR:outbreak:CELL:KM:ID   bring a disease (malaria, plague, influenza, pox,\n"
+                 "                                  measles, ...; see data/diseases.json)\n"
                  "\n"
                  "With no arguments, runs a 1,000-year demo.\n");
     std::exit(2);
@@ -226,6 +230,17 @@ histsim::Command parse_command(const histsim::World& w, const std::string& spec)
         c.type = CommandType::Settlers;
         c.cell = resolve_cell(w, parts[1]);
         c.amount = parse_double(parts[2]);
+    } else if (action == "outbreak") {
+        need(3);
+        c.type = CommandType::Outbreak;
+        c.cell = resolve_cell(w, parts[1]);
+        c.radius_km = parse_double(parts[2]);
+        const std::string& id = parts[3];
+        const auto& diseases = w.content->diseases;
+        std::size_t d = 0;
+        while (d < diseases.size() && diseases[d].id != id) ++d;
+        if (d == diseases.size()) usage(("unknown disease: " + id).c_str());
+        c.amount = static_cast<double>(d);
     } else if (action == "bond") {
         need(2);
         c.type = CommandType::BondEvent;
@@ -427,13 +442,30 @@ int farming(const Options& o) {
         std::printf("  years %5lld-%-5lld  up to %.1f C colder in the north\n", static_cast<long long>(b.start_year),
                     static_cast<long long>(b.start_year + b.years), b.strength_c);
     }
+    std::printf("\nIndependent inventions:\n");
+    for (const histsim::Invention& v : s.inventions) {
+        const double lat = w.grid.latitude_deg_display(v.cell), lon = w.grid.longitude_deg_display(v.cell);
+        std::printf("  year %5lld  %-26s %5.1f%c %6.1f%c  by the %s\n", static_cast<long long>(v.tick / histsim::kTicksPerYear),
+                    w.content->techniques[v.technique].name.c_str(), std::fabs(lat), lat >= 0 ? 'N' : 'S', std::fabs(lon),
+                    lon >= 0 ? 'E' : 'W', s.cultures[v.culture].name.c_str());
+    }
+    std::printf("\nDiseases that emerged:\n");
+    for (const histsim::DiseaseOrigin& d : s.disease_origins) {
+        const double lat = w.grid.latitude_deg_display(d.cell), lon = w.grid.longitude_deg_display(d.cell);
+        std::printf("  year %5lld  %-20s %5.1f%c %6.1f%c\n", static_cast<long long>(d.tick / histsim::kTicksPerYear),
+                    w.content->diseases[d.disease].name.c_str(), std::fabs(lat), lat >= 0 ? 'N' : 'S', std::fabs(lon),
+                    lon >= 0 ? 'E' : 'W');
+    }
     std::printf("\nFarmers by century:\n");
-    for (const histsim::YearRecord& r : s.history) {
+    for (std::size_t i = 0; i < s.history.size(); ++i) {
+        const histsim::YearRecord& r = s.history[i];
         if (r.year % 500 != 0) continue;
-        std::printf("  year %5lld  population %11lld  farmers %5.1f%%  domesticated species %2u\n",
+        const std::int64_t disease = r.disease_deaths_total - (i > 0 ? s.history[i - 1].disease_deaths_total : 0);
+        std::printf("  year %5lld  population %11lld  farmers %5.1f%%  domesticates %2u  techniques %2u  "
+                    "disease deaths %6lld/yr\n",
                     static_cast<long long>(r.year), static_cast<long long>(r.population),
                     r.population > 0 ? 100.0 * static_cast<double>(r.farmers) / static_cast<double>(r.population) : 0.0,
-                    r.domesticated);
+                    r.domesticated, r.techniques, static_cast<long long>(disease));
     }
     return 0;
 }

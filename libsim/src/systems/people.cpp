@@ -6,6 +6,7 @@
 
 #include "histsim/systems/culture.hpp"
 #include "histsim/systems/farming.hpp"
+#include "histsim/systems/technology.hpp"
 #include "vital_rates.inc"
 
 namespace histsim {
@@ -64,6 +65,7 @@ void DemographySystem::step(StepContext& ctx) {
     SimState& s = ctx.state;
     const std::size_t n = ctx.world.cell_count();
     const std::int64_t before = s.total_population();
+    s.disease_deaths.assign(n, 0);
     std::int64_t births_total = 0, deaths_total = 0;
 
     for (std::size_t i = 0; i < s.cohorts.size(); ++i) {
@@ -72,19 +74,34 @@ void DemographySystem::step(StepContext& ctx) {
         const double fert_mult = std::max(
             kMinFertilityMultiplier, 1.0 - (1.0 - vital::kReplacementFertilityMultiplier) * crowding) *
             (1.0 + kFarmerExtraFertility * co.farming);
-        const double mort_mult =
-            crowding > 1.0 ? std::min(kMaxMortalityMultiplier, 1.0 + kFamineMortalityPerCrowding * (crowding - 1.0))
-                           : 1.0;
+        // Famine past capacity; stores (pottery, granaries) soften it.
+        const double famine = crowding > 1.0
+                                  ? kFamineMortalityPerCrowding * (crowding - 1.0) *
+                                        (1.0 + technique_effects(ctx.world, co.cell, techniques_in(s, co.cell)).famine)
+                                  : 0.0;
+        const double mort_mult = std::min(kMaxMortalityMultiplier, 1.0 + famine);
         RngStream rng = ctx.rng(Stream::Demography, static_cast<std::uint32_t>(i));
 
-        // Deaths.
+        // Deaths: the life table (raised by famine) plus disease. Deaths are
+        // drawn once; the disease share of them is counted in proportion.
+        const double* disease =
+            s.env.disease_mortality.empty() ? nullptr : &s.env.disease_mortality[co.cell * kDiseaseAgeGroups];
+        double disease_deaths = 0.0;
         for (int b = 0; b < kAgeBins; ++b) {
-            const double q = std::min(1.0, vital::kForagerDeathProb[b] * mort_mult);
+            const double base = vital::kForagerDeathProb[b] * mort_mult;
+            const double extra = disease ? disease[disease_age_group(b)] : 0.0;
+            const double q = std::min(1.0, base + extra);
             const auto df = std::min<std::int64_t>(co.female[b], stochastic_round(q * co.female[b], rng));
             const auto dm = std::min<std::int64_t>(co.male[b], stochastic_round(q * co.male[b], rng));
             co.female[b] -= static_cast<std::uint32_t>(df);
             co.male[b] -= static_cast<std::uint32_t>(dm);
             deaths_total += df + dm;
+            if (extra > 0.0) disease_deaths += static_cast<double>(df + dm) * extra / (base + extra);
+        }
+        if (disease_deaths > 0.0) {
+            const auto d = static_cast<std::uint32_t>(disease_deaths + 0.5);
+            s.disease_deaths[co.cell] += d;
+            s.disease_deaths_total += d;
         }
 
         // Births, to the women who survived the year.
@@ -269,6 +286,10 @@ void HistorySystem::step(StepContext& ctx) {
     double farmers = 0.0;
     for (const Cohort& co : s.cohorts) farmers += static_cast<double>(co.total()) * co.farming;
     r.farmers = static_cast<std::int64_t>(farmers + 0.5);
+    r.disease_deaths_total = s.disease_deaths_total;
+    std::uint64_t any = 0;
+    for (std::uint64_t t : s.techniques) any |= t;
+    for (; any != 0; any &= any - 1) ++r.techniques;
     std::uint32_t ever = 0;
     for (const Domestication& d : s.domestications) ever |= 1u << d.species;
     for (; ever != 0; ever &= ever - 1) ++r.domesticated;

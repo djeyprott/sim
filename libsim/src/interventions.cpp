@@ -79,6 +79,7 @@ const char* command_name(CommandType type) {
         case CommandType::WipeOut: return "Wipe out";
         case CommandType::SetGame: return "Set game";
         case CommandType::BondEvent: return "Bond event";
+        case CommandType::Outbreak: return "Outbreak";
     }
     return "Unknown";
 }
@@ -135,6 +136,25 @@ InterventionResult apply_command(const World& w, SimState& s, std::uint64_t seed
             r.message = "Bond event: the north cools by up to " + fmt("%.1f °C", cmd.amount) +
                         " and monsoons weaken, building over " + commas(cmd.years / 4) + " years and lasting " +
                         commas(cmd.years) + ".";
+            break;
+        }
+        case CommandType::Outbreak: {
+            const auto& diseases = w.content->diseases;
+            const auto d = static_cast<std::size_t>(std::max(0.0, std::floor(cmd.amount)));
+            if (d >= diseases.size()) return fail("Unknown disease.");
+            cmd.amount = static_cast<double>(d);
+            if (s.disease_present.size() != n * diseases.size()) s.disease_present.assign(n * diseases.size(), 0);
+            const auto cells = cells_within(w, cmd.cell, cmd.radius_km, /*taper=*/false);
+            std::size_t seeded = 0;
+            for (const WeightedCell& wc : cells) {
+                if (s.cell_population[wc.cell] == 0) continue;
+                s.disease_present[wc.cell * diseases.size() + d] = 1;
+                ++seeded;
+            }
+            if (seeded == 0) return fail("Nobody lives there to catch it.");
+            r.cells = seeded;
+            r.message = diseases[d].name + " brought to " + commas(static_cast<std::int64_t>(seeded)) +
+                        (seeded == 1 ? " cell" : " cells") + "; it strikes next year.";
             break;
         }
         case CommandType::ClimateForcing: {

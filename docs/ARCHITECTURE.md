@@ -47,6 +47,8 @@ godot viewer ── view ───┘                                   │
 | `systems/climate.hpp` | Climate (global energy balance, regional anomalies) and environment (yearly capacity, game). |
 | `systems/people.hpp` | Cohort demography, migration and the yearly history record. |
 | `language.hpp` | Languages as objects: proto-language generation, regular sound changes, word replacement, lexical similarity, names. |
+| `systems/disease.hpp` | Endemic disease burdens and epidemics: emergence, outbreaks, immunity, spread. |
+| `systems/technology.hpp` | Techniques known per cell: invention, borrowing, forgetting, and their effects. |
 | `systems/farming.hpp` | Domestication, knowledge of domesticates, farming share, farmland capacity and harvests. |
 | `systems/culture.hpp` | Culture and dialect drift, contact, adaptation, language shift, assimilation, splits, extinctions; founding new peoples. |
 | `view/` (separate library) | Map modes, color scales, legends, pixel-to-cell rasterizing and PNG output. Display only: it reads state and never writes it, so the determinism rules do not apply to it. |
@@ -179,6 +181,36 @@ farmers are about 20% of people at year 1,500, 45% at 2,000 and two-thirds by
 3,000, and population roughly doubles by year 3,000. `histsim farming` lists
 the origins, Bond events and the share of farmers.
 
+### Disease and technology (M2)
+
+**Disease** (`data/diseases.json`, `DiseaseSystem`, just before demography).
+Each year the system sets each cell's extra chance of death by age group
+(infants, children, adults, elders); demography applies it with the life
+table in one draw and counts the disease share.
+
+| Kind | Model |
+| --- | --- |
+| Endemic (malaria, worms and dysentery, livestock fevers, tuberculosis) | Extra yearly death chance = rate × age weight × niche fit × (farming weight × farming share + density weight × min(1, density / 2)). The forager life table already holds foragers' diseases, so these are the added costs of settled, farming, crowded life. Malaria and worms are present in their niche from the start; zoonoses emerge where people keep their hosts (sheep and goats, cattle, pigs, camels) and enough people live. They spread slowly to suitable neighbours. |
+| Epidemic (plague, influenza, pox, measles) | An outbreak infects a = s (1 − e^(−R a)) of a cell (SIR final size, solved with the portable `exp`), with R = R0 × √density (0.3–1.5) and s the share still susceptible; it kills by age, leaves survivors immune for `immunity_years`, and spreads to each neighbour with chance 4 × a. A disease keeps circulating only in cells over its critical population (measles 250,000); elsewhere it burns out. Susceptibles return at 4% a year (births) plus waning. Crowd diseases therefore wait for cities (M3); god mode and `--at YEAR:outbreak:...` can bring one early, and a virgin population suffers the full wave. |
+
+New origins (no cell within 1,500 km has it, and it never emerged that close
+before) are logged as `DiseaseEmerged` events. At level 5, disease is ~0.5% of
+deaths among foragers and ~10% where farming has spread by year 3,000.
+
+**Technology** (`data/techniques.json`, `TechnologySystem`, culture phase).
+Each cell's people know a set of techniques (a 64-bit mask). A technique can
+be invented where its prerequisites (earlier techniques), crops or herds,
+species and place (river, coast, dry land, hills, forest) allow: yearly
+chance = rate × √(people / 10,000) × (0.5 + innovation) × the culture's
+affinity. Neighbours teach (0.4% a year × (0.5 + openness) × (1 + contact));
+populations under 500 forget 1% a year, and techniques whose requirements are
+gone fade (5%). Effects: crop and herd yields (farmland), foraging and fishing
+(forager capacity), harvest buffer (part of a bad harvest made good), famine
+mortality, and contact (learning techniques and domesticates). At level 5
+forager tools (bow, nets, canoes, pottery) spread early; granaries, irrigation,
+milk and wool, polished axes and the plough follow farming over thousands of
+years; copper and horse riding come late.
+
 ### Interventions
 
 `Simulation::apply(Command)` changes a running world: a volcanic eruption, a
@@ -266,8 +298,8 @@ generator can fill it without changing systems.
 | --- | --- | --- | --- |
 | M0 Foundations (done) | Grid, test-world generator, scheduler, RNG, snapshots, headless runner | Sim API, map viewer | Identical replays on Windows, Linux and macOS |
 | M1 Living planet (done) | Climate and environment systems, cohort demography, migration, foragers | Globe, climate and population map modes, pyramid, charts | Forager populations settle near carrying capacity (`m1_gate_populations_settle_near_capacity`) |
-| **M2 Neolithic** (gate passes: `m2_gate_farming_arises_in_several_plausible_regions`; disease and early tech to come) | Agriculture, herding, disease, culture and language drift, early tech | Culture and language map modes, language tree | Farming arises in several plausible regions |
-| M3 States and trade | Goods, markets, transport, polities, war, religion, notable agents, forced labor and the slave trade | Trade flows, inspectors, explain view, timeline | Polity sizes track Seshat ranges by era |
+| M2 Neolithic (done) | Agriculture, herding, disease, culture and language drift, early tech | Culture and language map modes, language tree | Farming arises in several plausible regions |
+| **M3 States and trade** (next) | Goods, markets, transport, polities, war, religion, notable agents, forced labor and the slave trade | Trade flows, inspectors, explain view, timeline | Polity sizes track Seshat ranges by era |
 | M4 Modern era | Energy, carbon cycle, demographic transition, Earth importer, procedural generator | God mode, branch comparison, modding tools | Full runs to the near future on Earth and generated worlds |
 
 M0 to M3 run on the generated test world, so the foundation is solid before any

@@ -62,9 +62,11 @@ inline constexpr double kFarmerStay = 0.6;             // migration x (1 - 0.6 x
 
 // People per km^2 a cell's land would feed if fully farmed with the given
 // domesticates, in a normal year.
-double farm_density(const World& world, CellId cell, std::uint32_t domesticates);
+// Techniques raise crop and herd yields.
+double farm_density(const World& world, CellId cell, std::uint32_t domesticates, std::uint64_t techniques = 0);
 
-// This year's harvest relative to a normal year, from rainfall and warmth.
+// This year's harvest relative to a normal year, from rainfall and warmth;
+// stores (granaries, irrigation) make good part of a shortfall.
 double harvest_factor(const World& world, const SimState& state, CellId cell);
 
 }  // namespace histsim

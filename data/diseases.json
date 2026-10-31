@@ -1,0 +1,91 @@
+// Diseases.
+//
+// Two kinds:
+//
+// "endemic": always around where its conditions hold, adding to the yearly
+// chance of death (`excess_mortality` at full burden, times `age_weight` for
+// infants 0-4, children 5-14, adults 15-49 and elders 50+). Burden = niche
+// suitability x (farming_weight x farming share + density_weight x min(1,
+// people per km^2 / 2)). The forager life table already includes the
+// diseases of foragers, so these are only the extra burdens of settled,
+// farming, crowded life (the Neolithic decline in health seen in skeletons).
+//
+// "epidemic": arrives, sweeps through a population in an outbreak, and leaves
+// survivors immune (for `immunity_years`; -1 = for life, 0 = never).
+// Outbreak size follows from r0 and the share still susceptible (SIR final
+// size). `fatality` is the share of the infected who die, by the same age
+// groups. A disease keeps circulating in a cell only if it has at least
+// `critical_population` people (measles needs ~250,000: Bartlett 1957);
+// otherwise it burns out there and must be brought back. It spreads to
+// neighbouring cells with the size of the outbreak.
+//
+// Niche (optional, as in species.json): warmest_month_c, annual_precip_mm,
+// elevation_m trapezoids; absent = anywhere.
+//
+// Emergence: `hosts` lists species whose domesticated form people must keep
+// for the disease to cross over (zoonoses), or is empty. Each year, in a cell
+// whose people keep a host and number at least `emergence_min_population`,
+// it emerges with chance `emergence_chance`. `present_at_start`: already
+// established in its niche when the run begins.
+{
+  "version": 1,
+  "diseases": [
+    {
+      "id": "malaria", "name": "Malaria", "kind": "endemic",
+      "excess_mortality": 0.006, "age_weight": [3.0, 1.5, 0.5, 0.6],
+      "warmest_month_c": [18, 22, 32, 38], "annual_precip_mm": [500, 1000, 4000, 7000],
+      "elevation_m": [-100, 0, 1200, 2200],
+      "farming_weight": 0.8, "density_weight": 0.2,
+      "present_at_start": true
+    },
+    {
+      "id": "intestinal_parasites", "name": "Worms and dysentery", "kind": "endemic",
+      "excess_mortality": 0.003, "age_weight": [2.5, 1.5, 0.5, 1.0],
+      "warmest_month_c": [10, 18, 35, 40], "annual_precip_mm": [200, 600, 5000, 8000],
+      "farming_weight": 0.5, "density_weight": 0.4,
+      "present_at_start": true
+    },
+    {
+      "id": "zoonotic_fevers", "name": "Livestock fevers", "kind": "endemic",
+      "excess_mortality": 0.002, "age_weight": [1.5, 1.0, 1.0, 1.2],
+      "farming_weight": 0.8, "density_weight": 0.2,
+      "hosts": ["wild_sheep_goats", "aurochs", "wild_boar", "wild_camels"],
+      "emergence_min_population": 2000, "emergence_chance": 0.01
+    },
+    {
+      "id": "tuberculosis", "name": "Tuberculosis", "kind": "endemic",
+      "excess_mortality": 0.003, "age_weight": [1.0, 0.7, 1.4, 1.2],
+      "farming_weight": 0.3, "density_weight": 0.7,
+      "hosts": ["aurochs", "wild_sheep_goats"],
+      "emergence_min_population": 15000, "emergence_chance": 0.002
+    },
+    {
+      "id": "plague", "name": "Plague", "kind": "epidemic",
+      "r0": 2.2, "fatality": [0.5, 0.45, 0.45, 0.6], "immunity_years": 10,
+      "critical_population": 3000000,
+      "hosts": [], "warmest_month_c": [10, 16, 30, 36], "annual_precip_mm": [100, 200, 700, 1200],
+      "emergence_min_population": 10000, "emergence_chance": 0.000015
+    },
+    {
+      "id": "influenza", "name": "Influenza", "kind": "epidemic",
+      "r0": 2.0, "fatality": [0.01, 0.002, 0.002, 0.02], "immunity_years": 5,
+      "critical_population": 100000,
+      "hosts": ["wild_boar", "junglefowl"],
+      "emergence_min_population": 20000, "emergence_chance": 0.0005
+    },
+    {
+      "id": "pox", "name": "Pox", "kind": "epidemic",
+      "r0": 5.0, "fatality": [0.35, 0.2, 0.2, 0.35], "immunity_years": -1,
+      "critical_population": 200000,
+      "hosts": ["wild_camels", "aurochs"],
+      "emergence_min_population": 100000, "emergence_chance": 0.0005
+    },
+    {
+      "id": "measles", "name": "Measles", "kind": "epidemic",
+      "r0": 13.0, "fatality": [0.06, 0.02, 0.01, 0.03], "immunity_years": -1,
+      "critical_population": 250000,
+      "hosts": ["aurochs"],
+      "emergence_min_population": 150000, "emergence_chance": 0.0005
+    }
+  ]
+}

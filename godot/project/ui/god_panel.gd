@@ -28,8 +28,10 @@ const TOOLS := [
 		"strength": ["Cooling", 1, 15, 0.5, 5, " °C"]},
 	{"id": "heat", "name": "Heat wave", "kind": "climate", "uses_radius": true, "uses_years": true,
 		"strength": ["Warming", 1, 15, 0.5, 5, " °C"]},
-	{"id": "plague", "name": "Plague", "kind": "plague", "uses_radius": true,
+	{"id": "plague", "name": "Plague (instant deaths)", "kind": "plague", "uses_radius": true,
 		"strength": ["Deaths", 5, 100, 5, 30, "%"]},
+	{"id": "epidemic", "name": "Epidemic (bring a disease)", "kind": "outbreak", "uses_radius": true,
+		"uses_disease": true},
 	{"id": "wipeout", "name": "Wipe out", "kind": "wipeout", "uses_radius": true},
 	{"id": "settlers", "name": "Settlers (new group)", "kind": "settlers",
 		"strength": ["People", 100, 20000, 100, 2000, ""]},
@@ -44,6 +46,8 @@ var _years: HSlider
 var _eruption: HSlider
 var _forcing: HSlider
 var _radius_row: Control
+var _disease_row: Control
+var _disease_option: OptionButton
 var _strength_row: Control
 var _years_row: Control
 var _strength_name: Label
@@ -136,6 +140,11 @@ func _ready() -> void:
 	_strength_row = _row_with_label(_strength_name, _strength, _strength_value)
 	box.add_child(_strength_row)
 
+	_disease_option = OptionButton.new()
+	_disease_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_disease_row = _row("Disease", _disease_option, _value_label())
+	box.add_child(_disease_row)
+
 	_years = _slider(1, 100, 1, 10)
 	var years_value := _value_label()
 	_years.value_changed.connect(func(v: float) -> void: years_value.text = "%d yr" % int(v))
@@ -200,6 +209,7 @@ func command() -> Dictionary:
 		"heat": c["amount"] = s
 		"plague": c["amount"] = s / 100.0
 		"settlers": c["amount"] = s
+		"epidemic": c["amount"] = float(_disease_option.selected)
 		"deplete": c["amount"] = 0.05
 		"restore": c["amount"] = 1.0
 	return c
@@ -208,6 +218,16 @@ func command() -> Dictionary:
 func set_status(text: String, ok: bool) -> void:
 	_status.text = text
 	_status.add_theme_color_override("font_color", GOOD if ok else CRITICAL)
+
+
+## The diseases the world's content defines, in order (index = disease id).
+func set_diseases(names: PackedStringArray) -> void:
+	var keep := _disease_option.selected
+	_disease_option.clear()
+	for n in names:
+		_disease_option.add_item(n)
+	if keep >= 0 and keep < names.size():
+		_disease_option.selected = keep
 
 
 ## Keep the forcing slider in step with the world (e.g. after a load).
@@ -220,6 +240,7 @@ func _configure_tool() -> void:
 	var t: Dictionary = TOOLS[_tool_option.selected]
 	_radius_row.visible = t.get("uses_radius", false)
 	_years_row.visible = t.get("uses_years", false)
+	_disease_row.visible = t.get("uses_disease", false)
 	_strength_row.visible = t.has("strength")
 	if t.has("strength"):
 		var spec: Array = t["strength"]
@@ -264,13 +285,13 @@ func _value_label() -> Label:
 	return l
 
 
-func _row(name: String, slider: HSlider, value: Label) -> Control:
+func _row(name: String, slider: Control, value: Label) -> Control:
 	var l := Label.new()
 	l.text = name
 	return _row_with_label(l, slider, value)
 
 
-func _row_with_label(name_label: Label, slider: HSlider, value: Label) -> Control:
+func _row_with_label(name_label: Label, slider: Control, value: Label) -> Control:
 	var row := HBoxContainer.new()
 	name_label.custom_minimum_size.x = 92
 	row.add_child(name_label)

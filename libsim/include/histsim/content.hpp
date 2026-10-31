@@ -153,6 +153,76 @@ struct CultureTrait {
 
 inline constexpr std::size_t kMaxTraits = 12;
 
+// ---------------------------------------------------------------- diseases
+
+enum class DiseaseKind : std::uint8_t { Endemic, Epidemic };
+
+// Age groups for disease effects: infants 0-4, children 5-14, adults 15-49,
+// elders 50+.
+inline constexpr int kDiseaseAgeGroups = 4;
+[[nodiscard]] constexpr int disease_age_group(int age_bin) noexcept {
+    return age_bin == 0 ? 0 : (age_bin < 3 ? 1 : (age_bin < 10 ? 2 : 3));
+}
+
+struct DiseaseDef {
+    std::string id;
+    std::string name;
+    DiseaseKind kind = DiseaseKind::Endemic;
+    // Endemic.
+    double excess_mortality = 0.0;  // yearly death chance at full burden
+    std::array<double, kDiseaseAgeGroups> age_weight{1.0, 1.0, 1.0, 1.0};
+    double farming_weight = 0.0;
+    double density_weight = 0.0;
+    // Epidemic.
+    double r0 = 0.0;
+    std::array<double, kDiseaseAgeGroups> fatality{};
+    double immunity_years = -1.0;  // -1 for life, 0 none
+    double critical_population = 0.0;
+    // Niche (always 1 when absent).
+    Trapezoid warmest_month_c{-1e9, -1e9, 1e9, 1e9};
+    Trapezoid annual_precip_mm{-1e9, -1e9, 1e9, 1e9};
+    Trapezoid elevation_m{-1e9, -1e9, 1e9, 1e9};
+    bool has_niche = false;
+    // Emergence.
+    std::uint32_t hosts = 0;  // species bits; 0 = none needed
+    double emergence_min_population = 0.0;
+    double emergence_chance = 0.0;
+    bool present_at_start = false;
+};
+
+inline constexpr std::size_t kMaxDiseases = 16;
+
+// ---------------------------------------------------------------- techniques
+
+// Where a technique can be invented and works (see data/techniques.json).
+enum class TechPlace : std::uint8_t { Anywhere, River, Coast, Water, Dry, Hills, Forest };
+
+struct TechEffects {
+    double crop_yield = 0.0;
+    double herd_yield = 0.0;
+    double forage = 0.0;
+    double aquatic = 0.0;
+    double harvest_buffer = 0.0;
+    double famine = 0.0;
+    double contact = 0.0;
+};
+
+struct TechniqueDef {
+    std::string id;
+    std::string name;
+    std::uint64_t prerequisites = 0;     // technique bits
+    bool requires_crops = false;
+    bool requires_herds = false;
+    std::uint32_t requires_species = 0;  // any of these domesticates (0 = none needed)
+    TechPlace where = TechPlace::Anywhere;
+    double rate = 0.0;                   // inventions per year per sqrt(10,000 people)
+    std::array<double, kMaxTraits> affinity{};
+    double start_chance = 0.0;
+    TechEffects effects;
+};
+
+inline constexpr std::size_t kMaxTechniques = 64;
+
 // ---------------------------------------------------------------- pack
 
 struct Content {
@@ -169,6 +239,9 @@ struct Content {
 
     std::vector<CultureTrait> traits;
 
+    std::vector<DiseaseDef> diseases;
+    std::vector<TechniqueDef> techniques;
+
     std::uint64_t hash = 0;  // of all source texts
 };
 
@@ -177,6 +250,8 @@ struct ContentSources {
     std::string_view species;
     std::string_view phonology;
     std::string_view culture;
+    std::string_view diseases;
+    std::string_view techniques;
 };
 
 // The packs compiled into this build.

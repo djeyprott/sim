@@ -2,8 +2,8 @@
 //
 // libm's sin, cos, exp and friends are not correctly rounded, and different C
 // libraries return different last bits, which would make runs diverge between
-// Windows, macOS and Linux. These versions use only + - * /, sqrt and floor,
-// which IEEE 754 specifies exactly. Measured against libm: sin and cos within
+// Windows, macOS and Linux. These versions use only + - * /, sqrt, floor and
+// ldexp, which IEEE 754 specifies exactly. Measured against libm: sin and cos within
 // 4e-14, asin_unit within 3e-7 (used for distances, where that is plenty).
 #pragma once
 
@@ -59,6 +59,26 @@ inline double asin_unit(double s) {
         return detail::asin_series(s);
     }
     return 0.5 * kPi - 2.0 * detail::asin_series(std::sqrt(0.5 * (1.0 - s)));
+}
+
+// e^x. Reduce x = k ln 2 + r with |r| <= ln2/2 (ln 2 split in two parts so
+// k ln 2 is exact), sum the Taylor series of e^r to 13 terms (error < 1e-16
+// relative), then scale by 2^k with ldexp, which is exact. Arguments below
+// -700 give 0 and above 700 give a large finite value.
+inline double exp(double x) {
+    if (x < -700.0) return 0.0;
+    if (x > 700.0) x = 700.0;
+    constexpr double kLn2Hi = 6.93147180369123816490e-01;  // high bits of ln 2
+    constexpr double kLn2Lo = 1.90821492927058770002e-10;  // ln 2 - kLn2Hi
+    constexpr double kInvLn2 = 1.44269504088896338700e+00;
+    const double k = std::floor(x * kInvLn2 + 0.5);
+    const double r = (x - k * kLn2Hi) - k * kLn2Lo;
+    double term = 1.0, sum = 1.0;
+    for (int i = 1; i <= 13; ++i) {
+        term *= r / static_cast<double>(i);
+        sum += term;
+    }
+    return std::ldexp(sum, static_cast<int>(k));
 }
 
 // An approximately standard-normal draw from four uniforms (Irwin-Hall). Its

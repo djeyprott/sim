@@ -690,6 +690,20 @@ World generate_test_world(const WorldParams& params, const Content& content) {
 
     place_species(w, content);
     list_wild_stands(w, content);
+    {
+        const std::size_t nd = content.diseases.size();
+        w.disease_niche.assign(w.cell_count() * nd, 0.0);
+        for (CellId c = 0; c < w.cell_count(); ++c) {
+            if (!w.is_land[c]) continue;
+            for (std::size_t d = 0; d < nd; ++d) {
+                const DiseaseDef& def = content.diseases[d];
+                w.disease_niche[c * nd + d] = !def.has_niche ? 1.0
+                                                             : def.warmest_month_c(w.warmest_month_c(c)) *
+                                                                   def.annual_precip_mm(w.precipitation_mm[c]) *
+                                                                   def.elevation_m(w.elevation_m[c]);
+            }
+        }
+    }
     assign_initial_groups(w);
     build_climate_mapping(w);
     return w;
@@ -721,6 +735,7 @@ std::uint64_t World::hash() const noexcept {
     h.span<std::uint32_t>(species_mask);
     h.span<std::uint8_t>(species_abundance);
     h.span<std::uint8_t>(cultivated_suitability);
+    h.span<double>(disease_niche);
     h.span<std::uint32_t>(initial_group);
     h.u32(group_count);
     h.u64(climate_grid.geometry_hash());

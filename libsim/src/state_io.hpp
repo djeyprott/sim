@@ -185,6 +185,7 @@ void serialize(Ar& ar, SimState& s) {
     doubles(ar, s.env.capacity);
     doubles(ar, s.env.farming);
     doubles(ar, s.env.farm_capacity);
+    doubles(ar, s.env.disease_mortality);
 
     ar.i64(s.ledger.initial_population);
     ar.i64(s.ledger.births);
@@ -244,6 +245,22 @@ void serialize(Ar& ar, SimState& s) {
     ar.id64(s.next_cognate);
     vec(ar, s.domesticates, [&](std::uint32_t& m) { ar.u32(m); });
     doubles(ar, s.domestication);
+    vec(ar, s.disease_present, [&](std::uint8_t& v) { ar.u8(v); });
+    doubles(ar, s.susceptible);
+    vec(ar, s.disease_deaths, [&](std::uint32_t& v) { ar.u32(v); });
+    ar.i64(s.disease_deaths_total);
+    vec(ar, s.disease_origins, [&](DiseaseOrigin& o) {
+        ar.i64(o.tick);
+        ar.u32(o.cell);
+        ar.u32(o.disease);
+    });
+    vec(ar, s.techniques, [&](std::uint64_t& t) { ar.id64(t); });
+    vec(ar, s.inventions, [&](Invention& v) {
+        ar.i64(v.tick);
+        ar.u32(v.cell);
+        ar.u32(v.technique);
+        ar.u32(v.culture);
+    });
     vec(ar, s.domestications, [&](Domestication& d) {
         ar.i64(d.tick);
         ar.u32(d.cell);
@@ -264,6 +281,8 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(r.language_families);
         ar.u32(r.cultures);
         ar.i64(r.farmers);
+        ar.i64(r.disease_deaths_total);
+        ar.u32(r.techniques);
         ar.u32(r.domesticated);
     });
 }

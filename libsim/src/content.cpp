@@ -15,6 +15,10 @@ extern const unsigned char kPhonologyJson[];
 extern const std::size_t kPhonologyJsonSize;
 extern const unsigned char kCultureJson[];
 extern const std::size_t kCultureJsonSize;
+extern const unsigned char kDiseasesJson[];
+extern const std::size_t kDiseasesJsonSize;
+extern const unsigned char kTechniquesJson[];
+extern const std::size_t kTechniquesJsonSize;
 
 namespace {
 
@@ -332,6 +336,129 @@ void load_culture(Content& c, std::string_view text) {
     if (c.traits.empty() || c.traits.size() > kMaxTraits) fail(doc.at("traits"), "must have 1-12 traits");
 }
 
+// ---- diseases
+
+std::array<double, kDiseaseAgeGroups> age_array(const json::Value& v) {
+    const auto& a = v.as_array();
+    if (a.size() != kDiseaseAgeGroups) fail(v, "needs 4 values: infants, children, adults, elders");
+    std::array<double, kDiseaseAgeGroups> out{};
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        out[i] = a[i].as_number();
+        if (out[i] < 0.0) fail(a[i], "must not be negative");
+    }
+    return out;
+}
+
+void load_diseases(Content& c, std::string_view text) {
+    const json::Value doc = json::parse(text, "data/diseases.json");
+    if (doc.at("version").as_int() != 1) fail(doc.at("version"), "is not a supported disease pack version");
+    for (const json::Value& v : doc.at("diseases").as_array()) {
+        DiseaseDef d;
+        d.id = v.at("id").as_string();
+        d.name = v.at("name").as_string();
+        const std::string& kind = v.at("kind").as_string();
+        if (kind == "endemic") {
+            d.kind = DiseaseKind::Endemic;
+            d.excess_mortality = unit(v, "excess_mortality", 0.0);
+            if (v.has("age_weight")) d.age_weight = age_array(v.at("age_weight"));
+            d.farming_weight = unit(v, "farming_weight", 0.0);
+            d.density_weight = unit(v, "density_weight", 0.0);
+            if (d.farming_weight + d.density_weight > 1.0) fail(v, "farming_weight + density_weight must be at most 1");
+        } else if (kind == "epidemic") {
+            d.kind = DiseaseKind::Epidemic;
+            d.r0 = v.at("r0").as_number();
+            if (d.r0 <= 0.0 || d.r0 > 50.0) fail(v.at("r0"), "must be between 0 and 50");
+            d.fatality = age_array(v.at("fatality"));
+            for (double f : d.fatality) {
+                if (f > 1.0) fail(v.at("fatality"), "values must be at most 1");
+            }
+            d.immunity_years = v.number_or("immunity_years", -1.0);
+            if (d.immunity_years < 0.0 && d.immunity_years != -1.0) fail(v.at("immunity_years"), "must be -1, 0 or more");
+            d.critical_population = v.number_or("critical_population", 0.0);
+        } else {
+            fail(v.at("kind"), "must be \"endemic\" or \"epidemic\"");
+        }
+        if (v.has("warmest_month_c")) d.warmest_month_c = trapezoid(v.at("warmest_month_c")), d.has_niche = true;
+        if (v.has("annual_precip_mm")) d.annual_precip_mm = trapezoid(v.at("annual_precip_mm")), d.has_niche = true;
+        if (v.has("elevation_m")) d.elevation_m = trapezoid(v.at("elevation_m")), d.has_niche = true;
+        if (v.has("hosts")) {
+            for (const json::Value& h : v.at("hosts").as_array()) {
+                std::size_t i = 0;
+                while (i < c.species.size() && c.species[i].id != h.as_string()) ++i;
+                if (i == c.species.size()) fail(h, "is not a species id");
+                d.hosts |= 1u << i;
+            }
+        }
+        d.emergence_min_population = v.number_or("emergence_min_population", 0.0);
+        d.emergence_chance = unit(v, "emergence_chance", 0.0);
+        d.present_at_start = v.has("present_at_start") && v.at("present_at_start").as_bool();
+        for (const DiseaseDef& o : c.diseases) {
+            if (o.id == d.id) fail(v.at("id"), "duplicates disease \"" + d.id + "\"");
+        }
+        c.diseases.push_back(std::move(d));
+    }
+    if (c.diseases.size() > kMaxDiseases) fail(doc.at("diseases"), "has more than 16 diseases");
+}
+
+// ---- techniques (after species and culture: they refer to both)
+
+constexpr const char* kPlacesWhere[] = {"anywhere", "river", "coast", "water", "dry", "hills", "forest"};
+
+void load_techniques(Content& c, std::string_view text) {
+    const json::Value doc = json::parse(text, "data/techniques.json");
+    if (doc.at("version").as_int() != 1) fail(doc.at("version"), "is not a supported technique pack version");
+    for (const json::Value& v : doc.at("techniques").as_array()) {
+        TechniqueDef t;
+        t.id = v.at("id").as_string();
+        t.name = v.at("name").as_string();
+        if (v.has("requires")) {
+            for (const json::Value& r : v.at("requires").as_array()) {
+                std::size_t i = 0;
+                while (i < c.techniques.size() && c.techniques[i].id != r.as_string()) ++i;
+                if (i == c.techniques.size()) fail(r, "is not a technique listed earlier");
+                t.prerequisites |= std::uint64_t{1} << i;
+            }
+        }
+        t.requires_crops = v.has("requires_crops") && v.at("requires_crops").as_bool();
+        t.requires_herds = v.has("requires_herds") && v.at("requires_herds").as_bool();
+        if (v.has("requires_species")) {
+            for (const json::Value& sp : v.at("requires_species").as_array()) {
+                std::size_t i = 0;
+                while (i < c.species.size() && c.species[i].id != sp.as_string()) ++i;
+                if (i == c.species.size()) fail(sp, "is not a species id");
+                t.requires_species |= 1u << i;
+            }
+        }
+        if (v.has("where")) t.where = static_cast<TechPlace>(pick(v.at("where"), kPlacesWhere));
+        t.rate = unit(v, "rate", 0.0);
+        t.start_chance = unit(v, "start_chance", 0.0);
+        if (v.has("affinity")) {
+            for (const auto& [key, val] : v.at("affinity").members()) {
+                std::size_t i = 0;
+                while (i < c.traits.size() && c.traits[i].id != key) ++i;
+                if (i == c.traits.size()) fail(val, "is not a culture trait id");
+                t.affinity[i] = val.as_number();
+            }
+        }
+        for (const auto& [key, val] : v.at("effects").members()) {
+            const double x = val.as_number();
+            if (key == "crop_yield") t.effects.crop_yield = x;
+            else if (key == "herd_yield") t.effects.herd_yield = x;
+            else if (key == "forage") t.effects.forage = x;
+            else if (key == "aquatic") t.effects.aquatic = x;
+            else if (key == "harvest_buffer") t.effects.harvest_buffer = x;
+            else if (key == "famine") t.effects.famine = x;
+            else if (key == "contact") t.effects.contact = x;
+            else fail(val, "is not an effect (crop_yield, herd_yield, forage, aquatic, harvest_buffer, famine, contact)");
+        }
+        for (const TechniqueDef& o : c.techniques) {
+            if (o.id == t.id) fail(v.at("id"), "duplicates technique \"" + t.id + "\"");
+        }
+        c.techniques.push_back(std::move(t));
+    }
+    if (c.techniques.size() > kMaxTechniques) fail(doc.at("techniques"), "has more than 64 techniques");
+}
+
 }  // namespace
 
 ContentSources default_sources() {
@@ -339,7 +466,8 @@ ContentSources default_sources() {
         return std::string_view(reinterpret_cast<const char*>(p), n);
     };
     return {view(kSpeciesJson, kSpeciesJsonSize), view(kPhonologyJson, kPhonologyJsonSize),
-            view(kCultureJson, kCultureJsonSize)};
+            view(kCultureJson, kCultureJsonSize), view(kDiseasesJson, kDiseasesJsonSize),
+            view(kTechniquesJson, kTechniquesJsonSize)};
 }
 
 Content load_content(const ContentSources& src) {
@@ -347,8 +475,10 @@ Content load_content(const ContentSources& src) {
     load_species(c, src.species);
     load_phonology(c, src.phonology);
     load_culture(c, src.culture);
+    load_diseases(c, src.diseases);
+    load_techniques(c, src.techniques);
     Hasher h;
-    for (std::string_view text : {src.species, src.phonology, src.culture}) {
+    for (std::string_view text : {src.species, src.phonology, src.culture, src.diseases, src.techniques}) {
         h.u64(text.size());
         h.bytes(text.data(), text.size());
     }
