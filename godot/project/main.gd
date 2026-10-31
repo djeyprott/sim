@@ -172,7 +172,7 @@ func _render_map() -> void:
 	if mode_id in DYNAMIC_LEGENDS:
 		_update_legend()  # lists the largest groups, which change as the run goes on
 	if _inspected_cell() >= 0:
-		_show_cell(_inspected_cell())
+		_refresh_inspector()
 
 
 func _update_summary() -> void:
@@ -904,6 +904,7 @@ func _build_side_panel() -> Control:
 	panel.add_child(HSeparator.new())
 	panel.add_child(_heading("Cell"))
 	cell_hint = _label("Hover over the map to look at a cell; click to keep it here.")
+	cell_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART  # never widen the panel
 	cell_hint.add_theme_color_override("font_color", Color(0.54, 0.53, 0.51))
 	panel.add_child(cell_hint)
 	cell_grid = GridContainer.new()

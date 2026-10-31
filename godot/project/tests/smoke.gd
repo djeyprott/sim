@@ -65,19 +65,22 @@ func _process(_delta: float) -> bool:
 	# cell with many rows and a scroll bar, then one with few).
 	if frames == 40:
 		main._set_playing(false)
-		main._show_cell(_ocean_cell())
+		main.god_panel.set_tool("inspect")
+		main._on_cell_hovered(_ocean_cell())
 	if frames == 42:
 		map_rect_short = main.map_rect.get_global_rect()
-		main._show_cell(_populated_cell())
+		main._on_cell_hovered(_populated_cell())
 	if frames == 44:
 		var long_rect: Rect2 = main.map_rect.get_global_rect()
 		if long_rect != map_rect_short:
 			failures.append("map moved when the inspector grew: %s -> %s" % [map_rect_short, long_rect])
-		main._show_cell(_ocean_cell())
+		main._on_cell_hovered(_ocean_cell())
 	if frames == 46:
 		var back: Rect2 = main.map_rect.get_global_rect()
 		if back != map_rect_short:
 			failures.append("map moved when the inspector shrank: %s -> %s" % [map_rect_short, back])
+		if main.cell_hint.size.x > main.SIDE_PANEL_WIDTH:
+			failures.append("the inspector hint widens the side panel (%d px)" % main.cell_hint.size.x)
 		_check_selection_and_zoom()
 		main._set_view(true)
 	if frames == 49:  # once the globe has been laid out
