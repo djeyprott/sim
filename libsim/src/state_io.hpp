@@ -138,6 +138,21 @@ void str(Ar& ar, std::string& s) {
     }
 }
 
+// A bool or a one-byte enum.
+template <class Ar, class T>
+void u8(Ar& ar, T& v) {
+    auto b = static_cast<std::uint8_t>(v);
+    ar.u8(b);
+    v = static_cast<T>(b);
+}
+
+template <class Ar>
+void flag(Ar& ar, bool& v) {
+    auto b = static_cast<std::uint8_t>(v ? 1 : 0);
+    ar.u8(b);
+    v = b != 0;
+}
+
 // ---- The state
 
 template <class Ar>
@@ -185,6 +200,7 @@ void serialize(Ar& ar, SimState& s) {
     doubles(ar, s.env.capacity);
     doubles(ar, s.env.farming);
     doubles(ar, s.env.farm_capacity);
+    doubles(ar, s.env.pastoral);
     doubles(ar, s.env.disease_mortality);
 
     ar.i64(s.ledger.initial_population);
@@ -280,6 +296,10 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(p.culture);
         ar.u32(p.language);
         ar.u32(p.parent);
+        flag(ar, p.nomadic);
+        ar.u32(p.overlord);
+        u8(ar, p.bond);
+        ar.i64(p.bond_since);
     });
     doubles(ar, s.stocks);
     doubles(ar, s.prices);
@@ -287,6 +307,34 @@ void serialize(Ar& ar, SimState& s) {
     doubles(ar, s.food_import);
     doubles(ar, s.trade_value);
     doubles(ar, s.route_value);
+    vec(ar, s.wars, [&](War& w) {
+        ar.u32(w.id);
+        str(ar, w.name);
+        vec(ar, w.attackers, [&](std::uint32_t& v) { ar.u32(v); });
+        vec(ar, w.defenders, [&](std::uint32_t& v) { ar.u32(v); });
+        u8(ar, w.goal);
+        ar.i64(w.started);
+        ar.i64(w.ended);
+        u8(ar, w.outcome);
+        ar.i64(w.deaths);
+        ar.u32(w.cells_taken);
+        ar.u32(w.cells_lost);
+    });
+    vec(ar, s.alliances, [&](Alliance& a) {
+        ar.u32(a.a);
+        ar.u32(a.b);
+        ar.i64(a.formed);
+        ar.i64(a.ended);
+    });
+    vec(ar, s.truces, [&](Truce& t) {
+        ar.u32(t.a);
+        ar.u32(t.b);
+        ar.i64(t.until);
+    });
+    vec(ar, s.war_deaths, [&](std::uint32_t& v) { ar.u32(v); });
+    vec(ar, s.strife, [&](std::uint8_t& v) { ar.u8(v); });
+    ar.i64(s.war_deaths_total);
+    ar.u32(s.raids);
     vec(ar, s.domestications, [&](Domestication& d) {
         ar.i64(d.tick);
         ar.u32(d.cell);
@@ -318,6 +366,12 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(r.domesticated);
         ar.f64(r.trade_value);
         ar.f64(r.food_traded);
+        ar.u32(r.wars);
+        ar.i64(r.war_deaths_total);
+        ar.u32(r.alliances);
+        ar.u32(r.subjects);
+        ar.u32(r.nomads);
+        ar.u32(r.raids);
     });
 }
 

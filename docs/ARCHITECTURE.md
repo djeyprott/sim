@@ -51,6 +51,7 @@ godot viewer ── view ───┘                                   │
 | `systems/technology.hpp` | Techniques known per cell: invention, borrowing, forgetting, and their effects. |
 | `systems/polity.hpp` | Towns and cities (settlement system), and chiefdoms, states and empires (polity system). |
 | `systems/economy.hpp` | Goods and markets: production, prices, trade along links, food brought in, trade routes. |
+| `systems/war.hpp` | Armies, wars and their terms, tributaries and vassals, alliances, nomad raids. |
 | `systems/farming.hpp` | Domestication, knowledge of domesticates, farming share, farmland capacity and harvests. |
 | `systems/culture.hpp` | Culture and dialect drift, contact, adaptation, language shift, assimilation, splits, extinctions; founding new peoples. |
 | `view/` (separate library) | Map modes, color scales, legends, pixel-to-cell rasterizing and PNG output. Display only: it reads state and never writes it, so the determinism rules do not apply to it. |
@@ -222,8 +223,8 @@ years; copper and horse riding come late.
 | Towns | Each cell's share of people in towns moves 1% a year toward 0.08 × (people fed by farmland per km² − 0.4), up to 35%, plus 4 points at a capital. A cell whose towns hold 5,000 people has a city, named in its people's language; below a third of that it is abandoned. Towns raise mortality (× 1 + 0.3 × town share) and disease contact (density × 1 + 20 × town share); crowd diseases (pox, measles) emerge only where towns hold 20,000–40,000 people. |
 | Formation | Every 5 years, a stateless cell with farming ≥ 50%, at least 0.4 people per km² and hierarchy ≥ 0.3 founds a polity with chance 1% × hierarchy × (0.5 + circumscription) × density factor, where circumscription is the share of neighbours that are sea or much poorer land (Carneiro). |
 | Reach | Control of a cell = 1 / (1 + (distance from the capital / reach)²); reach = 100 km × (1 + administration) × (1 + 0.3 contact). Writing (+1), bureaucracy (+0.7), roads (+0.5) and bronze (+0.1) add administration. A chiefdom holds about one cell; a state with writing a ring around its capital. |
-| Expansion | Each year a polity tries the neighbouring cell it would control best (at least 30%): stateless land with chance 3% × control × (0.5 + warfare) × strength ratio; another polity's cell when its control-weighted strength there is more than 1.5 times the owner's plus the local people. |
-| Breakdown | Provinces under 20% control secede (1% a year); polities of 6 or more cells split in civil war (0.4% × (1 − mean control)); and whole polities collapse, chiefdoms 0.6% a year and states 0.15%, more under famine. Chiefdoms rise and fall within a century or two (chiefly cycling), states last longer. |
+| Expansion | Each year a polity tries the stateless neighbouring cell it would control best (at least 30%), with chance 3% × control × (0.5 + warfare) × strength ratio. Land changes hands between polities only in war (below). |
+| Breakdown | Provinces under 20% control secede (1% a year); polities of 6 or more cells split in civil war (0.4% × (1 − mean control)), the far half breaking away and fighting a war of independence; and whole polities collapse, chiefdoms 0.6% a year and states 0.15%, more under famine. Chiefdoms rise and fall within a century or two (chiefly cycling), states last longer. |
 | Culture | Being ruled pushes hierarchy, warfare and ritual up. |
 
 Writing needs granaries, a calendar and a town of 20,000 people to be
@@ -259,6 +260,29 @@ of the food supply. Copper smelting begins a millennium or so after farming near
 bronze follows where copper and traded tin meet in a town. `histsim trade`
 prints the timeline, the goods and the busiest routes; the trade and
 resources map modes and the trade-route overlay show them.
+
+### War, diplomacy and nomads (M3)
+
+`WarSystem` runs right after the polity system each year.
+
+| Process | Model |
+| --- | --- |
+| Armies | A polity's levy is 4% × (0.5 + warfare) of the people in each cell it rules, times its control there; nomads raise four times as many (every herder rides). Strength = levy × (1 + military), where bows (+0.15), horses (+0.6), chariots and carts (+0.2), copper (+0.1) and bronze (+0.4) add military. Vassals add half their strength to their overlord's. |
+| Declaring war | A polity that is no one's subject, not at war, and not under truce may attack a neighbouring polity when its strength is at least 1.2 times the defender's plus half its overlord's and allies': chance 8% × (0.5 + warfare) × min(2, ratio − 1) a year. Nomads attacking farmers fight for tribute; others for conquest. The defender's overlord, allies and vassals join it; the attacker's vassals join the attacker. |
+| Fighting | Each year each side may take the enemy cell along the front it controls best (chance 30% × min(2, ratio − 1), up to three tries for a side three times stronger). A taken cell is sacked (3% of its people killed) and 10% flee to their own side. Battles kill men of fighting age in the front cells: 10% of 30% of the smaller army, split by the other side's share of strength. |
+| Peace | A war ends when a leader's capital falls, when a leader is gone, or by exhaustion (5% × (1 + years at war ÷ 10) a year). The winner keeps what it took; a defender whose capital fell becomes a vassal (or is annexed if one cell is left), and one beaten in a war for tribute a tributary. A 20-year truce follows. |
+| Subjects | Tributaries and vassals send their overlord 10% of their stocks of goods each year; vassals fight for it. A subject at least 0.7 times as strong as its overlord rebels (3% a year), starting a war of independence; a vassal whose capital its overlord controls at least half is absorbed (1% a year). |
+| Alliances | A free polity with a neighbour 1.5 times stronger seeks a defensive ally among its own and the threat's neighbours (strongest first, related cultures counting double): chance 5% a year, doubled for related cultures, up to three allies each. Alliances lapse at 1% a year, or when the allies fight each other. |
+| Nomads | Pastoralists are cells whose farm food comes mostly from herds; they move as freely as foragers. Where herders ride horses and warfare is at least 0.4, confederations form (1% × warfare per five-year check). Their rule reaches three times as far. Each year a confederation may raid its richest settled farming neighbour (20%), succeeding with chance attack ÷ (attack + defence): it carries off 30% of the cell's goods and kills 1% of its people, and a weaker ruler may agree to pay tribute (10%). |
+
+Over 9,000 years at level 5, about 1,200 wars are fought, most between
+neighbouring chiefdoms and lasting a few years. Ten to fifteen nomad
+confederations hold the steppes from about year 4,500. A few alliances and
+subjects stand at any time, and realms reach 0.5–1 million km² by war. Deaths
+in war run to a few hundred a year: violence between bands and tribes is
+already in the forager life table, so this counts only war between polities.
+`histsim wars` prints the timeline, the deadliest wars and the largest realms
+with their subjects and allies; the realms and war map modes show them.
 
 ### Interventions
 
@@ -348,7 +372,7 @@ generator can fill it without changing systems.
 | M0 Foundations (done) | Grid, test-world generator, scheduler, RNG, snapshots, headless runner | Sim API, map viewer | Identical replays on Windows, Linux and macOS |
 | M1 Living planet (done) | Climate and environment systems, cohort demography, migration, foragers | Globe, climate and population map modes, pyramid, charts | Forager populations settle near carrying capacity (`m1_gate_populations_settle_near_capacity`) |
 | M2 Neolithic (done) | Agriculture, herding, disease, culture and language drift, early tech | Culture and language map modes, language tree | Farming arises in several plausible regions |
-| **M3 States and trade** (in progress: towns, cities and early states; goods, markets and trade routes done) | Goods, markets, transport, polities, war, religion, notable agents, forced labor and the slave trade | Trade flows, inspectors, explain view, timeline | Polity sizes track Seshat ranges by era |
+| **M3 States and trade** (in progress: towns, cities and early states; goods, markets and trade routes; war, diplomacy and nomads done) | Goods, markets, transport, polities, war, religion, notable agents, forced labor and the slave trade | Trade flows, inspectors, explain view, timeline | Polity sizes track Seshat ranges by era |
 | M4 Modern era | Energy, carbon cycle, demographic transition, Earth importer, procedural generator | God mode, branch comparison, modding tools | Full runs to the near future on Earth and generated worlds |
 
 M0 to M3 run on the generated test world, so the foundation is solid before any

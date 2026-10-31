@@ -1,0 +1,156 @@
+// War, diplomacy and nomads (M3 slice 3).
+#include <algorithm>
+#include <string>
+
+#include "histsim/simulation.hpp"
+#include "histsim/systems/polity.hpp"
+#include "histsim/systems/war.hpp"
+#include "testing.hpp"
+
+using namespace histsim;
+
+namespace {
+
+// A world at its start with two polities set up by hand: polity 1 holds a
+// cell and all but one of its inhabited neighbours, polity 2 that one.
+struct Setup {
+    Simulation sim;
+    SimState s;
+    CellId heart = kInvalidCell, victim = kInvalidCell;
+};
+
+Setup two_polities() {
+    WorldParams p;
+    p.grid_level = 4;
+    Setup x{Simulation::create(p), {}, kInvalidCell, kInvalidCell};
+    x.s = x.sim.state();
+    const World& w = x.sim.world();
+    for (CellId c = 0; c < w.cell_count() && x.heart == kInvalidCell; ++c) {
+        if (x.s.cell_population[c] < 1000) continue;
+        std::size_t inhabited = 0;
+        for (CellId nb : w.grid.neighbors(c)) inhabited += x.s.cell_population[nb] >= 1000 ? 1 : 0;
+        if (inhabited == w.grid.neighbors(c).size()) x.heart = c;
+    }
+    CHECK(x.heart != kInvalidCell);
+    x.s.polities.resize(3);
+    for (std::uint32_t id = 1; id <= 2; ++id) {
+        Polity& pol = x.s.polities[id];
+        pol.id = id;
+        pol.name = id == 1 ? "Strong" : "Weak";
+        pol.culture = x.s.cohorts_in(x.heart).front().culture;
+    }
+    x.s.polities[1].capital = x.heart;
+    x.s.polity_of[x.heart] = 1;
+    for (CellId nb : w.grid.neighbors(x.heart)) {
+        if (x.victim == kInvalidCell) {
+            x.victim = nb;
+            x.s.polity_of[nb] = 2;
+        } else {
+            x.s.polity_of[nb] = 1;
+        }
+    }
+    x.s.polities[2].capital = x.victim;
+    // The victim's people are few.
+    for (auto i = x.s.cohort_begin[x.victim]; i < x.s.cohort_begin[x.victim + 1]; ++i) {
+        Cohort& co = x.s.cohorts[i];
+        for (int b = 0; b < kAgeBins; ++b) co.female[b] /= 10, co.male[b] /= 10;
+    }
+    x.s.ledger.initial_population = 0;  // not checked here
+    x.s.normalize_cohorts(w.cell_count());
+    return x;
+}
+
+void run_war_system(const World& w, SimState& s, int years) {
+    WarSystem war;
+    for (int y = 0; y < years; ++y) {
+        StepContext ctx{w, s, 7, s.tick};
+        war.step(ctx);
+        s.tick += kTicksPerYear;
+    }
+}
+
+}  // namespace
+
+TEST(war_sides_gather_allies_overlords_and_vassals) {
+    Setup x = two_polities();
+    SimState& s = x.s;
+    // A third polity allied to the victim, a fourth the attacker's vassal.
+    s.polities.resize(5);
+    for (std::uint32_t id = 3; id <= 4; ++id) {
+        s.polities[id].id = id;
+        s.polities[id].name = id == 3 ? "Friend" : "Client";
+    }
+    s.alliances.push_back({2, 3, 0, kNever});
+    s.polities[4].overlord = 1;
+    s.polities[4].bond = Bond::Vassal;
+    CHECK(allied(s, 3, 2));
+    CHECK(!allied(s, 1, 2));
+    CHECK_EQ(top_overlord(s, 4), 1u);
+    CHECK_EQ(top_overlord(s, 1), 1u);
+    const std::uint32_t id = start_war(x.sim.world(), s, 0, 1, 2, WarGoal::Conquest);
+    const War& war = s.wars[id];
+    CHECK_EQ(war.attackers.front(), 1u);
+    CHECK_EQ(war.defenders.front(), 2u);
+    CHECK(std::find(war.defenders.begin(), war.defenders.end(), 3u) != war.defenders.end());
+    CHECK(std::find(war.attackers.begin(), war.attackers.end(), 4u) != war.attackers.end());
+    CHECK_EQ(war_between(s, 1, 2), id);
+    CHECK_EQ(war_between(s, 4, 3), id);  // on opposite sides of it
+    CHECK_EQ(war_between(s, 1, 4), 0u);
+    CHECK(!war.name.empty());
+}
+
+TEST(war_the_strong_take_the_weak_and_the_dead_are_counted) {
+    Setup x = two_polities();
+    SimState& s = x.s;
+    const World& w = x.sim.world();
+    const auto strengths = polity_strengths(w, s);
+    CHECK(strengths[1] > 2.0 * strengths[2]);
+    const std::int64_t people = s.total_population();
+    const std::int64_t deaths = s.ledger.deaths;
+    const std::uint32_t id = start_war(w, s, s.tick, 1, 2, WarGoal::Conquest);
+    run_war_system(w, s, 60);
+    const War& war = s.wars[id];
+    CHECK(war.ended != kNever);
+    CHECK(war.outcome == WarOutcome::AttackersWon);
+    CHECK_EQ(s.polity_of[x.victim], 1u);  // a one-cell polity is annexed outright
+    CHECK(war.deaths > 0);
+    // Deaths are in the ledger; refugees only moved.
+    CHECK_EQ(s.ledger.deaths - deaths, s.war_deaths_total);
+    CHECK_EQ(s.total_population(), people - s.war_deaths_total);
+    // A truce follows (or the loser is gone).
+    CHECK(war_between(s, 1, 2) == 0);
+}
+
+TEST(war_tributaries_pay_and_subjects_can_be_found_above) {
+    Setup x = two_polities();
+    SimState& s = x.s;
+    const World& w = x.sim.world();
+    run_war_system(w, s, 1);  // sizes the war arrays
+    s.polities[2].overlord = 1;
+    s.polities[2].bond = Bond::Tributary;
+    const std::size_t ng = w.content->goods.size();
+    CHECK(s.stocks.size() == w.cell_count() * ng || s.stocks.empty());
+    if (s.stocks.empty()) s.stocks.assign(w.cell_count() * ng, 0.0);
+    std::size_t salt = 0;
+    while (w.content->goods[salt].id != "salt") ++salt;
+    s.stocks[x.victim * ng + salt] = 100.0;
+    s.stocks[x.heart * ng + salt] = 0.0;
+    // One cell against six: far too weak to rebel.
+    run_war_system(w, s, 1);
+    CHECK_EQ(s.polities[2].overlord, 1u);
+    CHECK_NEAR(s.stocks[x.heart * ng + salt], 100.0 * WarSystem::kTribute, 1e-9);
+    CHECK_NEAR(s.stocks[x.victim * ng + salt], 100.0 * (1.0 - WarSystem::kTribute), 1e-9);
+    CHECK_EQ(top_overlord(s, 2), 1u);
+}
+
+TEST(war_nomad_confederations_reach_far_and_raise_big_levies) {
+    Setup x = two_polities();
+    SimState& s = x.s;
+    const World& w = x.sim.world();
+    const double settled_reach = polity_reach(w, s, 1);
+    const double settled_strength = polity_strengths(w, s)[1];
+    s.polities[1].nomadic = true;
+    CHECK_NEAR(polity_reach(w, s, 1), PolitySystem::kNomadReach * settled_reach, 1e-9);
+    CHECK(polity_strengths(w, s)[1] > WarSystem::kNomadLevy * settled_strength);  // more levy, firmer control
+    CHECK(std::string(polity_level(w, s, 1)) == "confederation");
+}

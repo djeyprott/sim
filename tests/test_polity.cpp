@@ -3,6 +3,7 @@
 
 #include "histsim/simulation.hpp"
 #include "histsim/systems/polity.hpp"
+#include "histsim/systems/war.hpp"
 #include "testing.hpp"
 
 using namespace histsim;
@@ -41,7 +42,7 @@ TEST(polity_chiefdoms_cycle_and_states_form_with_writing) {
     WorldParams p;
     p.grid_level = 4;
     Simulation sim = Simulation::create(p);
-    sim.step_years(3500);
+    sim.step_years(4500);
     const SimState& s = sim.state();
     const World& w = sim.world();
     // Consistency: every ruled cell is inhabited and ruled by a living
@@ -72,6 +73,36 @@ TEST(polity_chiefdoms_cycle_and_states_form_with_writing) {
     }
     CHECK(living > 5);
     CHECK(ended > living);  // chiefdoms rise and fall
+    // War and diplomacy: wars were fought and ended properly; no polity is
+    // its own overlord, directly or through a chain; subjects serve living
+    // overlords; alliances join living polities.
+    CHECK(s.wars.size() > 1);
+    std::size_t over = 0;
+    for (std::size_t i = 1; i < s.wars.size(); ++i) {
+        const War& war = s.wars[i];
+        CHECK_EQ(war.id, i);
+        CHECK(!war.attackers.empty() && !war.defenders.empty());
+        if (war.ended != kNever) {
+            ++over;
+            CHECK(war.ended >= war.started);
+            CHECK(war.outcome != WarOutcome::Ongoing);
+        }
+    }
+    CHECK(over > 0);
+    for (std::uint32_t id = 1; id < s.polities.size(); ++id) {
+        const Polity& pol = s.polities[id];
+        if (pol.ended != kNever || pol.overlord == 0) continue;
+        CHECK(pol.overlord != id);
+        CHECK(pol.bond != Bond::None);
+        CHECK_EQ(s.polities[pol.overlord].ended, kNever);
+        const std::uint32_t top = top_overlord(s, id);
+        CHECK(top != id && s.polities[top].overlord == 0);
+    }
+    for (const Alliance& a : s.alliances) {
+        CHECK(a.a < a.b);
+        if (a.ended == kNever) CHECK(s.polities[a.a].ended == kNever && s.polities[a.b].ended == kNever);
+    }
+    CHECK_EQ(s.ledger.initial_population + s.ledger.births - s.ledger.deaths + s.ledger.added, s.total_population());
     CHECK(states >= 1);
     CHECK(s.history.back().states == states);
     // Cities: unique names, enough townspeople where they stand.

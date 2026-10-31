@@ -73,7 +73,9 @@ TEST(view_every_mode_colors_every_cell_and_has_a_legend) {
         // begun after 20 years, so those modes show only a few classes yet.
         const bool early = mode.id == "farming" || mode.id == "domesticates" || mode.id == "technology" ||
                            mode.id == "disease" || mode.id == "polity" || mode.id == "towns";
-        CHECK(distinct.size() > (early ? 2u : 5u));
+        // No polities, so no realms or wars, this early: land and sea only.
+        const bool quiet = mode.id == "realms" || mode.id == "war";
+        CHECK(distinct.size() > (quiet ? 1u : early ? 2u : 5u));
         const Legend l = legend(sim, mode.id);
         CHECK(!l.title.empty());
         CHECK(l.ramp.size() >= 2 || l.swatches.size() >= 3);  // continuous or categorical

@@ -33,6 +33,8 @@
 //   land_transport  overland carrying cost / (1 + sum): horses, carts, roads
 //   water_transport river and sea carrying cost / (1 + sum); any at all
 //                   (canoes) lets people cross the sea to nearby coasts
+//   military        each soldier's fighting strength x (1 + sum): bows,
+//                   horses, chariots, copper and bronze weapons
 //
 // `min_town`: inventing the technique needs a town of at least this many
 // people in the cell (writing grew out of temple and palace accounting in
@@ -42,7 +44,7 @@
   "techniques": [
     {"id": "bow", "name": "Bow and arrow", "rate": 0.00002, "start_chance": 0.5,
      "affinity": {"plant_reliance": -0.5},
-     "effects": {"forage": 0.08}},
+     "effects": {"forage": 0.08, "military": 0.15}},
     {"id": "nets", "name": "Fishing nets and weirs", "where": "water", "rate": 0.00003, "start_chance": 0.4,
      "affinity": {"mobility": -0.5},
      "effects": {"aquatic": 0.25}},
@@ -77,23 +79,23 @@
      "effects": {"crop_yield": 0.35}},
     {"id": "horse_riding", "name": "Horse riding", "requires_species": ["wild_horses"], "rate": 0.0001,
      "affinity": {"mobility": 0.8},
-     "effects": {"herd_yield": 0.25, "contact": 0.5, "land_transport": 0.3}},
+     "effects": {"herd_yield": 0.25, "contact": 0.5, "land_transport": 0.3, "military": 0.6}},
     {"id": "sailing", "name": "Sailing boats", "requires": ["canoes"], "where": "coast", "rate": 0.000004,
      "affinity": {"openness": 0.5},
      "effects": {"aquatic": 0.15, "contact": 0.5, "water_transport": 1.25}},
     {"id": "wheel", "name": "Wheel and cart", "requires": ["plough"], "rate": 0.00001,
-     "effects": {"contact": 0.4, "crop_yield": 0.05, "land_transport": 0.4}},
+     "effects": {"contact": 0.4, "crop_yield": 0.05, "land_transport": 0.4, "military": 0.2}},
     {"id": "calendar", "name": "Farming calendar", "requires_crops": true, "rate": 0.00002,
      "affinity": {"ritual": 0.6},
      "effects": {"harvest_buffer": 0.1, "crop_yield": 0.05}},
     {"id": "copper", "name": "Copper smelting", "requires": ["granaries"], "requires_crops": true,
      "requires_goods": ["copper_ore"], "rate": 0.00001,
      "affinity": {"hierarchy": 0.5, "innovation": 0.5},
-     "effects": {"crop_yield": 0.03}},
+     "effects": {"crop_yield": 0.03, "military": 0.1}},
     {"id": "bronze", "name": "Bronze working", "requires": ["copper"], "requires_goods": ["copper", "tin_ore"],
      "min_town": 2000, "rate": 0.00002,
      "affinity": {"hierarchy": 0.5},
-     "effects": {"crop_yield": 0.05, "administration": 0.1}},
+     "effects": {"crop_yield": 0.05, "administration": 0.1, "military": 0.4}},
     {"id": "writing", "name": "Writing", "requires": ["granaries", "calendar"], "min_town": 20000, "rate": 0.00001,
      "affinity": {"hierarchy": 0.6, "ritual": 0.3},
      "effects": {"administration": 1.0, "contact": 0.1}},

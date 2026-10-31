@@ -27,7 +27,13 @@ std::size_t trait_index(const Content& c, const char* id) {
 }  // namespace
 
 double farm_density(const World& w, CellId c, std::uint32_t known, std::uint64_t techniques) {
-    if (!w.is_land[c] || known == 0) return 0.0;
+    const FarmParts p = farm_parts(w, c, known, techniques);
+    // Herds add to crops (milk, manure, meat), or carry pastoralists alone.
+    return p.crops > 0.0 ? p.crops + 0.5 * p.herds : p.herds;
+}
+
+FarmParts farm_parts(const World& w, CellId c, std::uint32_t known, std::uint64_t techniques) {
+    if (!w.is_land[c] || known == 0) return {};
     const auto& species = w.content->species;
     double crop = 0.0, herd = 0.0;
     for (std::size_t s = 0; s < species.size(); ++s) {
@@ -43,8 +49,7 @@ double farm_density(const World& w, CellId c, std::uint32_t known, std::uint64_t
     const TechEffects tech = technique_effects(w, c, techniques);
     const double crops = FarmingSystem::kCropDensity * crop * soil * flood * season * (1.0 + tech.crop_yield);
     const double herds = FarmingSystem::kHerdDensity * herd * (1.0 + tech.herd_yield);
-    // Herds add to crops (milk, manure, meat), or carry pastoralists alone.
-    return crops > 0.0 ? crops + 0.5 * herds : herds;
+    return {crops, herds};
 }
 
 double harvest_factor(const World& w, const SimState& s, CellId c) {
@@ -164,11 +169,17 @@ void FarmingSystem::step(StepContext& ctx) {
     }
 
     // ---- What farmland would feed this year.
+    if (s.env.pastoral.size() != n) s.env.pastoral.assign(n, 0.0);
     for (CellId c = 0; c < n; ++c) {
-        s.env.farm_capacity[c] = s.domesticates[c] == 0
-                                     ? 0.0
-                                     : farm_density(w, c, s.domesticates[c], techniques_in(s, c)) * w.grid.area_km2(c) *
-                                           harvest_factor(w, s, c);
+        if (s.domesticates[c] == 0) {
+            s.env.farm_capacity[c] = 0.0;
+            s.env.pastoral[c] = 0.0;
+            continue;
+        }
+        const FarmParts parts = farm_parts(w, c, s.domesticates[c], techniques_in(s, c));
+        const double density = parts.crops > 0.0 ? parts.crops + 0.5 * parts.herds : parts.herds;
+        s.env.farm_capacity[c] = density * w.grid.area_km2(c) * harvest_factor(w, s, c);
+        s.env.pastoral[c] = pastoral_share(parts);
     }
 
     // ---- Each cohort's share of food from farming.

@@ -6,6 +6,7 @@
 
 #include "histsim/language.hpp"
 #include "histsim/systems/technology.hpp"
+#include "histsim/systems/war.hpp"
 
 namespace histsim {
 
@@ -71,6 +72,12 @@ double polity_reach_km(const World& w, const SimState& s, CellId capital) {
     return PolitySystem::kBaseReachKm * (1.0 + e.administration) * (1.0 + 0.3 * e.contact);
 }
 
+double polity_reach(const World& w, const SimState& s, std::uint32_t id) {
+    if (id == 0 || id >= s.polities.size()) return 0.0;
+    const Polity& p = s.polities[id];
+    return polity_reach_km(w, s, p.capital) * (p.nomadic ? PolitySystem::kNomadReach : 1.0);
+}
+
 bool polity_has_writing(const World& w, const SimState& s, std::uint32_t id) {
     if (id == 0 || id >= s.polities.size()) return false;
     const auto& techs = w.content->techniques;
@@ -82,7 +89,7 @@ bool polity_has_writing(const World& w, const SimState& s, std::uint32_t id) {
 
 const char* polity_level(const World& w, const SimState& s, std::uint32_t id) {
     if (id == 0 || id >= s.polities.size()) return "";
-    if (!polity_has_writing(w, s, id)) return "chiefdom";
+    if (!polity_has_writing(w, s, id)) return s.polities[id].nomadic ? "confederation" : "chiefdom";
     return polity_size(w, s, id).area_km2 >= 1.0e6 ? "empire" : "state";
 }
 
@@ -153,7 +160,7 @@ void PolitySystem::step(StepContext& ctx) {
     auto taken = [&](const std::string& name) {
         return std::any_of(s.polities.begin(), s.polities.end(), [&](const Polity& x) { return x.name == name; });
     };
-    auto found = [&](CellId capital, std::uint32_t parent) {
+    auto found = [&](CellId capital, std::uint32_t parent, bool nomadic) {
         const Cohort* lead = lead_cohort(s, capital);
         RngStream rng = ctx.rng(Stream::Polity, kNameEntity | capital);
         Polity p;
@@ -163,6 +170,7 @@ void PolitySystem::step(StepContext& ctx) {
         p.culture = lead->culture;
         p.language = lead->language;
         p.parent = parent;
+        p.nomadic = nomadic;
         // Named after its capital city if it has one, else coined.
         const std::uint32_t city = s.city_of[capital];
         p.name = city != 0 && !taken(s.cities[city].name) ? s.cities[city].name
@@ -204,7 +212,7 @@ void PolitySystem::step(StepContext& ctx) {
     std::vector<double> reach(np, 0.0), strength(np, 0.0);
     for (std::size_t id = 1; id < np; ++id) {
         if (s.polities[id].ended != kNever) continue;
-        reach[id] = polity_reach_km(w, s, s.polities[id].capital);
+        reach[id] = polity_reach(w, s, static_cast<std::uint32_t>(id));
         for (CellId c : cells[id]) {
             strength[id] += static_cast<double>(s.cell_population[c]) *
                             polity_control(w.grid.distance_km(s.polities[id].capital, c), reach[id]);
@@ -214,15 +222,16 @@ void PolitySystem::step(StepContext& ctx) {
         return polity_control(w.grid.distance_km(s.polities[id].capital, c), reach[id]);
     };
 
-    // ---- Expansion and conquest: one attempt a year per polity, at the
-    // neighbouring cell it would hold best.
+    // ---- Expansion over stateless land: one attempt a year per polity, at
+    // the neighbouring cell it would hold best. (Land changes hands between
+    // polities only in war.)
     for (std::size_t id = 1; id < np; ++id) {
         if (s.polities[id].ended != kNever) continue;
         CellId target = kInvalidCell;
         double best = -1.0;
         for (CellId c : cells[id]) {
             for (CellId nb : w.grid.neighbors(c)) {
-                if (s.polity_of[nb] == id || s.cell_population[nb] == 0) continue;
+                if (s.polity_of[nb] != 0 || s.cell_population[nb] == 0) continue;
                 const double ctl = control_of(id, nb);
                 if (ctl > best || (ctl == best && nb < target)) best = ctl, target = nb;
             }
@@ -231,17 +240,8 @@ void PolitySystem::step(StepContext& ctx) {
         RngStream rng = ctx.rng(Stream::Polity, static_cast<std::uint32_t>(id));
         const double warfare = cell_trait(s, s.polities[id].capital, i_warfare);
         const double people = static_cast<double>(s.cell_population[target]);
-        const std::uint32_t owner = s.polity_of[target];
-        double p = 0.0;
-        if (owner == 0) {
-            p = kAnnex * best * (0.5 + warfare) * std::min(1.0, strength[id] / (4.0 * people));
-        } else {
-            const double ours = strength[id] * best;
-            const double theirs = strength[owner] * control_of(owner, target) + people;
-            const double ratio = ours / theirs;
-            if (ratio > 1.5) p = std::min(0.2, kConquest * (ratio - 1.5)) * (0.5 + warfare);
-        }
-        if (p > 0.0 && rng.uniform() < p) {
+        const double p = kAnnex * best * (0.5 + warfare) * std::min(1.0, strength[id] / (4.0 * people));
+        if (rng.uniform() < p) {
             s.polity_of[target] = static_cast<std::uint32_t>(id);
             // Rebuild later from polity_of; capitals are rechecked next year.
         }
@@ -294,8 +294,10 @@ void PolitySystem::step(StepContext& ctx) {
                 for (std::size_t i = 0; i < half; ++i) {
                     if (s.cell_population[by_distance[i].second] > s.cell_population[seat]) seat = by_distance[i].second;
                 }
-                const std::uint32_t rebel = found(seat, static_cast<std::uint32_t>(id));
+                const std::uint32_t rebel = found(seat, static_cast<std::uint32_t>(id), pol.nomadic);
                 for (std::size_t i = 0; i < half; ++i) s.polity_of[by_distance[i].second] = rebel;
+                // The rest fight to keep them.
+                start_war(w, s, ctx.tick, rebel, static_cast<std::uint32_t>(id), WarGoal::Independence);
             }
         }
     }
@@ -304,11 +306,26 @@ void PolitySystem::step(StepContext& ctx) {
     // circumscription come together.
     const std::int64_t year = ctx.tick / kTicksPerYear;
     if (year % kFormationYears == 0) {
+        std::size_t horse_riding = content.techniques.size();
+        for (std::size_t k = 0; k < content.techniques.size(); ++k) {
+            if (content.techniques[k].id == "horse_riding") horse_riding = k;
+        }
         for (CellId c = 0; c < n; ++c) {
             if (s.polity_of[c] != 0 || s.cell_population[c] == 0) continue;
             const double farming = s.env.farming.empty() ? 0.0 : s.env.farming[c];
             const double density = static_cast<double>(s.cell_population[c]) / w.grid.area_km2(c);
             const double hierarchy = cell_trait(s, c, i_hierarchy);
+            // Mounted herders band together in confederations.
+            const double pastoral = s.env.pastoral.empty() ? 0.0 : s.env.pastoral[c];
+            if (pastoral >= kNomadPastoral && farming >= kMinFarming && horse_riding < content.techniques.size() &&
+                ((techniques_in(s, c) >> horse_riding) & 1u)) {
+                const double warfare = cell_trait(s, c, i_warfare);
+                RngStream rng = ctx.rng(Stream::Polity, kFormationEntity | c);
+                if (warfare >= kNomadWarfare && rng.uniform() < kNomadFormation * warfare) {
+                    s.polity_of[c] = found(c, 0, true);
+                }
+                continue;
+            }
             if (farming < kMinFarming || density < kMinDensity || hierarchy < kMinHierarchy) continue;
             // Circumscription: neighbours that are sea or much poorer land.
             const double own = s.env.farm_capacity[c] / w.grid.area_km2(c);
@@ -320,7 +337,7 @@ void PolitySystem::step(StepContext& ctx) {
             const double circumscription = around > 0 ? static_cast<double>(hemmed) / around : 0.0;
             const double p = kFormation * hierarchy * (0.5 + circumscription) * std::min(2.0, density / kMinDensity);
             RngStream rng = ctx.rng(Stream::Polity, kFormationEntity | c);
-            if (rng.uniform() < p) s.polity_of[c] = found(c, 0);
+            if (rng.uniform() < p) s.polity_of[c] = found(c, 0, false);
         }
     }
 }

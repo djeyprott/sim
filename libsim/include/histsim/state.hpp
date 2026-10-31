@@ -134,6 +134,7 @@ struct Environment {
     std::vector<double> capacity;  // people the cell can feed this year, foraging and farming
     std::vector<double> farming;   // share of the cell's food from farming (population-weighted)
     std::vector<double> farm_capacity;  // people the cell could feed if everyone farmed, this year
+    std::vector<double> pastoral;       // share of that farm food from herds (1 = pastoralists)
     // Extra chance of dying from disease this year, per cell and age group
     // (cell * kDiseaseAgeGroups + group), set by the disease system and
     // applied by demography.
@@ -150,6 +151,13 @@ struct City {
     Tick abandoned = kNever;
 };
 
+// How a polity is bound to an overlord.
+enum class Bond : std::uint8_t {
+    None = 0,
+    Tributary = 1,  // sends the overlord part of its goods each year
+    Vassal = 2,     // also fights in the overlord's wars and may be absorbed
+};
+
 // A polity: a chiefdom, state or empire ruling a set of cells from a capital.
 struct Polity {
     std::uint32_t id = 0;
@@ -160,6 +168,50 @@ struct Polity {
     std::uint32_t culture = 0;   // of the founders
     std::uint32_t language = 0;
     std::uint32_t parent = 0;    // the polity it broke away from, if any
+    bool nomadic = false;        // a confederation of mounted herders
+    std::uint32_t overlord = 0;  // the polity it is bound to (0 = none)
+    Bond bond = Bond::None;
+    Tick bond_since = 0;
+};
+
+// A defensive alliance: each joins a war against the other.
+struct Alliance {
+    std::uint32_t a = 0, b = 0;  // polity ids, a < b
+    Tick formed = 0;
+    Tick ended = kNever;
+};
+
+// After a war its leaders keep the peace until `until`.
+struct Truce {
+    std::uint32_t a = 0, b = 0;  // a < b
+    Tick until = 0;
+};
+
+enum class WarGoal : std::uint8_t {
+    Conquest = 0,      // take land; the loser may become a vassal
+    Tribute = 1,       // make the loser a tributary (nomads against farmers)
+    Independence = 2,  // a subject or rebel province fights its overlord
+};
+enum class WarOutcome : std::uint8_t {
+    Ongoing = 0,
+    AttackersWon = 1,
+    DefendersWon = 2,
+    Stalemate = 3,
+};
+
+// A war between two sides; the first polity on each side leads it.
+struct War {
+    std::uint32_t id = 0;
+    std::string name;
+    std::vector<std::uint32_t> attackers;
+    std::vector<std::uint32_t> defenders;
+    WarGoal goal = WarGoal::Conquest;
+    Tick started = 0;
+    Tick ended = kNever;
+    WarOutcome outcome = WarOutcome::Ongoing;
+    std::int64_t deaths = 0;
+    std::uint32_t cells_taken = 0;  // by the attackers
+    std::uint32_t cells_lost = 0;   // retaken by the defenders
 };
 
 // Where a technique was invented independently.
@@ -205,6 +257,11 @@ enum class EventType : std::uint32_t {
     CityFounded = 13,     // a town grew into a city; value = city id
     PolityFounded = 14,   // value = polity id
     PolityEnded = 15,     // value = polity id
+    WarBegan = 16,        // cell = attacker's capital; value = war id
+    WarEnded = 17,        // cell = attacker's capital; value = war id
+    AllianceFormed = 18,  // cell = one ally's capital; value = alliance index
+    Subjugated = 19,      // a polity became a tributary or vassal; value = its id
+    Absorbed = 20,        // a vassal was absorbed by its overlord; value = the vassal's id
 };
 
 struct Event {
@@ -278,6 +335,12 @@ struct YearRecord {
     std::uint32_t domesticated = 0;       // species domesticated somewhere so far
     double trade_value = 0.0;             // value of goods carried between cells this year (food = 1)
     double food_traded = 0.0;             // food carried between cells this year, people fed
+    std::uint32_t wars = 0;               // wars under way
+    std::int64_t war_deaths_total = 0;    // running total of deaths in war and raids
+    std::uint32_t alliances = 0;          // alliances in force
+    std::uint32_t subjects = 0;           // tributaries and vassals
+    std::uint32_t nomads = 0;             // nomad confederations
+    std::uint32_t raids = 0;              // nomad raids this year
 };
 
 // ---------------------------------------------------------------- state
@@ -344,6 +407,17 @@ struct SimState {
     std::vector<double> food_import;
     std::vector<double> trade_value;
     std::vector<double> route_value;
+
+    // War and diplomacy. Entry 0 of `wars` is a placeholder (0 = none).
+    // Per cell this year: deaths in war and raids, and strife (0 none,
+    // 1 fighting, 2 taken in war, 3 raided).
+    std::vector<War> wars;
+    std::vector<Alliance> alliances;
+    std::vector<Truce> truces;
+    std::vector<std::uint32_t> war_deaths;
+    std::vector<std::uint8_t> strife;
+    std::int64_t war_deaths_total = 0;
+    std::uint32_t raids = 0;  // this year
 
     // ---- Derived data: rebuilt by refresh(), never saved or hashed.
     std::vector<std::uint32_t> cell_population;

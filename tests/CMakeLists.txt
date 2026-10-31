@@ -13,6 +13,7 @@ add_executable(histsim_tests
     test_simulation.cpp
     test_technology.cpp
     test_view.cpp
+    test_war.cpp
     test_world.cpp
 )
 target_link_libraries(histsim_tests PRIVATE histsim::histsim histsim::view histsim_flags)

@@ -175,9 +175,12 @@ void MigrationSystem::step(StepContext& ctx) {
             ++count;
         }
         if (count == 0 || weight_sum <= 0.0) continue;
+        // Herders move with their animals: only crop farmers are tied down.
+        const double pastoral = s.env.pastoral.empty() ? 0.0 : s.env.pastoral[c];
 
         for (auto i = first; i < last; ++i) {
             Cohort& co = s.cohorts[i];
+            const double settled = co.farming * (1.0 - pastoral);
             RngStream rng = ctx.rng(Stream::Migration, i);
             // Pick this band's destination.
             double pick = rng.uniform() * weight_sum;
@@ -195,7 +198,7 @@ void MigrationSystem::step(StepContext& ctx) {
             band.farming = co.farming;
             std::int64_t band_size = 0;
             for (int b = 0; b < kAgeBins; ++b) {
-                const double share = std::min(1.0, rate * kMigrationByAge[b] * (1.0 - kFarmerStay * co.farming));
+                const double share = std::min(1.0, rate * kMigrationByAge[b] * (1.0 - kFarmerStay * settled));
                 const auto mf = std::min<std::int64_t>(co.female[b], stochastic_round(share * co.female[b], rng));
                 const auto mm = std::min<std::int64_t>(co.male[b], stochastic_round(share * co.male[b], rng));
                 co.female[b] -= static_cast<std::uint32_t>(mf);
@@ -320,6 +323,16 @@ void HistorySystem::step(StepContext& ctx) {
     for (; ever != 0; ever &= ever - 1) ++r.domesticated;
     for (double v : s.trade_value) r.trade_value += 0.5 * v;  // each shipment counts at both ends
     for (double f : s.food_import) r.food_traded += std::max(0.0, f);
+    for (std::size_t i = 1; i < s.wars.size(); ++i) r.wars += s.wars[i].ended == kNever ? 1 : 0;
+    r.war_deaths_total = s.war_deaths_total;
+    for (const Alliance& a : s.alliances) r.alliances += a.ended == kNever ? 1 : 0;
+    for (std::uint32_t id = 1; id < s.polities.size(); ++id) {
+        const Polity& pol = s.polities[id];
+        if (pol.ended != kNever) continue;
+        r.subjects += pol.bond != Bond::None ? 1 : 0;
+        r.nomads += pol.nomadic ? 1 : 0;
+    }
+    r.raids = s.raids;
     s.history.push_back(r);
 }
 

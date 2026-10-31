@@ -211,6 +211,7 @@ struct TechEffects {
     double administration = 0.0;
     double land_transport = 0.0;   // overland carrying cost / (1 + sum)
     double water_transport = 0.0;  // river and sea carrying cost / (1 + sum); > 0 allows sea crossings
+    double military = 0.0;         // fighting strength of each soldier x (1 + sum)
 };
 
 struct TechniqueDef {

@@ -3,13 +3,15 @@
 A simple interface for the simulation: a flat map or a globe with switchable
 map modes and legends (terrain, biomes, climate, rivers, soils, wild species,
 population, languages, language families, cultures, farming, known
-domesticates, disease, technology, polities, towns, trade and resources, and
+domesticates, disease, technology, polities, realms, war, towns, trade and
+resources, and
 more), overlays for coastlines, rivers, polity borders and trade routes, play/pause and
 speed controls, world charts of population vs. capacity and global
 temperature, a hover inspector with the cell's age pyramid and its peoples
 (language, lineage, sample words, culture and its ways, farming, crops and
 animals, domestication under way, techniques, diseases, deposits, what is on
-its market, its trade and trade route), and a god-mode panel
+its market, its trade and trade route, its ruler's overlord, subjects, allies
+and wars), and a god-mode panel
 for meddling with the world.
 
 The viewer is thin by design. All simulation and map rendering happen in C++:

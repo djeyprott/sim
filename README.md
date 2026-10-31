@@ -21,9 +21,12 @@ M3 (states and trade) is under way: towns grow into named cities;
 chiefdoms and states form, expand, split and collapse; and goods (salt, stone,
 ores, metals, cloth, gold) are made from deposits, herds and crafts, priced by
 scarcity in every market and carried overland, down rivers and by sea along
-trade routes, with food feeding towns and copper and tin gating metalwork. A
-Godot viewer shows it as a map or globe with twenty-five map modes, polity
-borders, trade routes, world charts, a cell inspector and a god mode.
+trade routes, with food feeding towns and copper and tin gating metalwork;
+and polities go to war, make vassals and tributaries, form alliances and
+fight wars of independence, while mounted nomad confederations raid their
+settled neighbours. A Godot viewer shows it as a map or globe with
+twenty-seven map modes, polity borders, trade routes, world charts, a cell
+inspector and a god mode.
 
 ## Download
 
@@ -73,6 +76,9 @@ ctest --test-dir build --output-on-failure
 
 # Towns, cities and polities over 8,000 years
 ./build/cli/histsim polities --years 8000
+
+# Wars, alliances and the largest realms after 9,000 years
+./build/cli/histsim wars --years 9000
 
 # Goods, prices and the busiest trade routes after 6,000 years
 ./build/cli/histsim trade --years 6000

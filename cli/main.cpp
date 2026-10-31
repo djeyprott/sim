@@ -8,6 +8,7 @@
 //   histsim farming [--seed N] [--level L] [--years Y]
 //   histsim polities [--seed N] [--level L] [--years Y]
 //   histsim trade [--seed N] [--level L] [--years Y]
+//   histsim wars [--seed N] [--level L] [--years Y]
 //
 // With no arguments (for example, double-clicked in Explorer) it runs a short
 // demo and waits for Enter so the window stays open.
@@ -35,6 +36,7 @@
 #include "histsim/systems/culture.hpp"
 #include "histsim/systems/economy.hpp"
 #include "histsim/systems/polity.hpp"
+#include "histsim/systems/war.hpp"
 #include "histsim/view/map_modes.hpp"
 #include "histsim/view/png.hpp"
 #include "histsim/view/raster.hpp"
@@ -77,8 +79,9 @@ struct Options {
                  "                 crowding temperature rainfall rain_season growing soil\n"
                  "                 species capacity game temp_anomaly median_age language\n"
                  "                 language_family culture farming domesticates disease\n"
-                 "                 technology polity towns trade resources (polity borders are\n"
-                 "                 drawn on all, trade routes on trade and resources)\n"
+                 "                 technology polity towns realms war trade resources (polity\n"
+                 "                 borders are drawn on all, trade routes on trade and\n"
+                 "                 resources)\n"
                  "  histsim farming [--seed N] [--level L] [--years Y]\n"
                  "                 where and when species were domesticated, techniques\n"
                  "                 invented and diseases emerged, Bond events, and farmers,\n"
@@ -89,6 +92,9 @@ struct Options {
                  "  histsim trade [--seed N] [--level L] [--years Y]\n"
                  "                 trade every 500 years, then the goods (where they are made\n"
                  "                 and sold, and at what price) and the busiest trade routes\n"
+                 "  histsim wars [--seed N] [--level L] [--years Y]\n"
+                 "                 war and diplomacy every 500 years, the deadliest wars, and\n"
+                 "                 the largest realms with their subjects and allies\n"
                  "  histsim languages [--seed N] [--level L] [--years Y] [--top N]\n"
                  "                 family trees of the languages alive after Y years, largest\n"
                  "                 families first, with speakers and sample words\n"
@@ -567,6 +573,75 @@ int trade(const Options& o) {
     return 0;
 }
 
+// War and diplomacy: a timeline, the deadliest wars, the largest realms.
+int wars(const Options& o) {
+    Simulation sim = Simulation::create(o.params);
+    apply_due_now(sim, o, true);
+    advance(sim, o.years, o, true);
+    const histsim::SimState& s = sim.state();
+    const histsim::World& w = sim.world();
+    std::printf("Every 500 years:\n");
+    std::int64_t last_deaths = 0, last_year = 0;
+    for (const histsim::YearRecord& r : s.history) {
+        if (r.year % 500 != 0) continue;
+        const double per_year = r.year > last_year ? static_cast<double>(r.war_deaths_total - last_deaths) /
+                                                         static_cast<double>(r.year - last_year)
+                                                   : 0.0;
+        std::printf("  year %5lld  polities %4u (states %3u, nomads %3u)  wars %3u  war deaths %8.0f/yr  "
+                    "alliances %3u  subjects %3u  raids %3u  largest %9.0f km^2\n",
+                    static_cast<long long>(r.year), r.polities, r.states, r.nomads, r.wars, per_year, r.alliances,
+                    r.subjects, r.raids, r.largest_polity_km2);
+        last_deaths = r.war_deaths_total;
+        last_year = r.year;
+    }
+    std::vector<std::size_t> order;
+    for (std::size_t i = 1; i < s.wars.size(); ++i) order.push_back(i);
+    std::stable_sort(order.begin(), order.end(), [&](auto a, auto b) { return s.wars[a].deaths > s.wars[b].deaths; });
+    std::printf("\nDeadliest wars (%zu in all):\n", s.wars.size() - 1);
+    for (std::size_t i = 0; i < order.size() && i < 15; ++i) {
+        const histsim::War& war = s.wars[order[i]];
+        const long long from = war.started / histsim::kTicksPerYear;
+        const long long to = war.ended == histsim::kNever ? static_cast<long long>(sim.year())
+                                                          : war.ended / histsim::kTicksPerYear;
+        std::printf("  %-36s years %5lld-%5lld  %-12s %zu vs %zu  %9lld dead  %3u cells taken, %3u lost  %s\n",
+                    war.name.c_str(), from, to, histsim::war_goal_name(war.goal), war.attackers.size(),
+                    war.defenders.size(), static_cast<long long>(war.deaths), war.cells_taken, war.cells_lost,
+                    histsim::war_outcome_name(war.outcome));
+    }
+    // Realms: each free polity with its subjects.
+    std::vector<std::int64_t> people(s.polities.size(), 0);
+    std::vector<double> area(s.polities.size(), 0.0);
+    for (histsim::CellId c = 0; c < w.cell_count(); ++c) {
+        const std::uint32_t top = histsim::top_overlord(s, s.polity_of[c]);
+        if (top == 0) continue;
+        people[top] += s.cell_population[c];
+        area[top] += w.grid.area_km2(c);
+    }
+    std::vector<std::uint32_t> realms;
+    for (std::uint32_t id = 1; id < s.polities.size(); ++id) {
+        if (s.polities[id].ended == histsim::kNever && s.polities[id].overlord == 0 && people[id] > 0) realms.push_back(id);
+    }
+    std::stable_sort(realms.begin(), realms.end(), [&](auto a, auto b) { return area[a] > area[b]; });
+    std::printf("\nLargest realms in year %lld:\n", static_cast<long long>(sim.year()));
+    for (std::size_t i = 0; i < realms.size() && i < 12; ++i) {
+        const std::uint32_t id = realms[i];
+        std::string subjects, allies;
+        for (std::uint32_t q = 1; q < s.polities.size(); ++q) {
+            const histsim::Polity& p = s.polities[q];
+            if (p.ended == histsim::kNever && p.overlord == id) {
+                subjects += (subjects.empty() ? "" : ", ") + p.name +
+                            (p.bond == histsim::Bond::Vassal ? " (vassal)" : " (tributary)");
+            }
+            if (q != id && histsim::allied(s, id, q)) allies += (allies.empty() ? "" : ", ") + p.name;
+        }
+        std::printf("  %-14s %-13s %9.0f km^2 %10lld people%s%s%s%s\n", s.polities[id].name.c_str(),
+                    histsim::polity_level(w, s, id), area[id], static_cast<long long>(people[id]),
+                    subjects.empty() ? "" : "  subjects: ", subjects.c_str(), allies.empty() ? "" : "  allies: ",
+                    allies.c_str());
+    }
+    return 0;
+}
+
 int world_info(const Options& o) {
     const histsim::World w = histsim::generate_test_world(o.params);
     std::size_t land = 0;
@@ -646,6 +721,9 @@ int main(int argc, char** argv) {
         }
         if (cmd == "polities") {
             return polities(parse(args, 2));
+        }
+        if (cmd == "wars") {
+            return wars(parse(args, 2));
         }
         if (cmd == "trade") {
             return trade(parse(args, 2));

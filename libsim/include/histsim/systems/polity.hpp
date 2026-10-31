@@ -14,8 +14,9 @@
 // roads) and contact (horses, wheels, sails). So a chiefdom without writing
 // holds about one cell, a state with writing a ring around its capital, and
 // only states with bureaucracy and roads reach further. Polities absorb
-// weakly held neighbours, take land from weaker polities, lose provinces they
-// barely control, and now and then split in civil war.
+// weakly held stateless neighbours, lose provinces they barely control, and
+// now and then split in civil war; land changes hands between polities only
+// in war (war.hpp).
 #pragma once
 
 #include "histsim/scheduler.hpp"
@@ -60,10 +61,8 @@ public:
     static constexpr double kMinDensity = 0.4;
     static constexpr double kMinHierarchy = 0.3;
     static constexpr double kFormation = 0.01;
-    // Expansion: chance a year of taking the best stateless neighbour, and of
-    // conquering a neighbour's cell per unit of power ratio above 1.5.
+    // Expansion: chance a year of taking the best stateless neighbour.
     static constexpr double kAnnex = 0.03;
-    static constexpr double kConquest = 0.02;
     // Civil war: chance a year per unit of (1 - mean control), for polities
     // of at least kCivilWarCells cells.
     static constexpr double kCivilWar = 0.004;
@@ -73,6 +72,14 @@ public:
     // famine at the capital (x (1 + 3 x (crowding - 1)) above capacity).
     static constexpr double kChiefdomCollapse = 0.006;
     static constexpr double kStateCollapse = 0.0015;
+    // Nomad confederations form where herds give at least kNomadPastoral of
+    // the farm food, people ride horses and warfare is at least
+    // kNomadWarfare: chance kNomadFormation x warfare per check. Their rule
+    // reaches kNomadReach times as far.
+    static constexpr double kNomadPastoral = 0.5;
+    static constexpr double kNomadWarfare = 0.4;
+    static constexpr double kNomadFormation = 0.01;
+    static constexpr double kNomadReach = 3.0;
 };
 
 // Towns raise mortality (x (1 + kUrbanMortality x urban share)) and disease
@@ -82,6 +89,8 @@ inline constexpr double kUrbanCrowding = 20.0;
 
 // How far a capital's rule reaches, in km, from the techniques known there.
 double polity_reach_km(const World& world, const SimState& state, CellId capital);
+// The same for a polity: nomads reach kNomadReach times as far.
+double polity_reach(const World& world, const SimState& state, std::uint32_t polity);
 
 // Control a polity has over a cell at a distance from its capital (0-1).
 [[nodiscard]] inline double polity_control(double distance_km, double reach_km) {
@@ -89,7 +98,7 @@ double polity_reach_km(const World& world, const SimState& state, CellId capital
     return 1.0 / (1.0 + r * r);
 }
 
-// "chiefdom", "state" or "empire".
+// "chiefdom", "state", "empire" or (nomads without writing) "confederation".
 const char* polity_level(const World& world, const SimState& state, std::uint32_t polity);
 
 // A polity's cells, people and area now.

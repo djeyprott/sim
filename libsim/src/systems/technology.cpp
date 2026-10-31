@@ -83,6 +83,7 @@ TechEffects technique_effects(const World& w, CellId c, std::uint64_t techs) {
         e.administration += x.administration;
         e.land_transport += x.land_transport;
         e.water_transport += x.water_transport;
+        e.military += x.military;
     }
     e.harvest_buffer = std::min(0.8, e.harvest_buffer);
     e.famine = std::max(-0.8, e.famine);

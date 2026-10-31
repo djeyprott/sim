@@ -545,8 +545,9 @@ void load_techniques(Content& c, std::string_view text) {
             else if (key == "administration") t.effects.administration = x;
             else if (key == "land_transport") t.effects.land_transport = x;
             else if (key == "water_transport") t.effects.water_transport = x;
+            else if (key == "military") t.effects.military = x;
             else fail(val, "is not an effect (crop_yield, herd_yield, forage, aquatic, harvest_buffer, famine, "
-                           "contact, administration, land_transport, water_transport)");
+                           "contact, administration, land_transport, water_transport, military)");
         }
         for (const TechniqueDef& o : c.techniques) {
             if (o.id == t.id) fail(v.at("id"), "duplicates technique \"" + t.id + "\"");

@@ -14,6 +14,7 @@
 #include "histsim/systems/farming.hpp"
 #include "histsim/systems/polity.hpp"
 #include "histsim/systems/technology.hpp"
+#include "histsim/systems/war.hpp"
 #include "histsim/systems/people.hpp"
 #include "state_io.hpp"
 
@@ -44,6 +45,7 @@ void Simulation::install_systems() {
     scheduler_.add(std::make_unique<CultureSystem>());
     scheduler_.add(std::make_unique<TechnologySystem>());
     scheduler_.add(std::make_unique<PolitySystem>());
+    scheduler_.add(std::make_unique<WarSystem>());
     scheduler_.add(std::make_unique<HistorySystem>());
 }
 
@@ -64,6 +66,7 @@ Simulation Simulation::create(const WorldParams& params) {
     // Nobody farms yet: the wild ancestors are there to be domesticated.
     s.env.farming.assign(n, 0.0);
     s.env.farm_capacity.assign(n, 0.0);
+    s.env.pastoral.assign(n, 0.0);
     s.domesticates.assign(n, 0);
     s.domestication.assign(w.wild_stands.size(), 0.0);
     // No towns or polities yet: bands and tribes.
@@ -72,6 +75,7 @@ Simulation Simulation::create(const WorldParams& params) {
     s.cities.assign(1, City{});
     s.polity_of.assign(n, 0);
     s.polities.assign(1, Polity{});
+    s.wars.assign(1, War{});
     s.env.game.assign(n, 1.0);
     for (CellId c = 0; c < n; ++c) {
         if (!w.is_land[c]) s.env.game[c] = 0.0;

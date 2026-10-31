@@ -8,6 +8,7 @@
 #include "histsim/language.hpp"
 #include "histsim/systems/economy.hpp"
 #include "histsim/systems/polity.hpp"
+#include "histsim/systems/war.hpp"
 
 namespace histsim::view {
 
@@ -167,6 +168,17 @@ const std::array<ResourceColor, 6> kResourceColors = {{
     {"stone", hex("#3b3a36")},
 }};
 const Rgba kNoResource = hex("#e3e0d6");
+// War map: what happened in each cell this year.
+const Rgba kPeace = hex("#dcd9cf");
+const Rgba kAtWar = hex("#f2c4b8");    // ruled by a polity at war
+const Rgba kFighting = hex("#d9603b");  // battles here
+const Rgba kTaken = hex("#8c1d18");     // changed hands in war
+const Rgba kRaided = hex("#7a3d8f");    // raided by nomads
+
+Rgba lighten(Rgba c, double t) {
+    auto mixc = [&](std::uint8_t v) { return static_cast<std::uint8_t>(std::lround(v + (255.0 - v) * t)); };
+    return {mixc(c.r), mixc(c.g), mixc(c.b), c.a};
+}
 const ColorScale& disease_scale() {  // deaths per 1,000 a year: plum, light to dark
     static const ColorScale s({{0, hex("#f6eef4")},
                                {1, hex("#e2bfd8")},
@@ -246,6 +258,8 @@ const std::vector<MapModeInfo> kModes = {
     {"technology", "Technology", "Number of techniques the people know"},
     {"polity", "Polities", "Chiefdoms, states and empires; each its own color"},
     {"towns", "Towns", "Share of people living in towns and cities"},
+    {"realms", "Realms", "Polities with their vassals and tributaries (lighter), each realm its own color"},
+    {"war", "War", "Wars, battles, conquests and nomad raids this year"},
     {"trade", "Trade", "Value of goods sent and received this year"},
     {"resources", "Resources", "Deposits of salt, stone, ores, gold and shell; the most valuable shown"},
 };
@@ -466,6 +480,15 @@ void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rg
     out.resize(n);
     const std::string id(map_mode(mode_id).id);
 
+    // Polities at war now (for the war map).
+    std::vector<std::uint8_t> at_war(s.polities.size(), 0);
+    if (id == "war") {
+        for (std::size_t i = 1; i < s.wars.size(); ++i) {
+            if (s.wars[i].ended != kNever) continue;
+            for (std::uint32_t p : s.wars[i].attackers) at_war[p] = 1;
+            for (std::uint32_t p : s.wars[i].defenders) at_war[p] = 1;
+        }
+    }
     for (CellId c = 0; c < n; ++c) {
         const bool land = w.is_land[c] != 0;
         const bool inhabited = s.cell_population[c] > 0;
@@ -511,6 +534,26 @@ void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rg
             out[c] = !inhabited ? kEmptyLand : (p == 0 ? kStateless : polity_color(s, p));
         } else if (id == "towns") {
             out[c] = inhabited ? towns_scale()(s.urban.empty() ? 0.0 : s.urban[c]) : kEmptyLand;
+        } else if (id == "realms") {
+            const std::uint32_t p = s.polity_of.empty() ? 0 : s.polity_of[c];
+            const std::uint32_t top = top_overlord(s, p);
+            out[c] = !inhabited ? kEmptyLand
+                     : p == 0   ? kStateless
+                                : (top == p ? polity_color(s, top) : lighten(polity_color(s, top), 0.45));
+        } else if (id == "war") {
+            const std::uint8_t strife = s.strife.size() == n ? s.strife[c] : 0;
+            if (!inhabited) {
+                out[c] = kEmptyLand;
+            } else if (strife == 3) {
+                out[c] = kRaided;
+            } else if (strife == 2) {
+                out[c] = kTaken;
+            } else if (strife == 1) {
+                out[c] = kFighting;
+            } else {
+                const std::uint32_t p = s.polity_of.empty() ? 0 : s.polity_of[c];
+                out[c] = p != 0 && at_war[p] ? kAtWar : kPeace;
+            }
         } else if (id == "trade") {
             const double v = s.trade_value.empty() ? 0.0 : s.trade_value[c];
             out[c] = !inhabited ? kEmptyLand : (v < 10.0 ? kNoTrade : trade_scale()(v));
@@ -623,6 +666,15 @@ Legend legend(std::string_view mode_id) {
         l.ramp = {{"0%", towns_scale()(0)}, {"3%", towns_scale()(0.03)}, {"8%", towns_scale()(0.08)},
                   {"15%", towns_scale()(0.15)}, {"30%", towns_scale()(0.3)}};
         l.swatches = empty_and_ocean;
+    } else if (id == "realms") {
+        l.title = "Realms (subjects in lighter shades)";
+        l.swatches = {{"No ruler (bands, tribes, villages)", kStateless}, {"Uninhabited", kEmptyLand},
+                      {"Ocean", kOceanNeutral}};
+    } else if (id == "war") {
+        l.title = "War this year";
+        l.swatches = {{"Changed hands in war", kTaken}, {"Battles", kFighting}, {"Raided by nomads", kRaided},
+                      {"Ruled by a polity at war", kAtWar}, {"At peace", kPeace}, {"Uninhabited", kEmptyLand},
+                      {"Ocean", kOceanNeutral}};
     } else if (id == "trade") {
         l.title = "Goods sent and received this year (value, food = 1; log scale)";
         l.ramp = ramp_entries(trade_scale(), "%g");
@@ -692,6 +744,38 @@ Legend legend(const Simulation& sim, std::string_view mode_id) {
         if (order.size() > 10) {
             entries.push_back(
                 {"+ " + with_commas(static_cast<long long>(order.size() - 10)) + " other polities", Rgba{0, 0, 0, 0}});
+        }
+        entries.insert(entries.end(), l.swatches.begin(), l.swatches.end());
+        l.swatches = std::move(entries);
+        l.title += " (" + with_commas(static_cast<long long>(order.size())) + ")";
+        return l;
+    }
+    if (id == "realms") {
+        const SimState& s = sim.state();
+        std::vector<std::int64_t> people(s.polities.size(), 0);
+        std::vector<std::size_t> subjects(s.polities.size(), 0);
+        for (CellId c = 0; c < s.polity_of.size(); ++c) people[top_overlord(s, s.polity_of[c])] += s.cell_population[c];
+        for (std::uint32_t i = 1; i < s.polities.size(); ++i) {
+            if (s.polities[i].ended == kNever && s.polities[i].overlord != 0) ++subjects[top_overlord(s, i)];
+        }
+        std::vector<std::uint32_t> order;
+        for (std::uint32_t i = 1; i < people.size(); ++i) {
+            if (people[i] > 0) order.push_back(i);
+        }
+        std::stable_sort(order.begin(), order.end(), [&](auto a, auto b) { return people[a] > people[b]; });
+        std::vector<LegendEntry> entries;
+        for (std::size_t i = 0; i < order.size() && i < 10; ++i) {
+            const std::uint32_t p = order[i];
+            std::string label = s.polities[p].name + ": " + with_commas(people[p]);
+            if (subjects[p] > 0) {
+                label += " (" + with_commas(static_cast<long long>(subjects[p])) +
+                         (subjects[p] == 1 ? " subject)" : " subjects)");
+            }
+            entries.push_back({label, polity_color(s, p)});
+        }
+        if (order.size() > 10) {
+            entries.push_back(
+                {"+ " + with_commas(static_cast<long long>(order.size() - 10)) + " other realms", Rgba{0, 0, 0, 0}});
         }
         entries.insert(entries.end(), l.swatches.begin(), l.swatches.end());
         l.swatches = std::move(entries);
@@ -854,7 +938,7 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
     if (!s.polity_of.empty() && s.polity_of[c] != 0) {
         const std::uint32_t ruler = s.polity_of[c];
         const Polity& pol = s.polities[ruler];
-        const double reach = polity_reach_km(w, s, pol.capital);
+        const double reach = polity_reach(w, s, ruler);
         const double control = polity_control(w.grid.distance_km(pol.capital, c), reach);
         const std::uint32_t capital_city = s.city_of.empty() ? 0 : s.city_of[pol.capital];
         f.push_back({"Polity", pol.name + " (" + polity_level(w, s, ruler) + "), " +
@@ -866,6 +950,33 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
         f.push_back({"Realm", with_commas(static_cast<long long>(z.cells)) + " cells, " +
                                   with_commas(std::llround(z.area_km2)) + " km², " + with_commas(z.people) +
                                   " people; since year " + with_commas(static_cast<long long>(pol.founded / kTicksPerYear))});
+        if (pol.overlord != 0 && pol.overlord < s.polities.size()) {
+            f.push_back({"Overlord", std::string(pol.bond == Bond::Vassal ? "vassal of " : "pays tribute to ") +
+                                         s.polities[pol.overlord].name + " since year " +
+                                         with_commas(static_cast<long long>(pol.bond_since / kTicksPerYear))});
+        }
+        std::string subjects, allies;
+        for (std::uint32_t q = 1; q < s.polities.size(); ++q) {
+            const Polity& o = s.polities[q];
+            if (o.ended != kNever) continue;
+            if (o.overlord == ruler) {
+                subjects += (subjects.empty() ? "" : ", ") + o.name + (o.bond == Bond::Vassal ? " (vassal)" : " (tributary)");
+            }
+            if (q != ruler && allied(s, ruler, q)) allies += (allies.empty() ? "" : ", ") + o.name;
+        }
+        if (!subjects.empty()) f.push_back({"Subjects", subjects});
+        if (!allies.empty()) f.push_back({"Allies", allies});
+        std::string wars;
+        for (std::size_t i = 1; i < s.wars.size(); ++i) {
+            const War& war = s.wars[i];
+            if (war.ended != kNever) continue;
+            const bool att = std::find(war.attackers.begin(), war.attackers.end(), ruler) != war.attackers.end();
+            const bool def = std::find(war.defenders.begin(), war.defenders.end(), ruler) != war.defenders.end();
+            if (!att && !def) continue;
+            wars += (wars.empty() ? "" : "; ") + war.name + (att ? " (attacking" : " (defending") + ", since year " +
+                    with_commas(static_cast<long long>(war.started / kTicksPerYear)) + ")";
+        }
+        if (!wars.empty()) f.push_back({"At war", wars});
     } else {
         f.push_back({"Polity", "none: bands, tribes and villages"});
     }
@@ -874,6 +985,13 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
         const std::uint32_t city = s.city_of.empty() ? 0 : s.city_of[c];
         f.push_back({"Towns", (city != 0 ? s.cities[city].name + ", " : std::string()) +
                                   with_commas(std::llround(town)) + fmt(" people (%.0f%%)", 100.0 * s.urban[c])});
+    }
+
+    // Strife this year.
+    if (s.strife.size() == w.cell_count() && s.strife[c] != 0) {
+        const char* what = s.strife[c] == 3 ? "raided by nomads" : s.strife[c] == 2 ? "taken in war" : "battles";
+        const long long dead = s.war_deaths.size() == w.cell_count() ? s.war_deaths[c] : 0;
+        f.push_back({"This year", std::string(what) + ", " + with_commas(dead) + " killed"});
     }
 
     // Resources and trade.

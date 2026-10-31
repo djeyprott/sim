@@ -58,12 +58,25 @@ public:
 
 // Farmers' effects on demography and migration.
 inline constexpr double kFarmerExtraFertility = 0.25;  // fertility x (1 + 0.25 x farming share)
-inline constexpr double kFarmerStay = 0.6;             // migration x (1 - 0.6 x farming share)
+inline constexpr double kFarmerStay = 0.6;             // migration x (1 - 0.6 x farming share x (1 - pastoral))
 
 // People per km^2 a cell's land would feed if fully farmed with the given
 // domesticates, in a normal year.
 // Techniques raise crop and herd yields.
 double farm_density(const World& world, CellId cell, std::uint32_t domesticates, std::uint64_t techniques = 0);
+
+// The same, split into what crops and herds feed (farm_density = crops +
+// half the herds where there are crops, else the herds alone).
+struct FarmParts {
+    double crops = 0.0, herds = 0.0;
+};
+FarmParts farm_parts(const World& world, CellId cell, std::uint32_t domesticates, std::uint64_t techniques = 0);
+
+// Share of a cell's farm food that comes from herds (1 = pastoralists).
+[[nodiscard]] inline double pastoral_share(const FarmParts& p) {
+    const double total = p.crops > 0.0 ? p.crops + 0.5 * p.herds : p.herds;
+    return total > 0.0 ? (p.crops > 0.0 ? 0.5 * p.herds : p.herds) / total : 0.0;
+}
 
 // This year's harvest relative to a normal year, from rainfall and warmth;
 // stores (granaries, irrigation) make good part of a shortfall.
