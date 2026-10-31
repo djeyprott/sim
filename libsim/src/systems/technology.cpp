@@ -56,6 +56,7 @@ bool technique_usable(const World& w, const TechniqueDef& t, CellId c, std::uint
     if (t.requires_herds && !kept.herds) return false;
     if (t.requires_species != 0 && (known & t.requires_species) == 0) return false;
     if (t.min_town > kept.town) return false;
+    if ((kept.goods & t.requires_goods) != t.requires_goods) return false;
     return technique_place_ok(w, c, t.where);
 }
 
@@ -80,6 +81,8 @@ TechEffects technique_effects(const World& w, CellId c, std::uint64_t techs) {
         e.famine += x.famine;
         e.contact += x.contact;
         e.administration += x.administration;
+        e.land_transport += x.land_transport;
+        e.water_transport += x.water_transport;
     }
     e.harvest_buffer = std::min(0.8, e.harvest_buffer);
     e.famine = std::max(-0.8, e.famine);
@@ -126,6 +129,7 @@ void TechnologySystem::step(StepContext& ctx) {
         const std::uint32_t known = s.domesticates.empty() ? 0 : s.domesticates[c];
         Keeps kept = keeps(w, known);
         kept.town = s.urban.empty() ? 0.0 : s.urban[c] * pop;
+        kept.goods = goods_in(s, c);
         std::uint64_t& mine = s.techniques[c];
         RngStream rng = ctx.rng(Stream::Technology, c);
 

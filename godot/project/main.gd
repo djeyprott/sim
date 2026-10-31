@@ -48,6 +48,7 @@ var level_option: OptionButton
 var coastline_check: CheckBox
 var river_check: CheckBox
 var border_check: CheckBox
+var route_check: CheckBox
 var species_label: Label
 var mode_buttons := {}
 var legend_title: Label
@@ -140,7 +141,7 @@ func _process(delta: float) -> void:
 
 func _render_map() -> void:
 	var image: Image = world.render_map(mode_id, coastline_check.button_pressed, river_check.button_pressed,
-		border_check.button_pressed)
+		border_check.button_pressed, route_check.button_pressed)
 	if image == null:
 		status_label.text = "Map render failed: " + world.get_last_error()
 		return
@@ -759,10 +760,17 @@ func _build_side_panel() -> Control:
 	border_check.toggled.connect(func(_on: bool) -> void:
 		map_dirty = true
 		render_cooldown = 0.0)
-	var overlays := HBoxContainer.new()
+	route_check = CheckBox.new()
+	route_check.text = "Trade routes"
+	route_check.button_pressed = false
+	route_check.toggled.connect(func(_on: bool) -> void:
+		map_dirty = true
+		render_cooldown = 0.0)
+	var overlays := HFlowContainer.new()
 	overlays.add_child(coastline_check)
 	overlays.add_child(river_check)
 	overlays.add_child(border_check)
+	overlays.add_child(route_check)
 	panel.add_child(overlays)
 
 	panel.add_child(HSeparator.new())

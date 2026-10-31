@@ -39,14 +39,16 @@ public:
 bool technique_place_ok(const World& world, CellId cell, TechPlace place);
 
 // Whether a cell's people could use a technique: earlier techniques, crops,
-// herds, species and place.
+// herds, species, goods and place.
 bool technique_usable(const World& world, const TechniqueDef& technique, CellId cell, std::uint64_t techniques,
                       std::uint32_t domesticates);
 
-// Whether domesticates include crops and herds that feed people.
+// Whether domesticates include crops and herds that feed people, and what
+// else the cell has.
 struct Keeps {
     bool crops = false, herds = false;
-    double town = 0.0;  // people living in towns in the cell
+    double town = 0.0;              // people living in towns in the cell
+    std::uint32_t goods = ~0u;      // goods on its market (all, if unknown)
 };
 Keeps keeps(const World& world, std::uint32_t domesticates);
 bool technique_usable(const World& world, const TechniqueDef& technique, CellId cell, std::uint64_t techniques,
@@ -59,6 +61,11 @@ TechEffects technique_effects(const World& world, CellId cell, std::uint64_t tec
 // Techniques known in a cell (0 if the state has none yet).
 [[nodiscard]] inline std::uint64_t techniques_in(const SimState& s, CellId c) {
     return s.techniques.empty() ? 0 : s.techniques[c];
+}
+
+// Goods on a cell's market this year (all, if the state has no economy).
+[[nodiscard]] inline std::uint32_t goods_in(const SimState& s, CellId c) {
+    return s.goods_available.empty() ? ~0u : s.goods_available[c];
 }
 
 }  // namespace histsim

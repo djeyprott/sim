@@ -34,6 +34,13 @@ private:
     std::vector<CellId> cells_;  // row-major, top row = north
 };
 
+// A trade route link to draw between two cell centers.
+struct RouteLine {
+    CellId a = kInvalidCell, b = kInvalidCell;
+    double strength = 0.0;  // 0-1: share of the busiest link's value
+    bool sea = false;       // drawn dashed
+};
+
 struct RenderOptions {
     bool coastlines = true;  // dark line where land meets ocean
     bool rivers = false;     // rivers drawn as blue lines, wider for more flow
@@ -44,6 +51,8 @@ struct RenderOptions {
     // each cell: a line is drawn where land cells of different regions meet
     // (and around a region where it meets unclaimed land).
     const std::vector<std::uint32_t>* borders = nullptr;
+    // Optional trade routes, drawn over everything else.
+    const std::vector<RouteLine>* routes = nullptr;
 };
 
 // Fill `rgba` (width * height * 4 bytes) from one color per cell.

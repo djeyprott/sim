@@ -318,6 +318,8 @@ void HistorySystem::step(StepContext& ctx) {
     std::uint32_t ever = 0;
     for (const Domestication& d : s.domestications) ever |= 1u << d.species;
     for (; ever != 0; ever &= ever - 1) ++r.domesticated;
+    for (double v : s.trade_value) r.trade_value += 0.5 * v;  // each shipment counts at both ends
+    for (double f : s.food_import) r.food_traded += std::max(0.0, f);
     s.history.push_back(r);
 }
 

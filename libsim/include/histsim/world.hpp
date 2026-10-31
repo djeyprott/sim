@@ -9,6 +9,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <vector>
 
 #include "histsim/content.hpp"
@@ -92,6 +93,24 @@ struct World {
     // 0-1; 1 for diseases without a niche, 0 on ocean).
     std::vector<double> disease_niche;
 
+    // ---- Resources and routes (M3)
+    // Deposits of each good, cell * goods + g, 0-255 (0 = none; only goods
+    // that come from deposits).
+    std::vector<std::uint8_t> deposits;
+    // Links goods can travel along: overland between neighbouring land cells,
+    // down rivers, and by sea between coasts within kSeaReachKm. Each link is
+    // listed once (a < b); trade_edge_ids[trade_edge_begin[c] ..
+    // trade_edge_begin[c + 1]) are the links of cell c, in order.
+    struct TradeEdge {
+        CellId a = 0, b = 0;
+        double distance_km = 0.0;
+        double climb = 0.0;          // height difference, km (overland)
+        std::uint8_t modes = 0;      // kTradeLand | kTradeRiver | kTradeSea
+    };
+    std::vector<TradeEdge> trade_edges;
+    std::vector<std::uint32_t> trade_edge_begin;
+    std::vector<std::uint32_t> trade_edge_ids;
+
     // Starting peoples: each land cell's forager group at the start of the run
     // (0 for ocean). Groups are contiguous regions; M2 turns them into
     // cultures and languages that drift apart.
@@ -114,6 +133,17 @@ struct World {
     [[nodiscard]] double cultivated(CellId c, std::size_t species) const noexcept {
         return cultivated_suitability[c * species_count() + species] / 255.0;
     }
+    [[nodiscard]] double deposit(CellId c, std::size_t good) const noexcept {
+        const std::size_t ng = content->goods.size();
+        return deposits.size() == cell_count() * ng ? deposits[c * ng + good] / 255.0 : 0.0;
+    }
+    [[nodiscard]] std::span<const std::uint32_t> trade_links(CellId c) const noexcept {
+        return {trade_edge_ids.data() + trade_edge_begin[c], trade_edge_ids.data() + trade_edge_begin[c + 1]};
+    }
+    [[nodiscard]] CellId trade_other(std::uint32_t edge, CellId c) const noexcept {
+        const TradeEdge& e = trade_edges[edge];
+        return e.a == c ? e.b : e.a;
+    }
 
     // Baseline climate of month m (0 = January) at cell c. Months follow the
     // cell's hemisphere: July is summer in the north, January in the south.
@@ -134,12 +164,19 @@ struct World {
 // fractal-noise continents; temperature by latitude and altitude; rainfall
 // carried by prevailing winds (trade winds, westerlies, polar easterlies)
 // with rain shadows behind mountains; seasons by latitude and continentality;
-// biomes; rivers draining to the sea; soils; and native ranges of wild
-// species.
+// biomes; rivers draining to the sea; soils; native ranges of wild species;
+// deposits of salt, stone, ores and gold; and the links trade can follow.
 //
 // A stand-in for real data: the full procedural generator (plates, erosion,
 // climate spin-up) and the Earth importer come in M4.
 World generate_test_world(const WorldParams& params, const Content& content = default_content());
+
+inline constexpr std::uint8_t kTradeLand = 1, kTradeRiver = 2, kTradeSea = 4;
+// Longest sea crossing between coasts in a year's sailing season, km.
+inline constexpr double kSeaReachKm = 500.0;
+
+// Whether a deposit can lie in a cell.
+bool good_place_ok(const World& world, CellId cell, GoodPlace place);
 
 inline constexpr int kClimateGridLevel = 2;  // 162 coarse cells, ~3.1 million km^2 each
 

@@ -36,7 +36,7 @@ godot viewer ── view ───┘                                   │
 | File | Role |
 | --- | --- |
 | `grid.hpp` | Geodesic grid as plain data: cell centers (unit vectors), areas, CCW neighbor lists. `make_icosahedral_grid(level)` builds it. |
-| `world.hpp` | Static world: terrain, baseline climate and seasons, biomes, rivers, soils, wild species ranges, starting forager groups, and the coarse climate grid with per-cell interpolation weights. `generate_test_world()` is the stand-in generator until M4. |
+| `world.hpp` | Static world: terrain, baseline climate and seasons, biomes, rivers, soils, wild species ranges, deposits, trade links, starting forager groups, and the coarse climate grid with per-cell interpolation weights. `generate_test_world()` is the stand-in generator until M4. |
 | `state.hpp` | Everything that changes during a run: cohorts, climate state, this year's environment, the ledger, the event log and yearly history. |
 | `src/state_io.hpp` | One `serialize()` walk over `SimState`, used for hashing, saving and loading, so all three always agree. |
 | `content.hpp`, `json.hpp` | Content packs: the JSON files in `data/`, compiled into the library, parsed and validated at startup. |
@@ -50,6 +50,7 @@ godot viewer ── view ───┘                                   │
 | `systems/disease.hpp` | Endemic disease burdens and epidemics: emergence, outbreaks, immunity, spread. |
 | `systems/technology.hpp` | Techniques known per cell: invention, borrowing, forgetting, and their effects. |
 | `systems/polity.hpp` | Towns and cities (settlement system), and chiefdoms, states and empires (polity system). |
+| `systems/economy.hpp` | Goods and markets: production, prices, trade along links, food brought in, trade routes. |
 | `systems/farming.hpp` | Domestication, knowledge of domesticates, farming share, farmland capacity and harvests. |
 | `systems/culture.hpp` | Culture and dialect drift, contact, adaptation, language shift, assimilation, splits, extinctions; founding new peoples. |
 | `view/` (separate library) | Map modes, color scales, legends, pixel-to-cell rasterizing and PNG output. Display only: it reads state and never writes it, so the determinism rules do not apply to it. |
@@ -114,6 +115,8 @@ spells.
 | Soils | Base fertility by biome, lower on steep relief, plus alluvium on large rivers. |
 | Aquatic foods | Coasts and rivers add up to +80% foraging capacity (fish and shellfish, not depleted by hunting). |
 | Wild species | Each species in `data/species.json` has trapezoid niches (coldest and warmest month, rainfall, rain season, elevation) and a river affinity. Suitability is their product. Homelands are picked from suitable cells (the best of 24 tries by spread, far apart from each other) and ranges spread from them up to `range_km`. Stored as a 32-bit presence mask and an abundance byte per cell. |
+| Deposits | Each good in `data/goods.json` that comes from a deposit (salt, flint and obsidian, timber, fish, copper and tin ore, shell, gold) lies in each suitable cell (hills, mountains, coast, dry land, forest...; never on ice sheets) with its chance per 50,000 km², so the same share of land at every grid level, at a random richness stored as a byte. |
+| Trade links | Every pair of neighbouring land cells (marked as a river link where one drains into the other along a river), plus sea links between coasts whose open water connects within 500 km. Stored once each with length and height difference, and listed per cell (CSR). |
 
 Content packs are plain JSON with `//` comments. The reader parses numbers
 exactly (decimal digits up to 15 and powers of ten up to 22, a single correctly
@@ -230,6 +233,33 @@ around 3,500–7,000 years after the first crops; the largest early states hold
 0.2–0.8 million km², the range of archaic states in Seshat. `histsim
 polities` prints the timeline and the largest polities.
 
+### Goods, markets and trade (M3)
+
+`data/goods.json` lists the goods: food, dried fish, livestock, salt, flint and
+obsidian, timber, pottery, cloth, copper and tin ore, copper, bronze, shell
+ornaments and gold, each with a weight (carrying cost relative to grain),
+spoilage, base price, source and demand. `EconomySystem` runs in the markets
+phase, after farming and towns and before demography.
+
+| Process | Model |
+| --- | --- |
+| Production | Deposits yield `per_person` × people × richness; livestock `per_person` × farmers where they keep herd animals; crafts (`per_person` × people + `per_townsperson` × townspeople) where the people know the technique, limited by the inputs in stock (copper uses 4 ore; bronze 0.9 copper and 0.5 tin). All lean toward goods that sell: × last year's price ÷ base, from 0.5 to 2. |
+| Demand | `per_person`, `per_farmer`, `per_townsperson` and `per_elite`, where elites are 2% × (0.5 + hierarchy) of people, doubled under a polity. Crafts also want their inputs, so ore flows to smelters. |
+| Prices | Each inhabited cell is a market: price = base × √(wanted ÷ stock), the ratio kept within 1/25–25 (1/5 to 5 times base). A market that neither makes nor wants a good prices it at base. |
+| Carrying | Per unit of weight per 100 km: overland 0.3 × (1 + 2 × height difference in km), down a river link 0.1, by sea 0.15 (only for people with boats); horses (+0.3), carts (+0.4) and roads (+0.6) divide the overland cost by 1 + their sum, canoes (+0.25) and sails (+1.25) the water cost. |
+| Trade | Each year every market sends half of what it can spare (stock beyond what it wants) to neighbouring markets where the good sells for more than here plus carrying, split by that gain. All markets decide from the same start-of-trade stocks, so the order of cells does not matter. A market that only passes goods on prices them at base, between the glutted and the starved, so goods cross a continent a link a year. |
+| Food | Food price = √(people × (1 + 2 × town share) ÷ capacity). Food goes only to neighbours, 0.5 × price gap ÷ price sum × the smaller capacity when the gap exceeds the carrying, at most 25% of the sender's capacity; it adds to the receiver's capacity this year (and is taken from the sender's), and counts toward the food that lets towns grow. |
+| Use | Markets use up their demand, stocks spoil, and stocks above five years of use, production and imports are not kept. A good is on the market when at least 0.01 + 0.00001 × people of it is there. |
+| Materials | Copper smelting needs copper ore on the market, bronze copper and tin; cut off, the craft fades (5% a year). |
+| Routes | Each link's carried value is smoothed (10% a year). Trade routes are connected runs of at least two links among the busiest 5% (and at least 200 a year), named after their largest city (or busiest market's people) as a road, river trade or sea lanes by their main mode. |
+
+At level 5 salt, stone, pottery and cloth reach most markets, ores and gold a
+fifth or less, and the value carried over links each year comes to about 7%
+of the food supply. Copper smelting begins a millennium or so after farming near ore, and
+bronze follows where copper and traded tin meet in a town. `histsim trade`
+prints the timeline, the goods and the busiest routes; the trade and
+resources map modes and the trade-route overlay show them.
+
 ### Interventions
 
 `Simulation::apply(Command)` changes a running world: a volcanic eruption, a
@@ -318,7 +348,7 @@ generator can fill it without changing systems.
 | M0 Foundations (done) | Grid, test-world generator, scheduler, RNG, snapshots, headless runner | Sim API, map viewer | Identical replays on Windows, Linux and macOS |
 | M1 Living planet (done) | Climate and environment systems, cohort demography, migration, foragers | Globe, climate and population map modes, pyramid, charts | Forager populations settle near carrying capacity (`m1_gate_populations_settle_near_capacity`) |
 | M2 Neolithic (done) | Agriculture, herding, disease, culture and language drift, early tech | Culture and language map modes, language tree | Farming arises in several plausible regions |
-| **M3 States and trade** (in progress: towns, cities and early states done) | Goods, markets, transport, polities, war, religion, notable agents, forced labor and the slave trade | Trade flows, inspectors, explain view, timeline | Polity sizes track Seshat ranges by era |
+| **M3 States and trade** (in progress: towns, cities and early states; goods, markets and trade routes done) | Goods, markets, transport, polities, war, religion, notable agents, forced labor and the slave trade | Trade flows, inspectors, explain view, timeline | Polity sizes track Seshat ranges by era |
 | M4 Modern era | Energy, carbon cycle, demographic transition, Earth importer, procedural generator | God mode, branch comparison, modding tools | Full runs to the near future on Earth and generated worlds |
 
 M0 to M3 run on the generated test world, so the foundation is solid before any

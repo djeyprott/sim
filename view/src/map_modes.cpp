@@ -6,6 +6,7 @@
 #include <stdexcept>
 
 #include "histsim/language.hpp"
+#include "histsim/systems/economy.hpp"
 #include "histsim/systems/polity.hpp"
 
 namespace histsim::view {
@@ -142,6 +143,30 @@ const ColorScale& towns_scale() {  // brick, light to dark
     return s;
 }
 const Rgba kStateless = hex("#dcd9cf");
+const ColorScale& trade_scale() {  // value carried a year, log: teal, light to dark
+    static const ColorScale s({{10, hex("#e6f4f1")},
+                               {100, hex("#a8dcd1")},
+                               {1000, hex("#5bb3a3")},
+                               {10000, hex("#2a7f72")},
+                               {100000, hex("#0f4a42")}},
+                              /*log_scale=*/true);
+    return s;
+}
+const Rgba kNoTrade = hex("#dcd9cf");
+// Deposits shown on the resources map, most valuable first wins a cell.
+struct ResourceColor {
+    const char* good;
+    Rgba color;
+};
+const std::array<ResourceColor, 6> kResourceColors = {{
+    {"gold", hex("#d4a017")},
+    {"tin_ore", hex("#5d6d7e")},
+    {"copper_ore", hex("#b4532a")},
+    {"ornaments", hex("#d77fa1")},
+    {"salt", hex("#6fb7c9")},
+    {"stone", hex("#3b3a36")},
+}};
+const Rgba kNoResource = hex("#e3e0d6");
 const ColorScale& disease_scale() {  // deaths per 1,000 a year: plum, light to dark
     static const ColorScale s({{0, hex("#f6eef4")},
                                {1, hex("#e2bfd8")},
@@ -221,6 +246,8 @@ const std::vector<MapModeInfo> kModes = {
     {"technology", "Technology", "Number of techniques the people know"},
     {"polity", "Polities", "Chiefdoms, states and empires; each its own color"},
     {"towns", "Towns", "Share of people living in towns and cities"},
+    {"trade", "Trade", "Value of goods sent and received this year"},
+    {"resources", "Resources", "Deposits of salt, stone, ores, gold and shell; the most valuable shown"},
 };
 
 // ---- Colors for languages and cultures.
@@ -374,6 +401,24 @@ Rgba people_color(const SimState& s, const MainPeople& m, const std::string& id)
 }
 }  // namespace
 
+std::vector<RouteLine> route_lines(const Simulation& sim) {
+    std::vector<RouteLine> out;
+    const World& w = sim.world();
+    const SimState& s = sim.state();
+    double busiest = 0.0;
+    const auto routes = trade_routes(w, s);
+    for (const TradeRoute& r : routes) {
+        for (std::uint32_t e : r.edges) busiest = std::max(busiest, s.route_value[e]);
+    }
+    for (const TradeRoute& r : routes) {
+        for (std::uint32_t e : r.edges) {
+            const World::TradeEdge& edge = w.trade_edges[e];
+            out.push_back({edge.a, edge.b, s.route_value[e] / busiest, (edge.modes & (kTradeLand | kTradeRiver)) == 0});
+        }
+    }
+    return out;
+}
+
 Rgba ocean_neutral() { return kOceanNeutral; }
 Rgba coastline_color() { return kCoastline; }
 
@@ -466,6 +511,19 @@ void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rg
             out[c] = !inhabited ? kEmptyLand : (p == 0 ? kStateless : polity_color(s, p));
         } else if (id == "towns") {
             out[c] = inhabited ? towns_scale()(s.urban.empty() ? 0.0 : s.urban[c]) : kEmptyLand;
+        } else if (id == "trade") {
+            const double v = s.trade_value.empty() ? 0.0 : s.trade_value[c];
+            out[c] = !inhabited ? kEmptyLand : (v < 10.0 ? kNoTrade : trade_scale()(v));
+        } else if (id == "resources") {
+            out[c] = kNoResource;
+            for (const ResourceColor& rc : kResourceColors) {
+                const auto& goods = w.content->goods;
+                const auto it = std::find_if(goods.begin(), goods.end(), [&](const GoodDef& g) { return g.id == rc.good; });
+                if (it != goods.end() && w.deposit(c, static_cast<std::size_t>(it - goods.begin())) > 0.0) {
+                    out[c] = rc.color;
+                    break;
+                }
+            }
         } else if (id == "technology") {
             const std::uint64_t t = s.techniques.empty() ? 0 : s.techniques[c];
             int count = 0;
@@ -565,6 +623,21 @@ Legend legend(std::string_view mode_id) {
         l.ramp = {{"0%", towns_scale()(0)}, {"3%", towns_scale()(0.03)}, {"8%", towns_scale()(0.08)},
                   {"15%", towns_scale()(0.15)}, {"30%", towns_scale()(0.3)}};
         l.swatches = empty_and_ocean;
+    } else if (id == "trade") {
+        l.title = "Goods sent and received this year (value, food = 1; log scale)";
+        l.ramp = ramp_entries(trade_scale(), "%g");
+        l.ramp.back().label = "100,000+";
+        l.swatches = {{"No trade", kNoTrade}, {"Uninhabited", kEmptyLand}, {"Ocean", kOceanNeutral}};
+    } else if (id == "resources") {
+        l.title = "Deposits (the most valuable in each cell)";
+        const auto& goods = default_content().goods;
+        for (const ResourceColor& rc : kResourceColors) {
+            for (const GoodDef& g : goods) {
+                if (g.id == rc.good) l.swatches.push_back({g.name, rc.color});
+            }
+        }
+        l.swatches.push_back({"None of these", kNoResource});
+        l.swatches.push_back({"Ocean", kOceanNeutral});
     } else if (id == "technology") {
         l.title = "Techniques known";
         l.ramp = ramp_entries(technology_scale(), "%.0f");
@@ -801,6 +874,37 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
         const std::uint32_t city = s.city_of.empty() ? 0 : s.city_of[c];
         f.push_back({"Towns", (city != 0 ? s.cities[city].name + ", " : std::string()) +
                                   with_commas(std::llround(town)) + fmt(" people (%.0f%%)", 100.0 * s.urban[c])});
+    }
+
+    // Resources and trade.
+    const std::size_t ng = content.goods.size();
+    std::string deposits;
+    for (std::size_t g = 0; g < ng; ++g) {
+        const double d = w.deposit(c, g);
+        if (d <= 0.0) continue;
+        deposits += (deposits.empty() ? "" : ", ") + content.goods[g].name + (d > 0.75 ? " (rich)" : "");
+    }
+    if (!deposits.empty()) f.push_back({"Deposits", deposits});
+    if (s.cell_population[c] > 0 && s.goods_available.size() == w.cell_count() && s.prices.size() == w.cell_count() * ng) {
+        std::string market;
+        for (std::size_t g = 0; g < ng; ++g) {
+            if (g == content.food_good || !((s.goods_available[c] >> g) & 1u)) continue;
+            const double ratio = s.prices[c * ng + g] / content.goods[g].base_price;
+            market += (market.empty() ? "" : ", ") + content.goods[g].name +
+                      (ratio < 0.6 ? " (cheap)" : ratio > 2.0 ? " (dear)" : "");
+        }
+        f.push_back({"Market", market.empty() ? "nothing beyond food" : market});
+        std::string trade = fmt("%.0f worth a year", s.trade_value[c]);
+        const double food = s.food_import[c];
+        if (food >= 0.5) trade += "; food for " + with_commas(std::llround(food)) + " people brought in";
+        if (food <= -0.5) trade += "; food for " + with_commas(std::llround(-food)) + " people sent out";
+        f.push_back({"Trade", trade});
+        for (const TradeRoute& r : trade_routes(w, s)) {
+            if (std::binary_search(r.cells.begin(), r.cells.end(), c)) {
+                f.push_back({"Trade route", r.name + fmt(", %.0f a year", r.value)});
+                break;
+            }
+        }
     }
 
     // Techniques.

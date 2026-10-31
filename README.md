@@ -17,10 +17,13 @@ simulation core on a geodesic world grid has:
 - endemic diseases and epidemics;
 - early techniques, invented, borrowed and forgotten.
 
-M3 (states and trade) is under way: towns grow into named cities, and
-chiefdoms and states form, expand, split and collapse. A Godot viewer shows it
-as a map or globe with twenty-three map modes, polity borders, world charts,
-a cell inspector and a god mode.
+M3 (states and trade) is under way: towns grow into named cities;
+chiefdoms and states form, expand, split and collapse; and goods (salt, stone,
+ores, metals, cloth, gold) are made from deposits, herds and crafts, priced by
+scarcity in every market and carried overland, down rivers and by sea along
+trade routes, with food feeding towns and copper and tin gating metalwork. A
+Godot viewer shows it as a map or globe with twenty-five map modes, polity
+borders, trade routes, world charts, a cell inspector and a god mode.
 
 ## Download
 
@@ -71,6 +74,9 @@ ctest --test-dir build --output-on-failure
 # Towns, cities and polities over 8,000 years
 ./build/cli/histsim polities --years 8000
 
+# Goods, prices and the busiest trade routes after 6,000 years
+./build/cli/histsim trade --years 6000
+
 # Where and when farming began, Bond events, and the share of farmers
 ./build/cli/histsim farming --years 3000
 
@@ -96,7 +102,7 @@ began; the sim has no calendar years.
 | `cli/` | `histsim`, the headless runner for batch runs and CI. |
 | `tests/` | Unit, determinism and replay tests. |
 | `tools/` | Offline tools (Earth importer, procedural generator) — from M4. |
-| `data/` | Content packs, compiled into the library: wild species, sounds and sound changes, core vocabulary, culture traits; crops, goods, techs and diseases later. |
+| `data/` | Content packs, compiled into the library: wild species, sounds and sound changes, core vocabulary, culture traits, diseases, techniques and goods. |
 | `docs/` | [Architecture and determinism rules](docs/ARCHITECTURE.md). |
 
 The viewer talks to the core only through the Sim API in

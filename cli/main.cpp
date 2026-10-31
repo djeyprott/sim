@@ -7,6 +7,7 @@
 //   histsim languages [--seed N] [--level L] [--years Y] [--top N]
 //   histsim farming [--seed N] [--level L] [--years Y]
 //   histsim polities [--seed N] [--level L] [--years Y]
+//   histsim trade [--seed N] [--level L] [--years Y]
 //
 // With no arguments (for example, double-clicked in Explorer) it runs a short
 // demo and waits for Enter so the window stays open.
@@ -32,6 +33,7 @@
 
 #include "histsim/simulation.hpp"
 #include "histsim/systems/culture.hpp"
+#include "histsim/systems/economy.hpp"
 #include "histsim/systems/polity.hpp"
 #include "histsim/view/map_modes.hpp"
 #include "histsim/view/png.hpp"
@@ -75,7 +77,8 @@ struct Options {
                  "                 crowding temperature rainfall rain_season growing soil\n"
                  "                 species capacity game temp_anomaly median_age language\n"
                  "                 language_family culture farming domesticates disease\n"
-                 "                 technology polity towns (polity borders are drawn on all)\n"
+                 "                 technology polity towns trade resources (polity borders are\n"
+                 "                 drawn on all, trade routes on trade and resources)\n"
                  "  histsim farming [--seed N] [--level L] [--years Y]\n"
                  "                 where and when species were domesticated, techniques\n"
                  "                 invented and diseases emerged, Bond events, and farmers,\n"
@@ -83,6 +86,9 @@ struct Options {
                  "  histsim polities [--seed N] [--level L] [--years Y]\n"
                  "                 towns, cities and polities every 500 years, then the largest\n"
                  "                 polities alive\n"
+                 "  histsim trade [--seed N] [--level L] [--years Y]\n"
+                 "                 trade every 500 years, then the goods (where they are made\n"
+                 "                 and sold, and at what price) and the busiest trade routes\n"
                  "  histsim languages [--seed N] [--level L] [--years Y] [--top N]\n"
                  "                 family trees of the languages alive after Y years, largest\n"
                  "                 families first, with speakers and sample words\n"
@@ -359,8 +365,10 @@ int map_images(const Options& o) {
     ro.coastlines = o.coastlines;
     ro.rivers = o.rivers;
     ro.borders = &sim.state().polity_of;
+    const std::vector<histsim::view::RouteLine> routes = histsim::view::route_lines(sim);
     for (const auto& id : modes) {
         histsim::view::color_cells(sim, id, colors);
+        ro.routes = id == "trade" || id == "resources" ? &routes : nullptr;
         histsim::view::render(raster, sim.world(), colors, rgba, ro);
         const std::string path = o.out + "-" + id + ".png";
         histsim::view::write_png(path, o.width, height, rgba);
@@ -513,6 +521,52 @@ int polities(const Options& o) {
     return 0;
 }
 
+// Goods and trade: a timeline, the goods now, and the busiest routes.
+int trade(const Options& o) {
+    Simulation sim = Simulation::create(o.params);
+    apply_due_now(sim, o, true);
+    advance(sim, o.years, o, true);
+    const histsim::SimState& s = sim.state();
+    const histsim::World& w = sim.world();
+    const histsim::Content& content = *w.content;
+    std::printf("Every 500 years:\n");
+    for (const histsim::YearRecord& r : s.history) {
+        if (r.year % 500 != 0) continue;
+        std::printf("  year %5lld  population %11lld  goods traded %12.0f a year  food carried %9.0f people fed\n",
+                    static_cast<long long>(r.year), static_cast<long long>(r.population), r.trade_value,
+                    r.food_traded);
+    }
+    const std::size_t ng = content.goods.size();
+    std::size_t markets = 0;
+    for (histsim::CellId c = 0; c < w.cell_count(); ++c) markets += s.cell_population[c] > 0 ? 1 : 0;
+    std::printf("\nGoods in year %lld (%zu markets):\n", static_cast<long long>(sim.year()), markets);
+    std::printf("  %-28s %8s %8s %10s %12s %12s\n", "good", "deposits", "on sale", "base", "mean price", "stocks");
+    for (std::size_t g = 0; g < ng && !s.goods_available.empty(); ++g) {
+        std::size_t deposits = 0, sold = 0;
+        double price = 0.0, stock = 0.0;
+        for (histsim::CellId c = 0; c < w.cell_count(); ++c) {
+            if (w.deposit(c, g) > 0.0) ++deposits;
+            if (s.cell_population[c] == 0) continue;
+            if ((s.goods_available[c] >> g) & 1u) ++sold;
+            price += s.prices[c * ng + g];
+            stock += s.stocks[c * ng + g];
+        }
+        std::printf("  %-28s %8zu %7.0f%% %10.1f %12.2f %12.0f\n", content.goods[g].name.c_str(), deposits,
+                    markets > 0 ? 100.0 * static_cast<double>(sold) / static_cast<double>(markets) : 0.0,
+                    content.goods[g].base_price, markets > 0 ? price / static_cast<double>(markets) : 0.0, stock);
+    }
+    const auto routes = histsim::trade_routes(w, s);
+    std::printf("\nBusiest trade routes (%zu):\n", routes.size());
+    for (std::size_t i = 0; i < routes.size() && i < 15; ++i) {
+        const histsim::TradeRoute& r = routes[i];
+        double km = 0.0;
+        for (std::uint32_t e : r.edges) km += w.trade_edges[e].distance_km;
+        std::printf("  %-30s %3zu markets %7.0f km of links  %10.0f a year\n", r.name.c_str(), r.cells.size(), km,
+                    r.value);
+    }
+    return 0;
+}
+
 int world_info(const Options& o) {
     const histsim::World w = histsim::generate_test_world(o.params);
     std::size_t land = 0;
@@ -592,6 +646,9 @@ int main(int argc, char** argv) {
         }
         if (cmd == "polities") {
             return polities(parse(args, 2));
+        }
+        if (cmd == "trade") {
+            return trade(parse(args, 2));
         }
         if (cmd == "farming") {
             return farming(parse(args, 2));

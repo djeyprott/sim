@@ -1,0 +1,86 @@
+// Goods: what people make, carry and trade.
+//
+//   category      staple | raw | craft | luxury
+//   weight        transport cost per unit, relative to food (1 = a person-year
+//                 of grain, ~250 kg)
+//   spoilage      share of a stock lost each year
+//   base_price    price where supply meets demand (food = 1)
+//
+// Where it comes from (one of):
+//   "food": true            the food a cell's land feeds beyond its people
+//                           (handled specially: imports feed people)
+//   "deposit"               a resource placed in the world: `where` (anywhere,
+//                           hills, mountains, coast, water, dry, forest,
+//                           warm_coast, dry_or_coast), `chance` of a cell having
+//                           it, and production `per_person` a year where it is
+//   "herds"                 kept animals: `per_person` x farmers, where they
+//                           keep livestock (sold, beyond what they eat)
+//   "craft"                 made by `per_person` or `per_townsperson` a year
+//   inputs                  goods used up per unit made (makers also demand
+//                           them, so ore flows to smelters)
+//   requires_technique      a technique the makers must know
+// Production rises with price (x price / base, from 0.5 to 2).
+//
+// Demand a year: `per_person`, `per_farmer`, `per_townsperson` and
+// `per_elite` (elites: a share of people that grows with hierarchy).
+{
+  "version": 1,
+  "goods": [
+    {"id": "food", "name": "Grain and food", "category": "staple", "weight": 1.0, "spoilage": 1.0,
+     "base_price": 1.0, "food": true},
+
+    {"id": "fish", "name": "Dried fish", "category": "staple", "weight": 0.3, "spoilage": 0.5, "base_price": 1.5,
+     "deposit": {"where": "water", "chance": 1.0}, "per_person": 0.05,
+     "demand": {"per_person": 0.005, "per_townsperson": 0.03}},
+
+    {"id": "livestock", "name": "Livestock", "category": "staple", "weight": 0.5, "spoilage": 0.1, "base_price": 3.0,
+     "herds": true, "per_person": 0.01,
+     "demand": {"per_townsperson": 0.05, "per_elite": 0.1}},
+
+    {"id": "salt", "name": "Salt", "category": "raw", "weight": 0.2, "spoilage": 0.0, "base_price": 3.0,
+     "deposit": {"where": "dry_or_coast", "chance": 0.5}, "per_person": 0.1,
+     "demand": {"per_person": 0.003, "per_farmer": 0.003}},
+
+    {"id": "stone", "name": "Flint and obsidian", "category": "raw", "weight": 0.3, "spoilage": 0.0, "base_price": 2.0,
+     "deposit": {"where": "anywhere", "chance": 0.3}, "per_person": 0.05,
+     "demand": {"per_person": 0.005}},
+
+    {"id": "timber", "name": "Timber", "category": "raw", "weight": 3.0, "spoilage": 0.05, "base_price": 1.0,
+     "deposit": {"where": "forest", "chance": 1.0}, "per_person": 0.05,
+     "demand": {"per_person": 0.01, "per_townsperson": 0.05}},
+
+    {"id": "pottery", "name": "Pottery", "category": "craft", "weight": 0.5, "spoilage": 0.1, "base_price": 1.5,
+     "craft": true, "per_person": 0.01, "requires_technique": "pottery",
+     "demand": {"per_person": 0.005, "per_townsperson": 0.02}},
+
+    {"id": "textiles", "name": "Cloth", "category": "craft", "weight": 0.2, "spoilage": 0.1, "base_price": 4.0,
+     "craft": true, "per_person": 0.005, "per_townsperson": 0.02, "requires_technique": "secondary_products",
+     "demand": {"per_townsperson": 0.01, "per_elite": 0.05}},
+
+    {"id": "copper_ore", "name": "Copper ore", "category": "raw", "weight": 1.0, "spoilage": 0.0, "base_price": 2.0,
+     "deposit": {"where": "hills", "chance": 0.15}, "per_person": 0.004,
+     "demand": {"per_elite": 0.005}},
+
+    {"id": "tin_ore", "name": "Tin ore", "category": "raw", "weight": 1.0, "spoilage": 0.0, "base_price": 8.0,
+     "deposit": {"where": "hills", "chance": 0.03}, "per_person": 0.003,
+     "demand": {"per_elite": 0.003}},
+
+    {"id": "copper", "name": "Copper", "category": "craft", "weight": 0.2, "spoilage": 0.0, "base_price": 15.0,
+     "craft": true, "per_townsperson": 0.01, "per_person": 0.0005, "requires_technique": "copper",
+     "inputs": {"copper_ore": 4.0},
+     "demand": {"per_farmer": 0.0005, "per_townsperson": 0.003, "per_elite": 0.02}},
+
+    {"id": "bronze", "name": "Bronze", "category": "craft", "weight": 0.2, "spoilage": 0.0, "base_price": 40.0,
+     "craft": true, "per_townsperson": 0.005, "requires_technique": "bronze",
+     "inputs": {"copper": 0.9, "tin_ore": 0.5},
+     "demand": {"per_townsperson": 0.002, "per_elite": 0.03}},
+
+    {"id": "ornaments", "name": "Shell and stone ornaments", "category": "luxury", "weight": 0.02, "spoilage": 0.0,
+     "base_price": 10.0, "deposit": {"where": "warm_coast", "chance": 0.6}, "per_person": 0.008,
+     "demand": {"per_townsperson": 0.001, "per_elite": 0.01}},
+
+    {"id": "gold", "name": "Gold", "category": "luxury", "weight": 0.01, "spoilage": 0.0, "base_price": 100.0,
+     "deposit": {"where": "hills", "chance": 0.05}, "per_person": 0.0005,
+     "demand": {"per_elite": 0.001}}
+  ]
+}

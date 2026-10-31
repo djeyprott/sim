@@ -19,6 +19,8 @@ extern const unsigned char kDiseasesJson[];
 extern const std::size_t kDiseasesJsonSize;
 extern const unsigned char kTechniquesJson[];
 extern const std::size_t kTechniquesJsonSize;
+extern const unsigned char kGoodsJson[];
+extern const std::size_t kGoodsJsonSize;
 
 namespace {
 
@@ -401,7 +403,88 @@ void load_diseases(Content& c, std::string_view text) {
     if (c.diseases.size() > kMaxDiseases) fail(doc.at("diseases"), "has more than 16 diseases");
 }
 
-// ---- techniques (after species and culture: they refer to both)
+// ---- goods (before techniques, which may require goods; the techniques
+// goods require are resolved after both are loaded)
+
+constexpr const char* kGoodPlaces[] = {"anywhere", "hills", "mountains", "coast",       "water",
+                                       "dry",      "forest", "warm_coast", "dry_or_coast"};
+
+void load_goods(Content& c, std::string_view text, std::vector<std::string>& technique_ids,
+                std::vector<const json::Value*>& technique_at, json::Value& doc) {
+    doc = json::parse(text, "data/goods.json");
+    if (doc.at("version").as_int() != 1) fail(doc.at("version"), "is not a supported goods pack version");
+    for (const json::Value& v : doc.at("goods").as_array()) {
+        GoodDef g;
+        g.id = v.at("id").as_string();
+        g.name = v.at("name").as_string();
+        g.category = v.string_or("category", "");
+        g.weight = v.number_or("weight", 1.0);
+        if (g.weight <= 0.0 || g.weight > 100.0) fail(v.at("weight"), "must be between 0 and 100");
+        g.spoilage = unit(v, "spoilage", 0.0);
+        g.base_price = v.number_or("base_price", 1.0);
+        if (g.base_price <= 0.0) fail(v.at("base_price"), "must be positive");
+        int sources = 0;
+        if (v.has("food") && v.at("food").as_bool()) g.source = GoodSource::Food, ++sources;
+        if (v.has("deposit")) {
+            g.source = GoodSource::Deposit, ++sources;
+            const json::Value& d = v.at("deposit");
+            g.where = static_cast<GoodPlace>(pick(d.at("where"), kGoodPlaces));
+            g.chance = unit(d, "chance", 0.0);
+        }
+        if (v.has("herds") && v.at("herds").as_bool()) g.source = GoodSource::Herds, ++sources;
+        if (v.has("craft") && v.at("craft").as_bool()) g.source = GoodSource::Craft, ++sources;
+        if (sources != 1) fail(v, "needs exactly one of food, deposit, herds or craft");
+        if (g.source == GoodSource::Food) {
+            if (c.food_good != SIZE_MAX) fail(v, "is a second food good");
+            c.food_good = c.goods.size();
+        }
+        g.per_person = v.number_or("per_person", 0.0);
+        g.per_townsperson = v.number_or("per_townsperson", 0.0);
+        if (g.per_person < 0.0 || g.per_townsperson < 0.0) fail(v, "production must not be negative");
+        if (v.has("inputs")) {
+            if (g.source != GoodSource::Craft) fail(v.at("inputs"), "are only for crafts");
+            for (const auto& [key, val] : v.at("inputs").members()) {
+                std::size_t i = 0;
+                while (i < c.goods.size() && c.goods[i].id != key) ++i;
+                if (i == c.goods.size()) fail(val, "is not a good listed earlier");
+                if (val.as_number() <= 0.0) fail(val, "must be positive");
+                g.inputs.emplace_back(i, val.as_number());
+            }
+        }
+        technique_ids.push_back(v.string_or("requires_technique", ""));
+        technique_at.push_back(v.has("requires_technique") ? &v.at("requires_technique") : nullptr);
+        if (v.has("demand")) {
+            const json::Value& d = v.at("demand");
+            for (const auto& [key, val] : d.members()) {
+                const double x = val.as_number();
+                if (x < 0.0) fail(val, "must not be negative");
+                if (key == "per_person") g.demand.per_person = x;
+                else if (key == "per_farmer") g.demand.per_farmer = x;
+                else if (key == "per_townsperson") g.demand.per_townsperson = x;
+                else if (key == "per_elite") g.demand.per_elite = x;
+                else fail(val, "is not a demand (per_person, per_farmer, per_townsperson, per_elite)");
+            }
+        }
+        for (const GoodDef& o : c.goods) {
+            if (o.id == g.id) fail(v.at("id"), "duplicates good \"" + g.id + "\"");
+        }
+        c.goods.push_back(std::move(g));
+    }
+    if (c.goods.size() > kMaxGoods) fail(doc.at("goods"), "has more than 32 goods");
+}
+
+void resolve_good_techniques(Content& c, const std::vector<std::string>& ids,
+                             const std::vector<const json::Value*>& at) {
+    for (std::size_t g = 0; g < c.goods.size(); ++g) {
+        if (ids[g].empty()) continue;
+        std::size_t t = 0;
+        while (t < c.techniques.size() && c.techniques[t].id != ids[g]) ++t;
+        if (t == c.techniques.size()) fail(*at[g], "is not a technique id");
+        c.goods[g].requires_technique = static_cast<int>(t);
+    }
+}
+
+// ---- techniques (after species, culture and goods: they refer to them)
 
 constexpr const char* kPlacesWhere[] = {"anywhere", "river", "coast", "water", "dry", "hills", "forest"};
 
@@ -434,6 +517,14 @@ void load_techniques(Content& c, std::string_view text) {
         t.rate = unit(v, "rate", 0.0);
         t.start_chance = unit(v, "start_chance", 0.0);
         t.min_town = v.number_or("min_town", 0.0);
+        if (v.has("requires_goods")) {
+            for (const json::Value& g : v.at("requires_goods").as_array()) {
+                std::size_t i = 0;
+                while (i < c.goods.size() && c.goods[i].id != g.as_string()) ++i;
+                if (i == c.goods.size()) fail(g, "is not a good id");
+                t.requires_goods |= 1u << i;
+            }
+        }
         if (v.has("affinity")) {
             for (const auto& [key, val] : v.at("affinity").members()) {
                 std::size_t i = 0;
@@ -452,8 +543,10 @@ void load_techniques(Content& c, std::string_view text) {
             else if (key == "famine") t.effects.famine = x;
             else if (key == "contact") t.effects.contact = x;
             else if (key == "administration") t.effects.administration = x;
+            else if (key == "land_transport") t.effects.land_transport = x;
+            else if (key == "water_transport") t.effects.water_transport = x;
             else fail(val, "is not an effect (crop_yield, herd_yield, forage, aquatic, harvest_buffer, famine, "
-                           "contact, administration)");
+                           "contact, administration, land_transport, water_transport)");
         }
         for (const TechniqueDef& o : c.techniques) {
             if (o.id == t.id) fail(v.at("id"), "duplicates technique \"" + t.id + "\"");
@@ -471,7 +564,7 @@ ContentSources default_sources() {
     };
     return {view(kSpeciesJson, kSpeciesJsonSize), view(kPhonologyJson, kPhonologyJsonSize),
             view(kCultureJson, kCultureJsonSize), view(kDiseasesJson, kDiseasesJsonSize),
-            view(kTechniquesJson, kTechniquesJsonSize)};
+            view(kTechniquesJson, kTechniquesJsonSize), view(kGoodsJson, kGoodsJsonSize)};
 }
 
 Content load_content(const ContentSources& src) {
@@ -480,9 +573,14 @@ Content load_content(const ContentSources& src) {
     load_phonology(c, src.phonology);
     load_culture(c, src.culture);
     load_diseases(c, src.diseases);
+    std::vector<std::string> good_techniques;
+    std::vector<const json::Value*> good_technique_at;
+    json::Value goods_doc;
+    load_goods(c, src.goods, good_techniques, good_technique_at, goods_doc);
     load_techniques(c, src.techniques);
+    resolve_good_techniques(c, good_techniques, good_technique_at);
     Hasher h;
-    for (std::string_view text : {src.species, src.phonology, src.culture, src.diseases, src.techniques}) {
+    for (std::string_view text : {src.species, src.phonology, src.culture, src.diseases, src.techniques, src.goods}) {
         h.u64(text.size());
         h.bytes(text.data(), text.size());
     }

@@ -13,6 +13,8 @@ extern const unsigned char kDiseasesJson[];
 extern const std::size_t kDiseasesJsonSize;
 extern const unsigned char kTechniquesJson[];
 extern const std::size_t kTechniquesJsonSize;
+extern const unsigned char kGoodsJson[];
+extern const std::size_t kGoodsJsonSize;
 
 const unsigned char kSpeciesJson[] = {@HISTSIM_SPECIES_BYTES@ 0x00};
 const std::size_t kSpeciesJsonSize = sizeof(kSpeciesJson) - 1;
@@ -24,5 +26,7 @@ const unsigned char kDiseasesJson[] = {@HISTSIM_DISEASES_BYTES@ 0x00};
 const std::size_t kDiseasesJsonSize = sizeof(kDiseasesJson) - 1;
 const unsigned char kTechniquesJson[] = {@HISTSIM_TECHNIQUES_BYTES@ 0x00};
 const std::size_t kTechniquesJsonSize = sizeof(kTechniquesJson) - 1;
+const unsigned char kGoodsJson[] = {@HISTSIM_GOODS_BYTES@ 0x00};
+const std::size_t kGoodsJsonSize = sizeof(kGoodsJson) - 1;
 
 }  // namespace histsim

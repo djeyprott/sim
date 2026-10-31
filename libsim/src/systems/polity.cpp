@@ -108,9 +108,10 @@ void SettlementSystem::step(StepContext& ctx) {
         if (s.cell_population[c] == 0) {
             s.urban[c] = 0.0;
         } else {
-            const double fed = s.env.farm_capacity.empty()
-                                   ? 0.0
-                                   : s.env.farm_capacity[c] / w.grid.area_km2(c) * s.env.farming[c];
+            // People fed per km^2 by farmland, and by food brought in last year.
+            const double farmed = s.env.farm_capacity.empty() ? 0.0 : s.env.farm_capacity[c] * s.env.farming[c];
+            const double imported = s.food_import.empty() ? 0.0 : std::max(0.0, s.food_import[c]);
+            const double fed = (farmed + imported) / w.grid.area_km2(c);
             double target = std::clamp(kPerSurplus * (fed - kThreshold), 0.0, kMax);
             const std::uint32_t p = s.polity_of[c];
             if (target > 0.0 && p != 0 && s.polities[p].capital == c) target += kCapital;

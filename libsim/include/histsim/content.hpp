@@ -1,7 +1,7 @@
-// Content packs: the data that defines what exists in a world. Now: wild
-// species, the sounds and core vocabulary of languages with their sound
-// changes, and culture traits. Later: crops, goods, technologies, diseases
-// and institutions.
+// Content packs: the data that defines what exists in a world: wild species,
+// the sounds and core vocabulary of languages with their sound changes,
+// culture traits, diseases, techniques and goods. Later: institutions and
+// religions.
 //
 // The default packs live in data/*.json and are compiled into the library, so
 // every build carries exactly the content it was tested with. Their hash goes
@@ -9,6 +9,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -208,6 +209,8 @@ struct TechEffects {
     double famine = 0.0;
     double contact = 0.0;
     double administration = 0.0;
+    double land_transport = 0.0;   // overland carrying cost / (1 + sum)
+    double water_transport = 0.0;  // river and sea carrying cost / (1 + sum); > 0 allows sea crossings
 };
 
 struct TechniqueDef {
@@ -222,10 +225,44 @@ struct TechniqueDef {
     std::array<double, kMaxTraits> affinity{};
     double start_chance = 0.0;
     double min_town = 0.0;               // people in towns needed in the cell
+    std::uint32_t requires_goods = 0;    // goods bits: all must be on the cell's market
     TechEffects effects;
 };
 
 inline constexpr std::size_t kMaxTechniques = 64;
+
+// ---------------------------------------------------------------- goods
+
+// Where a good comes from (see data/goods.json).
+enum class GoodSource : std::uint8_t { Food, Deposit, Herds, Craft };
+// Where a deposit can be.
+enum class GoodPlace : std::uint8_t {
+    Anywhere, Hills, Mountains, Coast, Water, Dry, Forest, WarmCoast, DryOrCoast
+};
+
+// Yearly demand per person, farmer, townsperson and member of the elite.
+struct GoodDemand {
+    double per_person = 0.0, per_farmer = 0.0, per_townsperson = 0.0, per_elite = 0.0;
+};
+
+struct GoodDef {
+    std::string id;
+    std::string name;
+    std::string category;
+    double weight = 1.0;     // carrying cost relative to food
+    double spoilage = 0.0;   // share of a stock lost a year
+    double base_price = 1.0;
+    GoodSource source = GoodSource::Craft;
+    GoodPlace where = GoodPlace::Anywhere;  // deposits
+    double chance = 0.0;                    // deposits: share of suitable 50,000 km^2 cells
+    double per_person = 0.0;                // production a year
+    double per_townsperson = 0.0;
+    std::vector<std::pair<std::size_t, double>> inputs;  // (good index, units used per unit made)
+    int requires_technique = -1;            // technique index, or -1
+    GoodDemand demand;
+};
+
+inline constexpr std::size_t kMaxGoods = 32;  // availability is a 32-bit mask per cell
 
 // ---------------------------------------------------------------- pack
 
@@ -245,6 +282,8 @@ struct Content {
 
     std::vector<DiseaseDef> diseases;
     std::vector<TechniqueDef> techniques;
+    std::vector<GoodDef> goods;
+    std::size_t food_good = SIZE_MAX;  // index of the food good, if any
 
     std::uint64_t hash = 0;  // of all source texts
 };
@@ -256,6 +295,7 @@ struct ContentSources {
     std::string_view culture;
     std::string_view diseases;
     std::string_view techniques;
+    std::string_view goods;
 };
 
 // The packs compiled into this build.

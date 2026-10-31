@@ -314,6 +314,93 @@ double cultivated_suitability(const World& w, const SpeciesDef& s, CellId c) {
 // apart; from each the species spreads through suitable country up to
 // range_km away. Barriers (sea, desert, mountains) stop the spread, so the
 // same climate on another continent may have no native species at all.
+// Deposits: each suitable cell has one with the good's chance (per 50,000
+// km^2, so the same share of land at every grid level), of random richness.
+void place_deposits(World& w, const Content& content) {
+    const std::size_t ng = content.goods.size();
+    const std::size_t n = w.cell_count();
+    w.deposits.assign(n * ng, 0);
+    for (std::size_t g = 0; g < ng; ++g) {
+        const GoodDef& def = content.goods[g];
+        if (def.source != GoodSource::Deposit) continue;
+        RngStream rng(w.params.seed, 0, Stream::WorldGen, 300 + static_cast<std::uint32_t>(g));
+        for (CellId c = 0; c < n; ++c) {
+            const double u = rng.uniform();
+            const double richness = rng.uniform();
+            if (!good_place_ok(w, c, def.where)) continue;
+            const double chance = std::min(1.0, def.chance * w.grid.area_km2(c) / 50000.0);
+            if (u < chance) w.deposits[c * ng + g] = static_cast<std::uint8_t>(64.0 + 191.0 * richness);
+        }
+    }
+}
+
+// Trade links: neighbouring land cells (overland; down a river where one
+// drains into the other) and coasts within kSeaReachKm by sea.
+void build_trade_edges(World& w) {
+    const std::size_t n = w.cell_count();
+    std::vector<World::TradeEdge> edges;
+    auto add = [&](CellId a, CellId b, std::uint8_t mode, double km) {
+        if (a > b) std::swap(a, b);
+        edges.push_back({a, b, km, std::fabs(w.elevation_m[a] - w.elevation_m[b]) / 1000.0, mode});
+    };
+    for (CellId c = 0; c < n; ++c) {
+        if (!w.is_land[c]) continue;
+        for (CellId nb : w.grid.neighbors(c)) {
+            if (nb <= c || !w.is_land[nb]) continue;
+            std::uint8_t mode = kTradeLand;
+            if ((w.downstream[c] == nb && is_river(w, c)) || (w.downstream[nb] == c && is_river(w, nb))) {
+                mode |= kTradeRiver;
+            }
+            add(c, nb, mode, w.grid.distance_km(c, nb));
+        }
+    }
+    // Sea: from each coast, the open water within reach and the coasts on it.
+    std::vector<std::uint32_t> seen(n, kInvalidCell);
+    std::vector<CellId> frontier, coasts;
+    for (CellId c = 0; c < n; ++c) {
+        if (!w.is_land[c] || w.coast_distance[c] != 1) continue;
+        frontier.clear();
+        coasts.clear();
+        for (CellId nb : w.grid.neighbors(c)) {
+            if (!w.is_land[nb] && seen[nb] != c) seen[nb] = c, frontier.push_back(nb);
+        }
+        for (std::size_t i = 0; i < frontier.size(); ++i) {
+            for (CellId nb : w.grid.neighbors(frontier[i])) {
+                if (seen[nb] == c || w.grid.distance_km(c, nb) > kSeaReachKm) continue;
+                seen[nb] = c;
+                if (w.is_land[nb]) {
+                    if (nb > c && w.coast_distance[nb] == 1) coasts.push_back(nb);
+                } else {
+                    frontier.push_back(nb);
+                }
+            }
+        }
+        std::sort(coasts.begin(), coasts.end());
+        for (CellId b : coasts) add(c, b, kTradeSea, 1.2 * w.grid.distance_km(c, b));
+    }
+    // Merge links found both overland and by sea.
+    std::sort(edges.begin(), edges.end(), [](const World::TradeEdge& x, const World::TradeEdge& y) {
+        return x.a != y.a ? x.a < y.a : x.b < y.b;
+    });
+    w.trade_edges.clear();
+    for (const World::TradeEdge& e : edges) {
+        if (!w.trade_edges.empty() && w.trade_edges.back().a == e.a && w.trade_edges.back().b == e.b) {
+            w.trade_edges.back().modes |= e.modes;
+        } else {
+            w.trade_edges.push_back(e);
+        }
+    }
+    w.trade_edge_begin.assign(n + 1, 0);
+    for (const World::TradeEdge& e : w.trade_edges) ++w.trade_edge_begin[e.a + 1], ++w.trade_edge_begin[e.b + 1];
+    for (std::size_t c = 0; c < n; ++c) w.trade_edge_begin[c + 1] += w.trade_edge_begin[c];
+    w.trade_edge_ids.assign(2 * w.trade_edges.size(), 0);
+    std::vector<std::uint32_t> fill(w.trade_edge_begin.begin(), w.trade_edge_begin.end() - 1);
+    for (std::uint32_t e = 0; e < w.trade_edges.size(); ++e) {
+        w.trade_edge_ids[fill[w.trade_edges[e].a]++] = e;
+        w.trade_edge_ids[fill[w.trade_edges[e].b]++] = e;
+    }
+}
+
 void place_species(World& w, const Content& content) {
     const std::size_t n = w.cell_count();
     const std::size_t count = content.species.size();
@@ -704,9 +791,33 @@ World generate_test_world(const WorldParams& params, const Content& content) {
             }
         }
     }
+    place_deposits(w, content);
+    build_trade_edges(w);
     assign_initial_groups(w);
     build_climate_mapping(w);
     return w;
+}
+
+bool good_place_ok(const World& w, CellId c, GoodPlace place) {
+    if (!w.is_land[c] || w.biome[c] == static_cast<std::uint8_t>(Biome::IceSheet)) return false;
+    const bool coast = w.coast_distance[c] == 1;
+    const bool dry = w.precipitation_mm[c] < 400.0;
+    switch (place) {
+        case GoodPlace::Anywhere: return true;
+        case GoodPlace::Hills: return w.elevation_m[c] > 600.0;
+        case GoodPlace::Mountains: return w.elevation_m[c] > 1500.0;
+        case GoodPlace::Coast: return coast;
+        case GoodPlace::Water: return coast || is_river(w, c);
+        case GoodPlace::Dry: return dry;
+        case GoodPlace::Forest: {
+            const auto b = static_cast<Biome>(w.biome[c]);
+            return b == Biome::BorealForest || b == Biome::TemperateForest || b == Biome::WarmTemperateForest ||
+                   b == Biome::TropicalRainforest;
+        }
+        case GoodPlace::WarmCoast: return coast && w.temperature_c[c] > 18.0;
+        case GoodPlace::DryOrCoast: return coast || dry;
+    }
+    return false;
 }
 
 std::uint64_t World::hash() const noexcept {
@@ -736,6 +847,15 @@ std::uint64_t World::hash() const noexcept {
     h.span<std::uint8_t>(species_abundance);
     h.span<std::uint8_t>(cultivated_suitability);
     h.span<double>(disease_niche);
+    h.span<std::uint8_t>(deposits);
+    h.u64(trade_edges.size());
+    for (const TradeEdge& e : trade_edges) {
+        h.u32(e.a);
+        h.u32(e.b);
+        h.f64(e.distance_km);
+        h.f64(e.climb);
+        h.u32(e.modes);
+    }
     h.span<std::uint32_t>(initial_group);
     h.u32(group_count);
     h.u64(climate_grid.geometry_hash());

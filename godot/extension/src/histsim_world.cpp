@@ -242,7 +242,7 @@ void HistSimWorld::ensure_raster() {
     }
 }
 
-Ref<Image> HistSimWorld::render_map(const String& mode, bool coastlines, bool rivers, bool borders) {
+Ref<Image> HistSimWorld::render_map(const String& mode, bool coastlines, bool rivers, bool borders, bool routes) {
     if (!sim_) {
         fail("no world to render");
         return Ref<Image>();
@@ -258,6 +258,11 @@ Ref<Image> HistSimWorld::render_map(const String& mode, bool coastlines, bool ri
         }
         if (highlight_on_ && highlight_.size() == sim_->world().cell_count()) {
             options.highlight = &highlight_;
+        }
+        std::vector<histsim::view::RouteLine> lines;
+        if (routes) {
+            lines = histsim::view::route_lines(*sim_);
+            options.routes = &lines;
         }
         histsim::view::render(*raster_, sim_->world(), colors_, rgba_, options);
         PackedByteArray bytes;
@@ -418,8 +423,8 @@ void HistSimWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_modes"), &HistSimWorld::get_modes);
     ClassDB::bind_method(D_METHOD("get_legend", "mode"), &HistSimWorld::get_legend);
     ClassDB::bind_method(D_METHOD("set_map_size", "width", "height"), &HistSimWorld::set_map_size);
-    ClassDB::bind_method(D_METHOD("render_map", "mode", "coastlines", "rivers", "borders"),
-                         &HistSimWorld::render_map, DEFVAL(true), DEFVAL(false));
+    ClassDB::bind_method(D_METHOD("render_map", "mode", "coastlines", "rivers", "borders", "routes"),
+                         &HistSimWorld::render_map, DEFVAL(true), DEFVAL(false), DEFVAL(false));
     ClassDB::bind_method(D_METHOD("get_native_species", "cell"), &HistSimWorld::get_native_species);
     ClassDB::bind_method(D_METHOD("cell_at", "x", "y"), &HistSimWorld::cell_at);
     ClassDB::bind_method(D_METHOD("describe_cell", "cell"), &HistSimWorld::describe_cell);

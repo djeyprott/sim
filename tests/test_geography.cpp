@@ -29,9 +29,10 @@ bool throws(F&& f) {
 Content with_species(const std::string& species) {
     ContentSources src = default_sources();
     src.species = species;
-    // The default diseases and techniques name species not in this pack.
+    // The default diseases, techniques and goods name species not in this pack.
     src.diseases = R"({"version": 1, "diseases": []})";
     src.techniques = R"({"version": 1, "techniques": []})";
+    src.goods = R"({"version": 1, "goods": []})";
     return load_content(src);
 }
 

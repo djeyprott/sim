@@ -281,6 +281,12 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(p.language);
         ar.u32(p.parent);
     });
+    doubles(ar, s.stocks);
+    doubles(ar, s.prices);
+    vec(ar, s.goods_available, [&](std::uint32_t& v) { ar.u32(v); });
+    doubles(ar, s.food_import);
+    doubles(ar, s.trade_value);
+    doubles(ar, s.route_value);
     vec(ar, s.domestications, [&](Domestication& d) {
         ar.i64(d.tick);
         ar.u32(d.cell);
@@ -310,6 +316,8 @@ void serialize(Ar& ar, SimState& s) {
         ar.f64(r.largest_polity_km2);
         ar.i64(r.largest_polity_people);
         ar.u32(r.domesticated);
+        ar.f64(r.trade_value);
+        ar.f64(r.food_traded);
     });
 }
 

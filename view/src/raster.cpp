@@ -54,13 +54,15 @@ void plot(std::vector<std::uint8_t>& rgba, int w, int h, int x, int y, const Rgb
     px[3] = c.a;
 }
 
-// A thick line by stamping squares along it.
+// A thick line by stamping squares along it; dashed lines skip every other
+// run of `dash` pixels.
 void line(std::vector<std::uint8_t>& rgba, int w, int h, double x0, double y0, double x1, double y1, int width,
-          const Rgba& c) {
+          const Rgba& c, int dash = 0) {
     const double len = std::max(std::fabs(x1 - x0), std::fabs(y1 - y0));
     const int steps = std::max(1, static_cast<int>(std::ceil(len)));
     const int r0 = -(width - 1) / 2, r1 = width / 2;
     for (int i = 0; i <= steps; ++i) {
+        if (dash > 0 && (i / dash) % 2 == 1) continue;
         const double t = static_cast<double>(i) / steps;
         const int x = static_cast<int>(std::lround(x0 + (x1 - x0) * t));
         const int y = static_cast<int>(std::lround(y0 + (y1 - y0) * t));
@@ -85,6 +87,22 @@ void draw_rivers(const World& world, int w, int h, std::vector<std::uint8_t>& rg
         const int base = q < 3000.0 ? 1 : (q < 15000.0 ? 2 : 3);
         const int width = std::max(1, static_cast<int>(std::lround(base * scale)));
         line(rgba, w, h, x0, y0, x1, y1, width, blue);
+    }
+}
+
+void draw_routes(const World& world, const std::vector<RouteLine>& routes, int w, int h,
+                 std::vector<std::uint8_t>& rgba) {
+    const Rgba road = hex("#5a3208");
+    const Rgba sea = hex("#14306a");
+    const double scale = static_cast<double>(w) / 2048.0;
+    for (const RouteLine& r : routes) {
+        double x0, y0, x1, y1;
+        cell_pixel(world, r.a, w, h, x0, y0);
+        cell_pixel(world, r.b, w, h, x1, y1);
+        if (std::fabs(x1 - x0) > 0.5 * w) continue;  // crosses the date line
+        const int base = r.strength < 0.25 ? 1 : (r.strength < 0.6 ? 2 : 3);
+        const int width = std::max(1, static_cast<int>(std::lround(base * scale)));
+        line(rgba, w, h, x0, y0, x1, y1, width, r.sea ? sea : road, r.sea ? std::max(2, 3 * width) : 0);
     }
 }
 
@@ -178,6 +196,9 @@ void render(const MapRaster& raster, const World& world, const std::vector<Rgba>
     }
     if (options.rivers) {
         draw_rivers(world, w, h, rgba);
+    }
+    if (options.routes != nullptr) {
+        draw_routes(world, *options.routes, w, h, rgba);
     }
 }
 

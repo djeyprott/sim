@@ -12,6 +12,7 @@
 
 #include "histsim/simulation.hpp"
 #include "histsim/view/color.hpp"
+#include "histsim/view/raster.hpp"
 
 namespace histsim::view {
 
@@ -79,6 +80,9 @@ Rgba polity_color(const SimState& state, std::uint32_t polity);
 
 // Names of the wild species native to a cell.
 std::vector<std::string> native_species(const Simulation& sim, CellId cell);
+
+// The links of today's trade routes, for RenderOptions::routes.
+std::vector<RouteLine> route_lines(const Simulation& sim);
 
 // Neutral colors shared by modes and overlays.
 Rgba ocean_neutral();

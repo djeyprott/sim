@@ -276,6 +276,8 @@ struct YearRecord {
     double largest_polity_km2 = 0.0;
     std::int64_t largest_polity_people = 0;
     std::uint32_t domesticated = 0;       // species domesticated somewhere so far
+    double trade_value = 0.0;             // value of goods carried between cells this year (food = 1)
+    double food_traded = 0.0;             // food carried between cells this year, people fed
 };
 
 // ---------------------------------------------------------------- state
@@ -329,6 +331,19 @@ struct SimState {
     std::vector<City> cities;
     std::vector<std::uint32_t> polity_of;
     std::vector<Polity> polities;
+
+    // Goods and trade. Per cell x good (cell * goods + g): the stock held and
+    // this year's market price. Per cell: the goods on its market (bit g),
+    // food brought in this year (people fed; negative = sent out) and the
+    // value of the goods it sent and received. Per trade link
+    // (World::trade_edges): the value carried a year, smoothed over about
+    // ten years.
+    std::vector<double> stocks;
+    std::vector<double> prices;
+    std::vector<std::uint32_t> goods_available;
+    std::vector<double> food_import;
+    std::vector<double> trade_value;
+    std::vector<double> route_value;
 
     // ---- Derived data: rebuilt by refresh(), never saved or hashed.
     std::vector<std::uint32_t> cell_population;

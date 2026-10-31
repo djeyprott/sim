@@ -2,6 +2,7 @@ add_executable(histsim_tests
     main.cpp
     test_culture.cpp
     test_disease.cpp
+    test_economy.cpp
     test_farming.cpp
     test_geography.cpp
     test_grid.cpp
