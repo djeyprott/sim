@@ -15,6 +15,8 @@ const STEP_BUDGET_MSEC := 12.0  # max time per frame spent simulating
 const RENDER_INTERVAL := 1.0 / 15.0  # max map redraws per second while playing
 const CHART_INTERVAL := 0.25  # chart refreshes per second while playing
 const DYNAMIC_LEGENDS := ["language", "language_family", "culture"]
+const SIDE_PANEL_WIDTH := 360
+const CELL_KEY_WIDTH := 118  # fits the longest inspector key
 const CHART_POINTS := 400
 const QUICKSAVE_PATH := "user://quicksave.hsim"
 
@@ -443,6 +445,8 @@ func _update_legend() -> void:
 		var label := Label.new()
 		label.text = swatch["label"]
 		label.add_theme_font_size_override("font_size", 12)
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(label)
 		legend_swatches.add_child(row)
 
@@ -454,11 +458,13 @@ func _show_cell(cell: int) -> void:
 		var key := Label.new()
 		key.text = pair[0]
 		key.add_theme_color_override("font_color", Color(0.76, 0.76, 0.72))
+		key.custom_minimum_size.x = CELL_KEY_WIDTH
+		key.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 		cell_grid.add_child(key)
 		var value := Label.new()
 		value.text = pair[1]
 		value.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		value.custom_minimum_size.x = 230
+		value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		cell_grid.add_child(value)
 	var native: PackedStringArray = world.get_native_species(cell)
 	species_label.visible = native.size() > 0
@@ -695,9 +701,12 @@ func _build_top_bar() -> Control:
 
 
 func _build_side_panel() -> Control:
+	# A fixed width: the scroll bar is always shown and long text wraps, so
+	# hovering a cell with more to say never resizes the panel (and the map).
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size.x = 330
+	scroll.custom_minimum_size.x = SIDE_PANEL_WIDTH
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_ALWAYS
 
 	var panel := VBoxContainer.new()
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -772,7 +781,7 @@ func _build_side_panel() -> Control:
 	species_label = Label.new()
 	species_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	species_label.add_theme_font_size_override("font_size", 12)
-	species_label.custom_minimum_size.x = 300
+	species_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	species_label.visible = false
 	panel.add_child(species_label)
 

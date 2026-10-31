@@ -13,6 +13,7 @@ var failures: Array[String] = []
 var god_killed := 0
 var quicksave_year := -1
 var globe_ok := false
+var map_rect_short := Rect2()
 
 
 func _initialize() -> void:
@@ -56,7 +57,24 @@ func _process(_delta: float) -> bool:
 		quicksave_year = main.world.get_year()
 		main.world.step_years(3)
 		main._quickload()
+	# Layout: the map must not move or resize when the inspector grows (a
+	# cell with many rows and a scroll bar, then one with few).
 	if frames == 40:
+		main._set_playing(false)
+		main._show_cell(_ocean_cell())
+	if frames == 42:
+		map_rect_short = main.map_rect.get_global_rect()
+		main._show_cell(_populated_cell())
+	if frames == 44:
+		var long_rect: Rect2 = main.map_rect.get_global_rect()
+		if long_rect != map_rect_short:
+			failures.append("map moved when the inspector grew: %s -> %s" % [map_rect_short, long_rect])
+		main._show_cell(_ocean_cell())
+	if frames == 46:
+		var back: Rect2 = main.map_rect.get_global_rect()
+		if back != map_rect_short:
+			failures.append("map moved when the inspector shrank: %s -> %s" % [map_rect_short, back])
+	if frames == 48:
 		_check_scene()
 		_finish(failures)
 		return true
@@ -146,6 +164,16 @@ func _check_scene() -> void:
 	_expect(main.world.get_intervention_count() >= 2, "god-mode actions recorded")
 	_expect(main.world.get_year() == quicksave_year, "quickload restored the saved year")
 	_expect(main.god_panel.visible, "god panel shown")
+
+
+# A cell with little to describe (ocean).
+func _ocean_cell() -> int:
+	for y in range(200, 800, 32):
+		for x in range(0, 2048, 32):
+			var c: int = main.world.cell_at(x, y)
+			if main.world.describe_cell(c).size() < 8:
+				return c
+	return 0
 
 
 func _populated_cell() -> int:
