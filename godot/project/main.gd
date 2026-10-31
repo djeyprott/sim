@@ -14,7 +14,7 @@ const LEVEL_NAMES := ["Coarse (2.6k cells)", "Normal (10k cells)", "Fine (41k ce
 const STEP_BUDGET_MSEC := 12.0  # max time per frame spent simulating
 const RENDER_INTERVAL := 1.0 / 15.0  # max map redraws per second while playing
 const CHART_INTERVAL := 0.25  # chart refreshes per second while playing
-const DYNAMIC_LEGENDS := ["language", "language_family", "culture"]
+const DYNAMIC_LEGENDS := ["language", "language_family", "culture", "polity"]
 const SIDE_PANEL_WIDTH := 360
 const CELL_KEY_WIDTH := 118  # fits the longest inspector key
 const CHART_POINTS := 400
@@ -47,6 +47,7 @@ var seed_spin: SpinBox
 var level_option: OptionButton
 var coastline_check: CheckBox
 var river_check: CheckBox
+var border_check: CheckBox
 var species_label: Label
 var mode_buttons := {}
 var legend_title: Label
@@ -138,7 +139,8 @@ func _process(delta: float) -> void:
 
 
 func _render_map() -> void:
-	var image: Image = world.render_map(mode_id, coastline_check.button_pressed, river_check.button_pressed)
+	var image: Image = world.render_map(mode_id, coastline_check.button_pressed, river_check.button_pressed,
+		border_check.button_pressed)
 	if image == null:
 		status_label.text = "Map render failed: " + world.get_last_error()
 		return
@@ -751,9 +753,16 @@ func _build_side_panel() -> Control:
 	river_check.toggled.connect(func(_on: bool) -> void:
 		map_dirty = true
 		render_cooldown = 0.0)
+	border_check = CheckBox.new()
+	border_check.text = "Borders"
+	border_check.button_pressed = true
+	border_check.toggled.connect(func(_on: bool) -> void:
+		map_dirty = true
+		render_cooldown = 0.0)
 	var overlays := HBoxContainer.new()
 	overlays.add_child(coastline_check)
 	overlays.add_child(river_check)
+	overlays.add_child(border_check)
 	panel.add_child(overlays)
 
 	panel.add_child(HSeparator.new())

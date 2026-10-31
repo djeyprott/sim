@@ -80,7 +80,7 @@ TEST(disease_virgin_soil_epidemic_strikes_then_burns_out) {
     WorldParams p;
     p.grid_level = 4;
     Simulation sim = Simulation::create(p);
-    sim.step_years(2500);
+    sim.step_years(1500);  // farming villages, no population big enough to keep pox
     const Content& c = *sim.world().content;
     const std::size_t pox = disease_index(c, "pox");
     const std::size_t nd = c.diseases.size();

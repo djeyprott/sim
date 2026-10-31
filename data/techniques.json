@@ -24,6 +24,12 @@
 //   harvest_buffer  share of a bad harvest's shortfall made good (stores)
 //   famine          famine mortality x (1 + sum), so negative is better
 //   contact         learning from and teaching neighbours x (1 + sum)
+//   administration  how far a capital's rule reaches x (1 + sum): writing,
+//                   bureaucracy and roads let states hold distant land
+//
+// `min_town`: inventing the technique needs a town of at least this many
+// people in the cell (writing grew out of temple and palace accounting in
+// cities); keeping it does not.
 {
   "version": 1,
   "techniques": [
@@ -38,29 +44,29 @@
     {"id": "pottery", "name": "Pottery", "rate": 0.00004, "start_chance": 0.05,
      "affinity": {"storage": 1.0, "mobility": -1.0},
      "effects": {"famine": -0.2, "forage": 0.03, "harvest_buffer": 0.1}},
-    {"id": "sickles", "name": "Sickles and querns", "requires_crops": true, "rate": 0.0002,
+    {"id": "sickles", "name": "Sickles and querns", "requires_crops": true, "rate": 0.00007,
      "affinity": {"plant_reliance": 0.5},
      "effects": {"crop_yield": 0.1}},
-    {"id": "seed_selection", "name": "Seed selection", "requires_crops": true, "rate": 0.00015,
+    {"id": "seed_selection", "name": "Seed selection", "requires_crops": true, "rate": 0.00005,
      "affinity": {"innovation": 0.5},
      "effects": {"crop_yield": 0.15}},
-    {"id": "granaries", "name": "Granaries and storage pits", "requires": ["pottery"], "requires_crops": true, "rate": 0.0002,
+    {"id": "granaries", "name": "Granaries and storage pits", "requires": ["pottery"], "requires_crops": true, "rate": 0.00007,
      "affinity": {"storage": 1.0, "hierarchy": 0.3},
      "effects": {"harvest_buffer": 0.25, "famine": -0.3}},
-    {"id": "polished_axes", "name": "Polished stone axes", "requires_crops": true, "where": "forest", "rate": 0.0002,
+    {"id": "polished_axes", "name": "Polished stone axes", "requires_crops": true, "where": "forest", "rate": 0.00007,
      "effects": {"crop_yield": 0.2}},
-    {"id": "secondary_products", "name": "Milk, wool and cheese", "requires_herds": true, "rate": 0.0001,
+    {"id": "secondary_products", "name": "Milk, wool and cheese", "requires_herds": true, "rate": 0.00003,
      "requires_species": ["wild_sheep_goats", "aurochs", "wild_camels", "highland_camelids", "water_buffalo"],
      "effects": {"herd_yield": 0.5, "harvest_buffer": 0.05}},
     {"id": "irrigation", "name": "Irrigation canals", "requires": ["sickles"], "requires_crops": true,
-     "where": "river", "rate": 0.00008,
+     "where": "river", "rate": 0.00002,
      "affinity": {"hierarchy": 0.5, "kinship": 0.3},
-     "effects": {"crop_yield": 0.6, "harvest_buffer": 0.3}},
+     "effects": {"crop_yield": 1.5, "harvest_buffer": 0.3}},
     {"id": "terraces", "name": "Terraced fields", "requires": ["sickles"], "requires_crops": true, "where": "hills",
-     "rate": 0.00008, "affinity": {"kinship": 0.5},
+     "rate": 0.00002, "affinity": {"kinship": 0.5},
      "effects": {"crop_yield": 0.3}},
     {"id": "plough", "name": "Ox-drawn plough", "requires": ["sickles"], "requires_crops": true,
-     "requires_species": ["aurochs", "water_buffalo", "wild_horses"], "rate": 0.00004,
+     "requires_species": ["aurochs", "water_buffalo", "wild_horses"], "rate": 0.00001,
      "effects": {"crop_yield": 0.35}},
     {"id": "horse_riding", "name": "Horse riding", "requires_species": ["wild_horses"], "rate": 0.0001,
      "affinity": {"mobility": 0.8},
@@ -68,14 +74,25 @@
     {"id": "sailing", "name": "Sailing boats", "requires": ["canoes"], "where": "coast", "rate": 0.000004,
      "affinity": {"openness": 0.5},
      "effects": {"aquatic": 0.15, "contact": 0.5}},
-    {"id": "wheel", "name": "Wheel and cart", "requires": ["plough"], "rate": 0.00003,
+    {"id": "wheel", "name": "Wheel and cart", "requires": ["plough"], "rate": 0.00001,
      "effects": {"contact": 0.4, "crop_yield": 0.05}},
-    {"id": "calendar", "name": "Farming calendar", "requires_crops": true, "rate": 0.00006,
+    {"id": "calendar", "name": "Farming calendar", "requires_crops": true, "rate": 0.00002,
      "affinity": {"ritual": 0.6},
      "effects": {"harvest_buffer": 0.1, "crop_yield": 0.05}},
     {"id": "copper", "name": "Copper smelting", "requires": ["granaries"], "requires_crops": true, "where": "hills",
-     "rate": 0.00002,
+     "rate": 0.00001,
      "affinity": {"hierarchy": 0.5, "innovation": 0.5},
-     "effects": {"crop_yield": 0.03}}
+     "effects": {"crop_yield": 0.03}},
+    {"id": "bronze", "name": "Bronze working", "requires": ["copper"], "min_town": 2000, "rate": 0.00002,
+     "affinity": {"hierarchy": 0.5},
+     "effects": {"crop_yield": 0.05, "administration": 0.1}},
+    {"id": "writing", "name": "Writing", "requires": ["granaries", "calendar"], "min_town": 20000, "rate": 0.00001,
+     "affinity": {"hierarchy": 0.6, "ritual": 0.3},
+     "effects": {"administration": 1.0, "contact": 0.1}},
+    {"id": "bureaucracy", "name": "Scribal bureaucracy", "requires": ["writing"], "min_town": 20000, "rate": 0.0001,
+     "affinity": {"hierarchy": 0.8},
+     "effects": {"administration": 0.7, "harvest_buffer": 0.1}},
+    {"id": "roads", "name": "Built roads", "requires": ["wheel", "writing"], "min_town": 10000, "rate": 0.00005,
+     "effects": {"administration": 0.5, "contact": 0.3}}
   ]
 }

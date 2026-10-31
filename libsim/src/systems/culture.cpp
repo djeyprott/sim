@@ -139,6 +139,7 @@ std::array<double, kCultureVarCount> culture_variables(const World& w, const Sim
     }
     v[static_cast<int>(CultureVar::WildPlants)] = clamp01(plants / 4.0);
     v[static_cast<int>(CultureVar::Farming)] = s.env.farming.empty() ? 0.0 : clamp01(s.env.farming[c]);
+    v[static_cast<int>(CultureVar::Ruled)] = s.polity_of.empty() || s.polity_of[c] == 0 ? 0.0 : 1.0;
     return v;
 }
 

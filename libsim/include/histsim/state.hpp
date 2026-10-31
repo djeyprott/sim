@@ -140,6 +140,28 @@ struct Environment {
     std::vector<double> disease_mortality;
 };
 
+// A city: the towns of a cell, once they hold enough people. Its size is the
+// cell's urban share times its population.
+struct City {
+    std::uint32_t id = 0;
+    CellId cell = kInvalidCell;
+    std::string name;
+    Tick founded = 0;
+    Tick abandoned = kNever;
+};
+
+// A polity: a chiefdom, state or empire ruling a set of cells from a capital.
+struct Polity {
+    std::uint32_t id = 0;
+    std::string name;
+    CellId capital = kInvalidCell;
+    Tick founded = 0;
+    Tick ended = kNever;
+    std::uint32_t culture = 0;   // of the founders
+    std::uint32_t language = 0;
+    std::uint32_t parent = 0;    // the polity it broke away from, if any
+};
+
 // Where a technique was invented independently.
 struct Invention {
     Tick tick = 0;
@@ -180,6 +202,9 @@ enum class EventType : std::uint32_t {
     BondEvent = 10,       // a Bond cold event began; value = peak cooling in milli-degrees C
     DiseaseEmerged = 11,  // a disease appeared far from anywhere it already was; value = disease index
     Invention = 12,       // a technique was invented independently; value = technique index
+    CityFounded = 13,     // a town grew into a city; value = city id
+    PolityFounded = 14,   // value = polity id
+    PolityEnded = 15,     // value = polity id
 };
 
 struct Event {
@@ -244,6 +269,12 @@ struct YearRecord {
     std::int64_t farmers = 0;             // people, weighted by their share of food from farming
     std::int64_t disease_deaths_total = 0;  // running total of deaths from diseases
     std::uint32_t techniques = 0;           // techniques known somewhere
+    std::int64_t townspeople = 0;           // people living in towns and cities
+    std::uint32_t cities = 0;               // cities now
+    std::uint32_t polities = 0;             // living polities
+    std::uint32_t states = 0;               // of which states (with writing)
+    double largest_polity_km2 = 0.0;
+    std::int64_t largest_polity_people = 0;
     std::uint32_t domesticated = 0;       // species domesticated somewhere so far
 };
 
@@ -289,6 +320,15 @@ struct SimState {
     // Content::techniques[t]); and where each was invented independently.
     std::vector<std::uint64_t> techniques;
     std::vector<Invention> inventions;
+
+    // Towns and polities. Per cell: the share of people living in towns, the
+    // city there (0 = none) and the polity ruling it (0 = none). Entry 0 of
+    // `cities` and `polities` is a placeholder so 0 can mean "none".
+    std::vector<double> urban;
+    std::vector<std::uint32_t> city_of;
+    std::vector<City> cities;
+    std::vector<std::uint32_t> polity_of;
+    std::vector<Polity> polities;
 
     // ---- Derived data: rebuilt by refresh(), never saved or hashed.
     std::vector<std::uint32_t> cell_population;

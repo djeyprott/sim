@@ -64,7 +64,7 @@ TEST(technique_requirements_and_places) {
     CHECK(technique_usable(w, milk, river, 0, 1u << species(c, "wild_sheep_goats")));
     // Effects add up, each only where it applies.
     const std::uint64_t both = sickles | bit(tech(c, "irrigation"));
-    CHECK_NEAR(technique_effects(w, river, both).crop_yield, 0.1 + 0.6, 1e-12);
+    CHECK_NEAR(technique_effects(w, river, both).crop_yield, 0.1 + 1.5, 1e-12);
     CHECK_NEAR(technique_effects(w, dry_inland, both).crop_yield, 0.1, 1e-12);
     CHECK_EQ(technique_effects(w, river, 0).crop_yield, 0.0);
 }

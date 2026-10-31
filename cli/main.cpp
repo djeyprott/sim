@@ -6,6 +6,7 @@
 //   histsim world [--seed N] [--level L] [--ocean F]
 //   histsim languages [--seed N] [--level L] [--years Y] [--top N]
 //   histsim farming [--seed N] [--level L] [--years Y]
+//   histsim polities [--seed N] [--level L] [--years Y]
 //
 // With no arguments (for example, double-clicked in Explorer) it runs a short
 // demo and waits for Enter so the window stays open.
@@ -31,6 +32,7 @@
 
 #include "histsim/simulation.hpp"
 #include "histsim/systems/culture.hpp"
+#include "histsim/systems/polity.hpp"
 #include "histsim/view/map_modes.hpp"
 #include "histsim/view/png.hpp"
 #include "histsim/view/raster.hpp"
@@ -73,11 +75,14 @@ struct Options {
                  "                 crowding temperature rainfall rain_season growing soil\n"
                  "                 species capacity game temp_anomaly median_age language\n"
                  "                 language_family culture farming domesticates disease\n"
-                 "                 technology\n"
+                 "                 technology polity towns (polity borders are drawn on all)\n"
                  "  histsim farming [--seed N] [--level L] [--years Y]\n"
                  "                 where and when species were domesticated, techniques\n"
                  "                 invented and diseases emerged, Bond events, and farmers,\n"
                  "                 techniques and disease deaths every 500 years\n"
+                 "  histsim polities [--seed N] [--level L] [--years Y]\n"
+                 "                 towns, cities and polities every 500 years, then the largest\n"
+                 "                 polities alive\n"
                  "  histsim languages [--seed N] [--level L] [--years Y] [--top N]\n"
                  "                 family trees of the languages alive after Y years, largest\n"
                  "                 families first, with speakers and sample words\n"
@@ -353,6 +358,7 @@ int map_images(const Options& o) {
     histsim::view::RenderOptions ro;
     ro.coastlines = o.coastlines;
     ro.rivers = o.rivers;
+    ro.borders = &sim.state().polity_of;
     for (const auto& id : modes) {
         histsim::view::color_cells(sim, id, colors);
         histsim::view::render(raster, sim.world(), colors, rgba, ro);
@@ -470,6 +476,43 @@ int farming(const Options& o) {
     return 0;
 }
 
+// Towns, cities and polities: a timeline, then the largest polities now.
+int polities(const Options& o) {
+    Simulation sim = Simulation::create(o.params);
+    apply_due_now(sim, o, true);
+    advance(sim, o.years, o, true);
+    const histsim::SimState& s = sim.state();
+    const histsim::World& w = sim.world();
+    std::printf("Every 500 years:\n");
+    for (const histsim::YearRecord& r : s.history) {
+        if (r.year % 500 != 0) continue;
+        std::printf("  year %5lld  population %11lld  in towns %5.1f%%  cities %4u  polities %4u (states %3u)  "
+                    "largest %9.0f km^2, %9lld people\n",
+                    static_cast<long long>(r.year), static_cast<long long>(r.population),
+                    r.population > 0 ? 100.0 * static_cast<double>(r.townspeople) / static_cast<double>(r.population) : 0.0,
+                    r.cities, r.polities, r.states, r.largest_polity_km2, static_cast<long long>(r.largest_polity_people));
+    }
+    std::vector<std::uint32_t> living;
+    for (std::uint32_t id = 1; id < s.polities.size(); ++id) {
+        if (s.polities[id].ended == histsim::kNever) living.push_back(id);
+    }
+    std::vector<histsim::PolitySize> size(s.polities.size());
+    for (std::uint32_t id : living) size[id] = histsim::polity_size(w, s, id);
+    std::stable_sort(living.begin(), living.end(), [&](auto a, auto b) { return size[a].people > size[b].people; });
+    std::printf("\nLargest polities in year %lld (%zu living, %zu ever):\n", static_cast<long long>(sim.year()),
+                living.size(), s.polities.size() - 1);
+    for (std::size_t i = 0; i < living.size() && i < 15; ++i) {
+        const histsim::Polity& p = s.polities[living[i]];
+        const std::uint32_t city = s.city_of[p.capital];
+        std::printf("  %-14s %-8s %3zu cells %9.0f km^2 %9lld people  capital %s  since year %lld  (%s)\n",
+                    p.name.c_str(), histsim::polity_level(w, s, living[i]), size[living[i]].cells,
+                    size[living[i]].area_km2, static_cast<long long>(size[living[i]].people),
+                    city != 0 ? s.cities[city].name.c_str() : "(no city)",
+                    static_cast<long long>(p.founded / histsim::kTicksPerYear), s.cultures[p.culture].name.c_str());
+    }
+    return 0;
+}
+
 int world_info(const Options& o) {
     const histsim::World w = histsim::generate_test_world(o.params);
     std::size_t land = 0;
@@ -546,6 +589,9 @@ int main(int argc, char** argv) {
             if (args.size() < 3) usage("resume needs a snapshot file");
             const Options o = parse(args, 3);
             return run(Simulation::load(std::string(args[2])), o);
+        }
+        if (cmd == "polities") {
+            return polities(parse(args, 2));
         }
         if (cmd == "farming") {
             return farming(parse(args, 2));

@@ -61,7 +61,8 @@ public:
 
     // Map image. set_map_size rebuilds the pixel-to-cell lookup.
     void set_map_size(int64_t width, int64_t height);
-    godot::Ref<godot::Image> render_map(const godot::String& mode, bool coastlines, bool rivers = true);
+    godot::Ref<godot::Image> render_map(const godot::String& mode, bool coastlines, bool rivers = true,
+                                        bool borders = false);
     int64_t cell_at(int64_t x, int64_t y) const;
     // Array of [label, value] pairs (PackedStringArray each).
     godot::Array describe_cell(int64_t cell) const;

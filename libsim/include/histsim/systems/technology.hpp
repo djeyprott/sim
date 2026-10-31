@@ -46,6 +46,7 @@ bool technique_usable(const World& world, const TechniqueDef& technique, CellId 
 // Whether domesticates include crops and herds that feed people.
 struct Keeps {
     bool crops = false, herds = false;
+    double town = 0.0;  // people living in towns in the cell
 };
 Keeps keeps(const World& world, std::uint32_t domesticates);
 bool technique_usable(const World& world, const TechniqueDef& technique, CellId cell, std::uint64_t techniques,

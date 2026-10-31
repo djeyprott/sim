@@ -6,6 +6,7 @@
 #include <stdexcept>
 
 #include "histsim/language.hpp"
+#include "histsim/systems/polity.hpp"
 
 namespace histsim::view {
 
@@ -132,6 +133,15 @@ const ColorScale& technology_scale() {  // slate blue, light to dark
                                {12, hex("#26326a")}});
     return s;
 }
+const ColorScale& towns_scale() {  // brick, light to dark
+    static const ColorScale s({{0, hex("#f7ece6")},
+                               {0.03, hex("#ebc2ab")},
+                               {0.08, hex("#d68a63")},
+                               {0.15, hex("#ad5530")},
+                               {0.3, hex("#6b2c12")}});
+    return s;
+}
+const Rgba kStateless = hex("#dcd9cf");
 const ColorScale& disease_scale() {  // deaths per 1,000 a year: plum, light to dark
     static const ColorScale s({{0, hex("#f6eef4")},
                                {1, hex("#e2bfd8")},
@@ -209,6 +219,8 @@ const std::vector<MapModeInfo> kModes = {
     {"domesticates", "Domesticates", "Domesticated crops and animals the people know"},
     {"disease", "Disease", "Deaths from disease this year, per 1,000 people"},
     {"technology", "Technology", "Number of techniques the people know"},
+    {"polity", "Polities", "Chiefdoms, states and empires; each its own color"},
+    {"towns", "Towns", "Share of people living in towns and cities"},
 };
 
 // ---- Colors for languages and cultures.
@@ -341,6 +353,13 @@ Rgba language_family_color(const SimState& s, std::uint32_t lang) {
     return group_color(f, f);
 }
 
+Rgba polity_color(const SimState& s, std::uint32_t polity) {
+    if (polity == 0 || polity >= s.polities.size()) return kEmptyLand;
+    // Spread hues by the golden angle; vary lightness so neighbours differ.
+    return hsl(std::fmod(static_cast<double>(polity) * 137.50776 + 40.0, 360.0), 0.5,
+               0.42 + 0.16 * unit_hash(static_cast<std::uint64_t>(polity) * 7 + 3));
+}
+
 Rgba culture_color(const SimState& s, std::uint32_t culture) {
     if (culture == 0 || culture >= s.cultures.size()) return kEmptyLand;
     // Offset so a culture and its founding language family differ in hue.
@@ -442,6 +461,11 @@ void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rg
         } else if (id == "farming") {
             const double f = s.env.farming.empty() ? 0.0 : s.env.farming[c];
             out[c] = !inhabited ? kEmptyLand : (f < 0.01 ? kForagers : farming_scale()(f));
+        } else if (id == "polity") {
+            const std::uint32_t p = s.polity_of.empty() ? 0 : s.polity_of[c];
+            out[c] = !inhabited ? kEmptyLand : (p == 0 ? kStateless : polity_color(s, p));
+        } else if (id == "towns") {
+            out[c] = inhabited ? towns_scale()(s.urban.empty() ? 0.0 : s.urban[c]) : kEmptyLand;
         } else if (id == "technology") {
             const std::uint64_t t = s.techniques.empty() ? 0 : s.techniques[c];
             int count = 0;
@@ -532,6 +556,15 @@ Legend legend(std::string_view mode_id) {
         l.ramp = {{"1%", farming_scale()(0.0)}, {"25%", farming_scale()(0.25)}, {"50%", farming_scale()(0.5)},
                   {"75%", farming_scale()(0.75)}, {"100%", farming_scale()(1.0)}};
         l.swatches = {{"Foragers", kForagers}, {"Uninhabited", kEmptyLand}, {"Ocean", kOceanNeutral}};
+    } else if (id == "polity") {
+        l.title = "Polities";
+        l.swatches = {{"No ruler (bands, tribes, villages)", kStateless}, {"Uninhabited", kEmptyLand},
+                      {"Ocean", kOceanNeutral}};
+    } else if (id == "towns") {
+        l.title = "Share of people living in towns";
+        l.ramp = {{"0%", towns_scale()(0)}, {"3%", towns_scale()(0.03)}, {"8%", towns_scale()(0.08)},
+                  {"15%", towns_scale()(0.15)}, {"30%", towns_scale()(0.3)}};
+        l.swatches = empty_and_ocean;
     } else if (id == "technology") {
         l.title = "Techniques known";
         l.ramp = ramp_entries(technology_scale(), "%.0f");
@@ -567,6 +600,31 @@ Legend legend(std::string_view mode_id) {
 Legend legend(const Simulation& sim, std::string_view mode_id) {
     Legend l = legend(mode_id);
     const std::string id(map_mode(mode_id).id);
+    if (id == "polity") {
+        const SimState& s = sim.state();
+        std::vector<std::int64_t> people(s.polities.size(), 0);
+        for (CellId c = 0; c < s.polity_of.size(); ++c) people[s.polity_of[c]] += s.cell_population[c];
+        std::vector<std::uint32_t> order;
+        for (std::uint32_t i = 1; i < people.size(); ++i) {
+            if (people[i] > 0) order.push_back(i);
+        }
+        std::stable_sort(order.begin(), order.end(), [&](auto a, auto b) { return people[a] > people[b]; });
+        std::vector<LegendEntry> entries;
+        for (std::size_t i = 0; i < order.size() && i < 10; ++i) {
+            const std::uint32_t p = order[i];
+            entries.push_back({s.polities[p].name + " (" + polity_level(sim.world(), s, p) + "): " +
+                                   with_commas(people[p]),
+                               polity_color(s, p)});
+        }
+        if (order.size() > 10) {
+            entries.push_back(
+                {"+ " + with_commas(static_cast<long long>(order.size() - 10)) + " other polities", Rgba{0, 0, 0, 0}});
+        }
+        entries.insert(entries.end(), l.swatches.begin(), l.swatches.end());
+        l.swatches = std::move(entries);
+        l.title += " (" + with_commas(static_cast<long long>(order.size())) + ")";
+        return l;
+    }
     if (id != "language" && id != "language_family" && id != "culture") return l;
     const SimState& s = sim.state();
     // The largest groups by people, then a count of the rest.
@@ -719,6 +777,32 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
     if (!s.env.farm_capacity.empty() && s.env.farm_capacity[c] > 0.0) {
         f.push_back({"Farmland", fmt("%.2f people per km² if all farmed", s.env.farm_capacity[c] / w.grid.area_km2(c))});
     }
+    // Rule and towns.
+    if (!s.polity_of.empty() && s.polity_of[c] != 0) {
+        const std::uint32_t ruler = s.polity_of[c];
+        const Polity& pol = s.polities[ruler];
+        const double reach = polity_reach_km(w, s, pol.capital);
+        const double control = polity_control(w.grid.distance_km(pol.capital, c), reach);
+        const std::uint32_t capital_city = s.city_of.empty() ? 0 : s.city_of[pol.capital];
+        f.push_back({"Polity", pol.name + " (" + polity_level(w, s, ruler) + "), " +
+                                   (c == pol.capital ? std::string("capital here")
+                                                     : "capital " + (capital_city != 0 ? s.cities[capital_city].name
+                                                                                       : std::string("elsewhere"))) +
+                                   fmt(", control %.0f%%", 100.0 * control)});
+        const PolitySize z = polity_size(w, s, ruler);
+        f.push_back({"Realm", with_commas(static_cast<long long>(z.cells)) + " cells, " +
+                                  with_commas(std::llround(z.area_km2)) + " km², " + with_commas(z.people) +
+                                  " people; since year " + with_commas(static_cast<long long>(pol.founded / kTicksPerYear))});
+    } else {
+        f.push_back({"Polity", "none: bands, tribes and villages"});
+    }
+    if (!s.urban.empty() && s.urban[c] > 0.001) {
+        const double town = s.urban[c] * static_cast<double>(s.cell_population[c]);
+        const std::uint32_t city = s.city_of.empty() ? 0 : s.city_of[c];
+        f.push_back({"Towns", (city != 0 ? s.cities[city].name + ", " : std::string()) +
+                                  with_commas(std::llround(town)) + fmt(" people (%.0f%%)", 100.0 * s.urban[c])});
+    }
+
     // Techniques.
     if (!s.techniques.empty() && s.techniques[c] != 0) {
         std::string known_techs;

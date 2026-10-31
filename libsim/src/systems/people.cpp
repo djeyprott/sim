@@ -6,6 +6,7 @@
 
 #include "histsim/systems/culture.hpp"
 #include "histsim/systems/farming.hpp"
+#include "histsim/systems/polity.hpp"
 #include "histsim/systems/technology.hpp"
 #include "vital_rates.inc"
 
@@ -79,7 +80,9 @@ void DemographySystem::step(StepContext& ctx) {
                                   ? kFamineMortalityPerCrowding * (crowding - 1.0) *
                                         (1.0 + technique_effects(ctx.world, co.cell, techniques_in(s, co.cell)).famine)
                                   : 0.0;
-        const double mort_mult = std::min(kMaxMortalityMultiplier, 1.0 + famine);
+        // Towns are deadlier (crowding, dirt, water): the urban graveyard.
+        const double urban = s.urban.empty() ? 0.0 : s.urban[co.cell];
+        const double mort_mult = std::min(kMaxMortalityMultiplier, 1.0 + famine) * (1.0 + kUrbanMortality * urban);
         RngStream rng = ctx.rng(Stream::Demography, static_cast<std::uint32_t>(i));
 
         // Deaths: the life table (raised by famine) plus disease. Deaths are
@@ -290,6 +293,28 @@ void HistorySystem::step(StepContext& ctx) {
     std::uint64_t any = 0;
     for (std::uint64_t t : s.techniques) any |= t;
     for (; any != 0; any &= any - 1) ++r.techniques;
+    for (CellId c = 0; c < s.urban.size(); ++c) {
+        r.townspeople += static_cast<std::int64_t>(s.urban[c] * s.cell_population[c] + 0.5);
+        r.cities += s.city_of.empty() || s.city_of[c] == 0 ? 0 : 1;
+    }
+    // Polity sizes in one pass over the cells.
+    std::vector<double> area(s.polities.size(), 0.0);
+    std::vector<std::int64_t> people(s.polities.size(), 0);
+    for (CellId c = 0; c < s.polity_of.size(); ++c) {
+        const std::uint32_t id = s.polity_of[c];
+        if (id == 0) continue;
+        area[id] += ctx.world.grid.area_km2(c);
+        people[id] += s.cell_population[c];
+    }
+    for (std::uint32_t id = 1; id < s.polities.size(); ++id) {
+        if (s.polities[id].ended != kNever) continue;
+        ++r.polities;
+        if (polity_has_writing(ctx.world, s, id)) ++r.states;
+        if (area[id] > r.largest_polity_km2) {
+            r.largest_polity_km2 = area[id];
+            r.largest_polity_people = people[id];
+        }
+    }
     std::uint32_t ever = 0;
     for (const Domestication& d : s.domestications) ever |= 1u << d.species;
     for (; ever != 0; ever &= ever - 1) ++r.domesticated;

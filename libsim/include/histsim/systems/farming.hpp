@@ -40,7 +40,7 @@ public:
     // km^2 regionally). Later techniques will raise it.
     static constexpr double kCropDensity = 0.6;
     static constexpr double kHerdDensity = 0.15;
-    static constexpr double kFloodplainBonus = 0.5;
+    static constexpr double kFloodplainBonus = 1.0;
     // Learning a domesticate from a neighbour that knows it, per year (x 0.5
     // + openness, for 50,000 km^2 cells): farming spreads ~1 km a year, as
     // across Neolithic Europe.

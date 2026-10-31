@@ -8,6 +8,7 @@ add_executable(histsim_tests
     test_interventions.cpp
     test_m1.cpp
     test_rng.cpp
+    test_polity.cpp
     test_simulation.cpp
     test_technology.cpp
     test_view.cpp

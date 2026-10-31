@@ -40,6 +40,10 @@ struct RenderOptions {
     // Optional per-cell flags (size = cell count): flagged cells are lightened
     // and outlined, e.g. to preview the area an intervention will touch.
     const std::vector<std::uint8_t>* highlight = nullptr;
+    // Optional per-cell region ids (size = cell count), e.g. the polity ruling
+    // each cell: a line is drawn where land cells of different regions meet
+    // (and around a region where it meets unclaimed land).
+    const std::vector<std::uint32_t>* borders = nullptr;
 };
 
 // Fill `rgba` (width * height * 4 bytes) from one color per cell.

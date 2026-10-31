@@ -304,7 +304,7 @@ void load_phonology(Content& c, std::string_view text) {
 // ---- culture
 
 constexpr const char* kVars[] = {"crowding", "aquatic",     "seasonality", "growing_season",
-                                 "game",     "wild_plants", "farming"};
+                                 "game",     "wild_plants", "farming",     "ruled"};
 
 void load_culture(Content& c, std::string_view text) {
     const json::Value doc = json::parse(text, "data/culture.json");
@@ -323,7 +323,7 @@ void load_culture(Content& c, std::string_view text) {
             while (i < kCultureVarCount && key != kVars[i]) ++i;
             if (i == kCultureVarCount) {
                 fail(val, "is not a culture variable (crowding, aquatic, seasonality, growing_season, game, "
-                          "wild_plants, farming)");
+                          "wild_plants, farming, ruled)");
             }
             t.push[i] = val.as_number();
             if (t.push[i] < -1.0 || t.push[i] > 1.0) fail(val, "must be between -1 and 1");
@@ -390,6 +390,7 @@ void load_diseases(Content& c, std::string_view text) {
             }
         }
         d.emergence_min_population = v.number_or("emergence_min_population", 0.0);
+        d.emergence_min_town = v.number_or("emergence_min_town", 0.0);
         d.emergence_chance = unit(v, "emergence_chance", 0.0);
         d.present_at_start = v.has("present_at_start") && v.at("present_at_start").as_bool();
         for (const DiseaseDef& o : c.diseases) {
@@ -432,6 +433,7 @@ void load_techniques(Content& c, std::string_view text) {
         if (v.has("where")) t.where = static_cast<TechPlace>(pick(v.at("where"), kPlacesWhere));
         t.rate = unit(v, "rate", 0.0);
         t.start_chance = unit(v, "start_chance", 0.0);
+        t.min_town = v.number_or("min_town", 0.0);
         if (v.has("affinity")) {
             for (const auto& [key, val] : v.at("affinity").members()) {
                 std::size_t i = 0;
@@ -449,7 +451,9 @@ void load_techniques(Content& c, std::string_view text) {
             else if (key == "harvest_buffer") t.effects.harvest_buffer = x;
             else if (key == "famine") t.effects.famine = x;
             else if (key == "contact") t.effects.contact = x;
-            else fail(val, "is not an effect (crop_yield, herd_yield, forage, aquatic, harvest_buffer, famine, contact)");
+            else if (key == "administration") t.effects.administration = x;
+            else fail(val, "is not an effect (crop_yield, herd_yield, forage, aquatic, harvest_buffer, famine, "
+                           "contact, administration)");
         }
         for (const TechniqueDef& o : c.techniques) {
             if (o.id == t.id) fail(v.at("id"), "duplicates technique \"" + t.id + "\"");

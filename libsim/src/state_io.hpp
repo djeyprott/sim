@@ -261,6 +261,26 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(v.technique);
         ar.u32(v.culture);
     });
+    doubles(ar, s.urban);
+    vec(ar, s.city_of, [&](std::uint32_t& v) { ar.u32(v); });
+    vec(ar, s.cities, [&](City& c) {
+        ar.u32(c.id);
+        ar.u32(c.cell);
+        str(ar, c.name);
+        ar.i64(c.founded);
+        ar.i64(c.abandoned);
+    });
+    vec(ar, s.polity_of, [&](std::uint32_t& v) { ar.u32(v); });
+    vec(ar, s.polities, [&](Polity& p) {
+        ar.u32(p.id);
+        str(ar, p.name);
+        ar.u32(p.capital);
+        ar.i64(p.founded);
+        ar.i64(p.ended);
+        ar.u32(p.culture);
+        ar.u32(p.language);
+        ar.u32(p.parent);
+    });
     vec(ar, s.domestications, [&](Domestication& d) {
         ar.i64(d.tick);
         ar.u32(d.cell);
@@ -283,6 +303,12 @@ void serialize(Ar& ar, SimState& s) {
         ar.i64(r.farmers);
         ar.i64(r.disease_deaths_total);
         ar.u32(r.techniques);
+        ar.i64(r.townspeople);
+        ar.u32(r.cities);
+        ar.u32(r.polities);
+        ar.u32(r.states);
+        ar.f64(r.largest_polity_km2);
+        ar.i64(r.largest_polity_people);
         ar.u32(r.domesticated);
     });
 }

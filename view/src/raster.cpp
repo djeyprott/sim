@@ -131,6 +131,7 @@ void render(const MapRaster& raster, const World& world, const std::vector<Rgba>
     const auto& cells = raster.cells();
     const Rgba coast = coastline_color();
     const Rgba outline = hex("#eda100");
+    const Rgba border = hex("#3b2a2a");
     const std::vector<std::uint8_t>* hl = options.highlight;
     auto lit = [&](CellId c) { return hl != nullptr && (*hl)[c] != 0; };
 
@@ -148,6 +149,15 @@ void render(const MapRaster& raster, const World& world, const std::vector<Rgba>
                 if (world.is_land[right] != land || world.is_land[down] != land) {
                     color = coast;
                 }
+            }
+            if (options.borders != nullptr && world.is_land[c]) {
+                const auto& region = *options.borders;
+                const CellId right = cells[static_cast<std::size_t>(y) * w + (x + 1) % w];
+                const CellId down = y + 1 < h ? cells[i + w] : c;
+                const auto differs = [&](CellId o) {
+                    return world.is_land[o] && region[o] != region[c] && (region[o] != 0 || region[c] != 0);
+                };
+                if (differs(right) || differs(down)) color = border;
             }
             if (hl != nullptr) {
                 const CellId right = cells[static_cast<std::size_t>(y) * w + (x + 1) % w];

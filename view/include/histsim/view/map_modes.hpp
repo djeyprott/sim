@@ -75,6 +75,7 @@ std::string sample_words(const Simulation& sim, std::uint32_t language, std::siz
 Rgba language_color(const SimState& state, std::uint32_t language);
 Rgba language_family_color(const SimState& state, std::uint32_t language);
 Rgba culture_color(const SimState& state, std::uint32_t culture);
+Rgba polity_color(const SimState& state, std::uint32_t polity);
 
 // Names of the wild species native to a cell.
 std::vector<std::string> native_species(const Simulation& sim, CellId cell);

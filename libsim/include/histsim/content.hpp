@@ -136,6 +136,7 @@ enum class CultureVar : std::uint8_t {
     Game,
     WildPlants,
     Farming,
+    Ruled,
     Count
 };
 inline constexpr std::size_t kCultureVarCount = static_cast<std::size_t>(CultureVar::Count);
@@ -186,6 +187,7 @@ struct DiseaseDef {
     // Emergence.
     std::uint32_t hosts = 0;  // species bits; 0 = none needed
     double emergence_min_population = 0.0;
+    double emergence_min_town = 0.0;  // people in towns in the cell
     double emergence_chance = 0.0;
     bool present_at_start = false;
 };
@@ -205,6 +207,7 @@ struct TechEffects {
     double harvest_buffer = 0.0;
     double famine = 0.0;
     double contact = 0.0;
+    double administration = 0.0;
 };
 
 struct TechniqueDef {
@@ -218,6 +221,7 @@ struct TechniqueDef {
     double rate = 0.0;                   // inventions per year per sqrt(10,000 people)
     std::array<double, kMaxTraits> affinity{};
     double start_chance = 0.0;
+    double min_town = 0.0;               // people in towns needed in the cell
     TechEffects effects;
 };
 

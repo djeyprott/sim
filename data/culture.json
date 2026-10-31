@@ -18,12 +18,13 @@
 //   game            abundance of game, relative to undisturbed land
 //   wild_plants     wild ancestors of crops native to the cell (4 or more = 1)
 //   farming         share of the people's food from crops and herds
+//   ruled           1 where a chiefdom or state rules the cell
 //
 // The pushes follow forager ethnography: storable aquatic foods go with
 // settled, ranked societies (the Pacific Northwest); strong seasons with
 // food storage and wide sharing; crowding with raiding and clans. Farming
 // settles people, makes them store, rank and hold land by lineage, and gives
-// more to fight over.
+// more to fight over. Rulers bring rank, war and ceremony.
 {
   "version": 1,
   "traits": [
@@ -41,19 +42,19 @@
      "push": {"crowding": -0.25, "aquatic": -0.2, "seasonality": 0.1, "farming": -0.2}},
     {"id": "hierarchy", "name": "Hierarchy", "low": "egalitarian", "high": "ranked",
      "drift": 0.04, "adapt": 0.15, "base": 0.15,
-     "push": {"aquatic": 0.45, "crowding": 0.25, "farming": 0.25}},
+     "push": {"aquatic": 0.45, "crowding": 0.25, "farming": 0.25, "ruled": 0.25}},
     {"id": "kinship", "name": "Kinship", "low": "loose ties", "high": "strong clans",
      "drift": 0.05, "adapt": 0.1, "base": 0.45,
      "push": {"crowding": 0.25, "aquatic": 0.15, "farming": 0.2}},
     {"id": "warfare", "name": "Warfare", "low": "peaceful", "high": "raiding",
      "drift": 0.06, "adapt": 0.2, "base": 0.25,
-     "push": {"crowding": 0.45, "game": -0.15, "farming": 0.1}},
+     "push": {"crowding": 0.45, "game": -0.15, "farming": 0.1, "ruled": 0.1}},
     {"id": "openness", "name": "Openness", "low": "closed", "high": "open to outsiders",
      "drift": 0.06, "adapt": 0.1, "base": 0.55,
      "push": {"seasonality": 0.15, "crowding": -0.2}},
     {"id": "ritual", "name": "Ritual", "low": "plain", "high": "elaborate",
      "drift": 0.06, "adapt": 0.05, "base": 0.4,
-     "push": {"aquatic": 0.2, "crowding": 0.15}},
+     "push": {"aquatic": 0.2, "crowding": 0.15, "ruled": 0.2}},
     {"id": "gender_roles", "name": "Gender roles", "low": "fluid", "high": "strict",
      "drift": 0.05, "adapt": 0.1, "base": 0.45,
      "push": {"game": 0.2}},

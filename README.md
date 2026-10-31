@@ -17,9 +17,10 @@ simulation core on a geodesic world grid has:
 - endemic diseases and epidemics;
 - early techniques, invented, borrowed and forgotten.
 
-A Godot viewer shows it as a map or globe with twenty-one map modes, world
-charts, a cell inspector and a god mode. States, trade and cities come next,
-in M3.
+M3 (states and trade) is under way: towns grow into named cities, and
+chiefdoms and states form, expand, split and collapse. A Godot viewer shows it
+as a map or globe with twenty-three map modes, polity borders, world charts,
+a cell inspector and a god mode.
 
 ## Download
 
@@ -66,6 +67,9 @@ ctest --test-dir build --output-on-failure
 ./build/cli/histsim run --seed 1 --years 300 --report-every 50 \
     --at 100:eruption:10 --at 150:plague:2.4,27.7:800:0.4 \
     --at 200:climate:2.4,27.7:1000:0:-0.5:20
+
+# Towns, cities and polities over 8,000 years
+./build/cli/histsim polities --years 8000
 
 # Where and when farming began, Bond events, and the share of farmers
 ./build/cli/histsim farming --years 3000

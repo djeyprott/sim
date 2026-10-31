@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "histsim/portable_math.hpp"
+#include "histsim/systems/polity.hpp"
 
 namespace histsim {
 
@@ -58,7 +59,9 @@ void DiseaseSystem::step(StepContext& ctx) {
             continue;
         }
         const double pop = static_cast<double>(s.cell_population[c]);
-        const double density = pop / w.grid.area_km2(c);
+        // Towns pack people together: more contact than the cell average.
+        const double urban = s.urban.empty() ? 0.0 : s.urban[c];
+        const double density = pop / w.grid.area_km2(c) * (1.0 + kUrbanCrowding * urban);
         const double farming = s.env.farming.empty() ? 0.0 : s.env.farming[c];
         const std::uint32_t known = s.domesticates.empty() ? 0 : s.domesticates[c];
         RngStream rng = ctx.rng(Stream::Disease, c);
@@ -81,6 +84,7 @@ void DiseaseSystem::step(StepContext& ctx) {
             // Emergence: zoonoses where people keep the hosts, others in
             // their niche, both only among enough people.
             if (!s.disease_present[k] && def.emergence_chance > 0.0 && pop >= def.emergence_min_population &&
+                urban * pop >= def.emergence_min_town &&
                 (def.hosts == 0 || (known & def.hosts) != 0)) {
                 if (rng.uniform() < def.emergence_chance * suit) {
                     s.disease_present[k] = 1;

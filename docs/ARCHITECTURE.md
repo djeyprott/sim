@@ -49,6 +49,7 @@ godot viewer ── view ───┘                                   │
 | `language.hpp` | Languages as objects: proto-language generation, regular sound changes, word replacement, lexical similarity, names. |
 | `systems/disease.hpp` | Endemic disease burdens and epidemics: emergence, outbreaks, immunity, spread. |
 | `systems/technology.hpp` | Techniques known per cell: invention, borrowing, forgetting, and their effects. |
+| `systems/polity.hpp` | Towns and cities (settlement system), and chiefdoms, states and empires (polity system). |
 | `systems/farming.hpp` | Domestication, knowledge of domesticates, farming share, farmland capacity and harvests. |
 | `systems/culture.hpp` | Culture and dialect drift, contact, adaptation, language shift, assimilation, splits, extinctions; founding new peoples. |
 | `view/` (separate library) | Map modes, color scales, legends, pixel-to-cell rasterizing and PNG output. Display only: it reads state and never writes it, so the determinism rules do not apply to it. |
@@ -211,6 +212,24 @@ forager tools (bow, nets, canoes, pottery) spread early; granaries, irrigation,
 milk and wool, polished axes and the plough follow farming over thousands of
 years; copper and horse riding come late.
 
+### Towns, cities and early states (M3)
+
+| Process | Model |
+| --- | --- |
+| Towns | Each cell's share of people in towns moves 1% a year toward 0.08 × (people fed by farmland per km² − 0.4), up to 35%, plus 4 points at a capital. A cell whose towns hold 5,000 people has a city, named in its people's language; below a third of that it is abandoned. Towns raise mortality (× 1 + 0.3 × town share) and disease contact (density × 1 + 20 × town share); crowd diseases (pox, measles) emerge only where towns hold 20,000–40,000 people. |
+| Formation | Every 5 years, a stateless cell with farming ≥ 50%, at least 0.4 people per km² and hierarchy ≥ 0.3 founds a polity with chance 1% × hierarchy × (0.5 + circumscription) × density factor, where circumscription is the share of neighbours that are sea or much poorer land (Carneiro). |
+| Reach | Control of a cell = 1 / (1 + (distance from the capital / reach)²); reach = 100 km × (1 + administration) × (1 + 0.3 contact). Writing (+1), bureaucracy (+0.7), roads (+0.5) and bronze (+0.1) add administration. A chiefdom holds about one cell; a state with writing a ring around its capital. |
+| Expansion | Each year a polity tries the neighbouring cell it would control best (at least 30%): stateless land with chance 3% × control × (0.5 + warfare) × strength ratio; another polity's cell when its control-weighted strength there is more than 1.5 times the owner's plus the local people. |
+| Breakdown | Provinces under 20% control secede (1% a year); polities of 6 or more cells split in civil war (0.4% × (1 − mean control)); and whole polities collapse, chiefdoms 0.6% a year and states 0.15%, more under famine. Chiefdoms rise and fall within a century or two (chiefly cycling), states last longer. |
+| Culture | Being ruled pushes hierarchy, warfare and ritual up. |
+
+Writing needs granaries, a calendar and a town of 20,000 people to be
+invented (not to be kept). At level 5 chiefdoms appear a few centuries after
+farming, thousands rise and fall, and the first states (with writing) appear
+around 3,500–7,000 years after the first crops; the largest early states hold
+0.2–0.8 million km², the range of archaic states in Seshat. `histsim
+polities` prints the timeline and the largest polities.
+
 ### Interventions
 
 `Simulation::apply(Command)` changes a running world: a volcanic eruption, a
@@ -299,7 +318,7 @@ generator can fill it without changing systems.
 | M0 Foundations (done) | Grid, test-world generator, scheduler, RNG, snapshots, headless runner | Sim API, map viewer | Identical replays on Windows, Linux and macOS |
 | M1 Living planet (done) | Climate and environment systems, cohort demography, migration, foragers | Globe, climate and population map modes, pyramid, charts | Forager populations settle near carrying capacity (`m1_gate_populations_settle_near_capacity`) |
 | M2 Neolithic (done) | Agriculture, herding, disease, culture and language drift, early tech | Culture and language map modes, language tree | Farming arises in several plausible regions |
-| **M3 States and trade** (next) | Goods, markets, transport, polities, war, religion, notable agents, forced labor and the slave trade | Trade flows, inspectors, explain view, timeline | Polity sizes track Seshat ranges by era |
+| **M3 States and trade** (in progress: towns, cities and early states done) | Goods, markets, transport, polities, war, religion, notable agents, forced labor and the slave trade | Trade flows, inspectors, explain view, timeline | Polity sizes track Seshat ranges by era |
 | M4 Modern era | Energy, carbon cycle, demographic transition, Earth importer, procedural generator | God mode, branch comparison, modding tools | Full runs to the near future on Earth and generated worlds |
 
 M0 to M3 run on the generated test world, so the foundation is solid before any

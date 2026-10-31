@@ -19,6 +19,7 @@ add_library(histsim
     src/systems/culture.cpp
     src/systems/disease.cpp
     src/systems/farming.cpp
+    src/systems/polity.cpp
     src/systems/technology.cpp
     src/rng.cpp
     src/scheduler.cpp

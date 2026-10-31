@@ -55,6 +55,7 @@ bool technique_usable(const World& w, const TechniqueDef& t, CellId c, std::uint
     if (t.requires_crops && !kept.crops) return false;
     if (t.requires_herds && !kept.herds) return false;
     if (t.requires_species != 0 && (known & t.requires_species) == 0) return false;
+    if (t.min_town > kept.town) return false;
     return technique_place_ok(w, c, t.where);
 }
 
@@ -78,6 +79,7 @@ TechEffects technique_effects(const World& w, CellId c, std::uint64_t techs) {
         e.harvest_buffer += x.harvest_buffer;
         e.famine += x.famine;
         e.contact += x.contact;
+        e.administration += x.administration;
     }
     e.harvest_buffer = std::min(0.8, e.harvest_buffer);
     e.famine = std::max(-0.8, e.famine);
@@ -122,7 +124,8 @@ void TechnologySystem::step(StepContext& ctx) {
         const double innovation = i_innovation < nt ? ways[i_innovation] : 0.5;
         const double openness = i_openness < nt ? ways[i_openness] : 0.5;
         const std::uint32_t known = s.domesticates.empty() ? 0 : s.domesticates[c];
-        const Keeps kept = keeps(w, known);
+        Keeps kept = keeps(w, known);
+        kept.town = s.urban.empty() ? 0.0 : s.urban[c] * pop;
         std::uint64_t& mine = s.techniques[c];
         RngStream rng = ctx.rng(Stream::Technology, c);
 
@@ -173,7 +176,10 @@ void TechnologySystem::step(StepContext& ctx) {
         for (std::size_t k = 0; k < techs.size(); ++k) {
             if (!((mine >> k) & 1u)) continue;
             double loss = pop < kForgetBelowPeople ? kForgetting : 0.0;
-            if (!technique_usable(w, techs[k], c, mine & ~(std::uint64_t{1} << k), known, kept)) loss += kFading;
+            // A town is needed to invent writing, not to keep it.
+            Keeps keep_check = kept;
+            keep_check.town = 1e300;
+            if (!technique_usable(w, techs[k], c, mine & ~(std::uint64_t{1} << k), known, keep_check)) loss += kFading;
             if (loss > 0.0 && rng.uniform32() < loss) mine &= ~(std::uint64_t{1} << k);
         }
     }

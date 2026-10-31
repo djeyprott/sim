@@ -11,6 +11,7 @@
 #include "histsim/systems/culture.hpp"
 #include "histsim/systems/disease.hpp"
 #include "histsim/systems/farming.hpp"
+#include "histsim/systems/polity.hpp"
 #include "histsim/systems/technology.hpp"
 #include "histsim/systems/people.hpp"
 #include "state_io.hpp"
@@ -34,11 +35,13 @@ void Simulation::install_systems() {
     scheduler_.add(std::make_unique<ClimateSystem>());
     scheduler_.add(std::make_unique<EnvironmentSystem>());
     scheduler_.add(std::make_unique<FarmingSystem>());
+    scheduler_.add(std::make_unique<SettlementSystem>());
     scheduler_.add(std::make_unique<DiseaseSystem>());  // sets this year's disease mortality
     scheduler_.add(std::make_unique<DemographySystem>());
     scheduler_.add(std::make_unique<MigrationSystem>());
     scheduler_.add(std::make_unique<CultureSystem>());
     scheduler_.add(std::make_unique<TechnologySystem>());
+    scheduler_.add(std::make_unique<PolitySystem>());
     scheduler_.add(std::make_unique<HistorySystem>());
 }
 
@@ -61,6 +64,12 @@ Simulation Simulation::create(const WorldParams& params) {
     s.env.farm_capacity.assign(n, 0.0);
     s.domesticates.assign(n, 0);
     s.domestication.assign(w.wild_stands.size(), 0.0);
+    // No towns or polities yet: bands and tribes.
+    s.urban.assign(n, 0.0);
+    s.city_of.assign(n, 0);
+    s.cities.assign(1, City{});
+    s.polity_of.assign(n, 0);
+    s.polities.assign(1, Polity{});
     s.env.game.assign(n, 1.0);
     for (CellId c = 0; c < n; ++c) {
         if (!w.is_land[c]) s.env.game[c] = 0.0;

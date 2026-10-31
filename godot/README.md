@@ -3,7 +3,7 @@
 A simple interface for the simulation: a flat map or a globe with switchable
 map modes and legends (terrain, biomes, climate, rivers, soils, wild species,
 population, languages, language families, cultures, farming, known
-domesticates, disease and technology, and more), play/pause and
+domesticates, disease, technology, polities and towns, and more), play/pause and
 speed controls, world charts of population vs. capacity and global
 temperature, a hover inspector with the cell's age pyramid and its peoples
 (language, lineage, sample words, culture and its ways, farming, crops and
@@ -46,6 +46,7 @@ godot --headless --path godot/project --script res://tests/smoke.gd
 | Space | Play / pause |
 | 1-9, 0 | Switch map mode (the rest are in the list) |
 | Rivers checkbox | Show / hide rivers (line width grows with flow) |
+| Borders checkbox | Show / hide the borders of chiefdoms and states |
 | G | Toggle map / globe (drag to turn, scroll to zoom) |
 | . (period) | Step one year while paused |
 | F2 | Show / hide god mode |
