@@ -1,4 +1,5 @@
 // Towns, cities and polities (M3 slice 1).
+#include <algorithm>
 #include <set>
 
 #include "histsim/simulation.hpp"
@@ -42,7 +43,7 @@ TEST(polity_chiefdoms_cycle_and_states_form_with_writing) {
     WorldParams p;
     p.grid_level = 4;
     Simulation sim = Simulation::create(p);
-    sim.step_years(4500);
+    sim.step_years(5200);
     const SimState& s = sim.state();
     const World& w = sim.world();
     // Consistency: every ruled cell is inhabited and ruled by a living
@@ -103,8 +104,12 @@ TEST(polity_chiefdoms_cycle_and_states_form_with_writing) {
         if (a.ended == kNever) CHECK(s.polities[a.a].ended == kNever && s.polities[a.b].ended == kNever);
     }
     CHECK_EQ(s.ledger.initial_population + s.ledger.births - s.ledger.deaths + s.ledger.added, s.total_population());
-    CHECK(states >= 1);
     CHECK(s.history.back().states == states);
+    // States (with writing) have arisen by now, though one may have fallen
+    // just before this year.
+    std::uint32_t most_states = 0;
+    for (const YearRecord& r : s.history) most_states = std::max(most_states, r.states);
+    CHECK(most_states >= 1);
     // Cities: unique names, enough townspeople where they stand.
     std::set<std::string> names;
     std::size_t cities = 0;

@@ -26,11 +26,15 @@
 // overlord rebels (a war for independence); a vassal held firmly is absorbed.
 // Civil wars (polity.hpp) are wars for independence too.
 //
-// Nomads. Where herds feed most people, horses are ridden and the people are
-// warlike, confederations of mounted herders form (polity.hpp). Their rule
-// reaches far, they raise large levies, and each year they may raid a settled
-// neighbour: carrying off part of its goods and killing some of its people,
-// until it agrees to pay tribute.
+// Nomads. On open pasture where herds feed most people, horses are ridden and
+// the people are warlike, confederations of mounted herders form (polity.hpp),
+// more readily the richer the farmers within riding range: the steppe empires
+// rose opposite rich agrarian states (Barfield 1989). Their rule reaches far,
+// they raise large levies, and each year they may raid the richest settled
+// farmers within kRaidKm (towns first), carrying off goods and killing some
+// people, until the victims' rulers agree to pay tribute. Nomads who take a
+// settled realm's capital in war rule it from there as a conquest dynasty and
+// settle down over a few generations.
 #pragma once
 
 #include <vector>
@@ -81,12 +85,22 @@ public:
     static constexpr double kRebellion = 0.03;
     static constexpr double kAbsorb = 0.01;        // chance a year a firmly held vassal is absorbed
     static constexpr double kAbsorbControl = 0.5;
-    // Nomad raids: chance a year, share of goods taken, share of people killed,
-    // and chance a successful raid makes a weaker victim pay tribute.
-    static constexpr double kRaid = 0.2;
+    // Nomad raids: chance a year, reach (from any cell the nomads hold),
+    // share of goods taken, share of people killed, and chance a successful
+    // raid makes the victim's ruler pay tribute (if the nomads are at least
+    // kRaidTributeRatio times as strong). The raiders' strength falls with
+    // their control at the distance; defenders fight with their ruler's
+    // control there, or with the villagers' own levy.
+    static constexpr double kRaid = 0.3;
+    static constexpr double kRaidKm = 600.0;
     static constexpr double kRaidLoot = 0.3;
     static constexpr double kRaidDeaths = 0.01;
-    static constexpr double kRaidTribute = 0.1;
+    static constexpr double kRaidTribute = 0.2;
+    static constexpr double kRaidTributeRatio = 0.5;
+    // Nomads who take the capital of a state (with writing) or of a polity
+    // seated in a city, in a war for tribute, and are this many times as
+    // strong rule it instead.
+    static constexpr double kConquestDynastyRatio = 1.5;
     // The toll of war on stability (Polity::shock, which PolitySystem lets
     // fade): land lost (per share of people in it), war dead (per share of
     // people), a lost war, a raid; a won war eases it.
@@ -96,6 +110,13 @@ public:
     static constexpr double kShockRaid = 0.05;
     static constexpr double kVictoryRelief = 0.1;
 };
+
+// The cells within `km` of a cell (itself included), by walking neighbours.
+void cells_within(const World& world, CellId cell, double km, std::vector<CellId>& out);
+
+// What raiders could carry off from a cell: people in towns plus a twentieth
+// of the rest, where settled farmers live (0 for herders and foragers).
+double raid_wealth(const SimState& state, CellId cell);
 
 // Each living polity's own fighting strength (levy x quality), by polity id.
 std::vector<double> polity_strengths(const World& world, const SimState& state);

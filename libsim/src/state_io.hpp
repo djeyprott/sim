@@ -305,6 +305,7 @@ void serialize(Ar& ar, SimState& s) {
         for (double& x : p.pressure) ar.f64(x);
         u8(ar, p.fate);
         ar.u8(p.fate_cause);
+        ar.i64(p.settling_since);
     });
     doubles(ar, s.stocks);
     doubles(ar, s.prices);
@@ -340,6 +341,7 @@ void serialize(Ar& ar, SimState& s) {
     vec(ar, s.strife, [&](std::uint8_t& v) { ar.u8(v); });
     ar.i64(s.war_deaths_total);
     ar.u32(s.raids);
+    vec(ar, s.last_raid, [&](Tick& t) { ar.i64(t); });
     vec(ar, s.domestications, [&](Domestication& d) {
         ar.i64(d.tick);
         ar.u32(d.cell);

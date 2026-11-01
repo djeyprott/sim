@@ -181,7 +181,9 @@ const Rgba kPeace = hex("#dcd9cf");
 const Rgba kAtWar = hex("#f2c4b8");    // ruled by a polity at war
 const Rgba kFighting = hex("#d9603b");  // battles here
 const Rgba kTaken = hex("#8c1d18");     // changed hands in war
-const Rgba kRaided = hex("#7a3d8f");    // raided by nomads
+const Rgba kRaided = hex("#7a3d8f");    // raided by nomads this year
+const Rgba kRaidedLately = hex("#c9a3d6");  // raided in the last kRaidMemoryYears
+constexpr std::int64_t kRaidMemoryYears = 20;
 
 Rgba lighten(Rgba c, double t) {
     auto mixc = [&](std::uint8_t v) { return static_cast<std::uint8_t>(std::lround(v + (255.0 - v) * t)); };
@@ -405,6 +407,11 @@ Rgba language_family_color(const SimState& s, std::uint32_t lang) {
 
 Rgba polity_color(const SimState& s, std::uint32_t polity) {
     if (polity == 0 || polity >= s.polities.size()) return kEmptyLand;
+    // Nomad confederations share an ochre-brown family, so they stand out.
+    if (s.polities[polity].nomadic) {
+        return hsl(28.0 + 16.0 * unit_hash(static_cast<std::uint64_t>(polity) * 13 + 5), 0.55,
+                   0.32 + 0.14 * unit_hash(static_cast<std::uint64_t>(polity) * 7 + 3));
+    }
     // Spread hues by the golden angle; vary lightness so neighbours differ.
     return hsl(std::fmod(static_cast<double>(polity) * 137.50776 + 40.0, 360.0), 0.5,
                0.42 + 0.16 * unit_hash(static_cast<std::uint64_t>(polity) * 7 + 3));
@@ -562,6 +569,9 @@ void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rg
                 out[c] = kTaken;
             } else if (strife == 1) {
                 out[c] = kFighting;
+            } else if (s.last_raid.size() == n && s.last_raid[c] != kNever &&
+                       s.tick - s.last_raid[c] <= kRaidMemoryYears * kTicksPerYear) {
+                out[c] = kRaidedLately;
             } else {
                 const std::uint32_t p = s.polity_of.empty() ? 0 : s.polity_of[c];
                 out[c] = p != 0 && at_war[p] ? kAtWar : kPeace;
@@ -679,7 +689,7 @@ Legend legend(std::string_view mode_id) {
                   {"15%", towns_scale()(0.15)}, {"30%", towns_scale()(0.3)}};
         l.swatches = empty_and_ocean;
     } else if (id == "realms") {
-        l.title = "Realms (subjects in lighter shades)";
+        l.title = "Realms (subjects in lighter shades; nomad confederations in browns)";
         l.swatches = {{"No ruler (bands, tribes, villages)", kStateless}, {"Uninhabited", kEmptyLand},
                       {"Ocean", kOceanNeutral}};
     } else if (id == "stability") {
@@ -690,6 +700,7 @@ Legend legend(std::string_view mode_id) {
     } else if (id == "war") {
         l.title = "War this year";
         l.swatches = {{"Changed hands in war", kTaken}, {"Battles", kFighting}, {"Raided by nomads", kRaided},
+                      {"Raided in the last 20 years", kRaidedLately},
                       {"Ruled by a polity at war", kAtWar}, {"At peace", kPeace}, {"Uninhabited", kEmptyLand},
                       {"Ocean", kOceanNeutral}};
     } else if (id == "trade") {
@@ -783,7 +794,8 @@ Legend legend(const Simulation& sim, std::string_view mode_id) {
         std::vector<LegendEntry> entries;
         for (std::size_t i = 0; i < order.size() && i < 10; ++i) {
             const std::uint32_t p = order[i];
-            std::string label = s.polities[p].name + ": " + with_commas(people[p]);
+            std::string label = s.polities[p].name + (s.polities[p].nomadic ? " (nomads)" : "") + ": " +
+                                with_commas(people[p]);
             if (subjects[p] > 0) {
                 label += " (" + with_commas(static_cast<long long>(subjects[p])) +
                          (subjects[p] == 1 ? " subject)" : " subjects)");
@@ -1015,6 +1027,9 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
                                   with_commas(std::llround(town)) + fmt(" people (%.0f%%)", 100.0 * s.urban[c])});
     }
 
+    if (s.last_raid.size() == w.cell_count() && s.last_raid[c] != kNever) {
+        f.push_back({"Last raided", "by nomads in year " + with_commas(static_cast<long long>(s.last_raid[c] / kTicksPerYear))});
+    }
     // Strife this year.
     if (s.strife.size() == w.cell_count() && s.strife[c] != 0) {
         const char* what = s.strife[c] == 3 ? "raided by nomads" : s.strife[c] == 2 ? "taken in war" : "battles";

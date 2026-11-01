@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "histsim/language.hpp"
+#include "histsim/systems/farming.hpp"
 #include "histsim/systems/technology.hpp"
 #include "histsim/systems/war.hpp"
 
@@ -239,6 +240,16 @@ void PolitySystem::step(StepContext& ctx) {
         }
     }
 
+    // ---- Conquest dynasties settle down.
+    for (std::size_t id = 1; id < np; ++id) {
+        Polity& p = s.polities[id];
+        if (p.ended == kNever && p.nomadic && p.settling_since != kNever &&
+            ctx.tick >= p.settling_since + kSettleYears * kTicksPerYear) {
+            p.nomadic = false;
+            p.settling_since = kNever;
+        }
+    }
+
     // ---- Reach and strength.
     std::vector<double> reach(np, 0.0), strength(np, 0.0);
     for (std::size_t id = 1; id < np; ++id) {
@@ -437,6 +448,7 @@ void PolitySystem::step(StepContext& ctx) {
         for (std::size_t k = 0; k < content.techniques.size(); ++k) {
             if (content.techniques[k].id == "horse_riding") horse_riding = k;
         }
+        std::vector<CellId> in_reach;
         for (CellId c = 0; c < n; ++c) {
             if (s.polity_of[c] != 0 || s.cell_population[c] == 0) continue;
             const double farming = s.env.farming.empty() ? 0.0 : s.env.farming[c];
@@ -444,12 +456,18 @@ void PolitySystem::step(StepContext& ctx) {
             const double hierarchy = cell_trait(s, c, i_hierarchy);
             // Mounted herders band together in confederations.
             const double pastoral = s.env.pastoral.empty() ? 0.0 : s.env.pastoral[c];
-            if (pastoral >= kNomadPastoral && farming >= kMinFarming && horse_riding < content.techniques.size() &&
-                ((techniques_in(s, c) >> horse_riding) & 1u)) {
+            if (pastoral >= kNomadPastoral && farming >= kMinFarming) {
+                // Mounted herders on open pasture, the richer their farming
+                // neighbours the likelier (the shadow empire).
                 const double warfare = cell_trait(s, c, i_warfare);
-                RngStream rng = ctx.rng(Stream::Polity, kFormationEntity | c);
-                if (warfare >= kNomadWarfare && rng.uniform() < kNomadFormation * warfare) {
-                    s.polity_of[c] = found(c, 0, true);
+                if (pasture_quality(static_cast<Biome>(w.biome[c])) >= kNomadPasture && warfare >= kNomadWarfare &&
+                    horse_riding < content.techniques.size() && ((techniques_in(s, c) >> horse_riding) & 1u)) {
+                    double wealth = 0.0;
+                    cells_within(w, c, WarSystem::kRaidKm, in_reach);
+                    for (CellId nb : in_reach) wealth += raid_wealth(s, nb);
+                    const double lure = std::min(kShadowMax, 1.0 + wealth / kShadowWealth);
+                    RngStream rng = ctx.rng(Stream::Polity, kFormationEntity | c);
+                    if (rng.uniform() < kNomadFormation * warfare * lure) s.polity_of[c] = found(c, 0, true);
                 }
                 continue;
             }

@@ -174,7 +174,7 @@ km from anyone who knows the species is an independent origin and is logged
 | --- | --- |
 | Knowledge | Per cell, the domesticates its people know. Learned from any neighbour that knows one (0.15% a year × (0.5 + openness), ~1 km/year as across Neolithic Europe), and carried by farming migrants, if the species can be raised there; lost when a cell empties. |
 | Crops and herds | A species can be raised where its wild niche, widened by 4 °C, 30% rainfall and 500 m, still fits (`World::cultivated_suitability`). |
-| Farmland | People per km² = 0.6 × best crop (suitability × food value) × soil (0.35 + 0.65 fertility) × floodplain (up to +50% on big rivers) × season (growing months), plus half of 0.15 × best herd; herds alone feed pastoralists. A regional average for early farming; later techniques raise it. Each year × harvest (rain 40–115% of normal, −12% per °C off normal). |
+| Farmland | People per km² = 0.6 × best crop (suitability × food value) × soil (0.35 + 0.65 fertility) × floodplain (up to +50% on big rivers) × season (growing months) × rain (away from rivers, (rainfall − 200 mm) ÷ 400 mm, from 0.05 to 1: rain-fed crops fail often in dry land), plus half of 0.15 × best herd × pasture (grassland 1.6, shrubland 1.3, savanna 1.2, Mediterranean 1.0, tundra 0.8, forests 0.7, desert 0.6, rainforest 0.4); herds alone feed pastoralists. Where herds give most of the farm food (dry grassland and shrubland, the steppe) people are pastoralists. A regional average for early farming; later techniques raise it. Each year × harvest (rain 40–115% of normal, −12% per °C off normal). |
 | Farming share | Per cohort. Grows by 1% a year × (0.3 + innovation) × (1.2 − mobility) × (strain − 0.6) × (1 − share), where strain = people ÷ forager capacity: farming spreads when foraging alone stops being enough, and raises the population so it is needed more (the Neolithic ratchet). Falls when farmland yields less than foraging; drops to zero where nothing can be farmed. |
 | Capacity | forager capacity × (1 − share) + farmland × share, with the cell's population-weighted share. Hunting pressure on game comes from foragers only. |
 | Farmers | 25% more births at full farming; 60% less migration. Culture: farming pushes toward settled, plant-reliant, storing, ranked, clan-based and less sharing ways. |
@@ -278,16 +278,21 @@ resources map modes and the trade-route overlay show them.
 | Peace | A war ends when a leader's capital falls, when a leader is gone, or by exhaustion (5% × (1 + years at war ÷ 10) a year). The winner keeps what it took; a defender whose capital fell becomes a vassal (or is annexed if one cell is left), and one beaten in a war for tribute a tributary. A 20-year truce follows. |
 | Subjects | Tributaries and vassals send their overlord 10% of their stocks of goods each year; vassals fight for it. A subject at least 0.7 times as strong as its overlord rebels (3% a year), starting a war of independence; a vassal whose capital its overlord controls at least half is absorbed (1% a year). |
 | Alliances | A free polity with a neighbour 1.5 times stronger seeks a defensive ally among its own and the threat's neighbours (strongest first, related cultures counting double): chance 5% a year, doubled for related cultures, up to three allies each. Alliances lapse at 1% a year, or when the allies fight each other. |
-| Nomads | Pastoralists are cells whose farm food comes mostly from herds; they move as freely as foragers. Where herders ride horses and warfare is at least 0.4, confederations form (1% × warfare per five-year check). Their rule reaches three times as far. Each year a confederation may raid its richest settled farming neighbour (20%), succeeding with chance attack ÷ (attack + defence): it carries off 30% of the cell's goods and kills 1% of its people, and a weaker ruler may agree to pay tribute (10%). |
+| Nomads | Pastoralists are cells whose farm food comes mostly from herds; they move as freely as foragers. On open pasture (grassland, shrubland, savanna), where herders ride horses and warfare is at least 0.4, confederations form: 1% × warfare per five-year check, times 1 + the wealth of the settled farmers within 600 km ÷ 20,000 (up to 5): the "shadow empires" that rose opposite rich agrarian states (Barfield 1989). Their rule reaches three times as far. Each year a confederation may raid (30%) the richest settled farmers within 600 km of its land (wealth = people in towns + a twentieth of the rest), succeeding with chance attack ÷ (attack + defence), its strength weighed by its control at that distance: it carries off 30% of the cell's goods and kills 1% of its people, and the victim's ruler, if the nomads are at least half as strong, may agree to pay tribute (20%); tributaries are not raided. Nomads who take the capital of a state, or of a polity seated in a city, in a war for tribute while 1.5 times as strong found a conquest dynasty: they annex it, rule from its capital, and settle down after 60 years. |
 
 Over 9,000 years at level 5, about 1,200 wars are fought, most between
-neighbouring chiefdoms and lasting a few years. Ten to fifteen nomad
-confederations hold the steppes from about year 4,500. A few alliances and
-subjects stand at any time, and realms reach 0.5–1 million km² by war. Deaths
-in war run to a few hundred a year: violence between bands and tribes is
+neighbouring chiefdoms and lasting a few years. From about year 4,500 five to
+ten nomad confederations hold the dry grasslands at a time, raid one or two
+settled cells a year, take tribute from several neighbours (the largest realm
+of a run is often a confederation with its tributaries), and found a dozen or
+so conquest dynasties in 9,000 years. A few alliances and subjects stand at
+any time, and realms reach 0.5–1.5 million km² by war. Deaths in war run to
+several hundred a year: violence between bands and tribes is
 already in the forager life table, so this counts only war between polities.
 `histsim wars` prints the timeline, the deadliest wars and the largest realms
-with their subjects and allies; the realms and war map modes show them.
+with their subjects and allies (nomads starred); the realms map shows nomad
+confederations in browns, and the war map marks cells raided in the last 20
+years.
 
 ### Interventions
 

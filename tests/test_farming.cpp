@@ -206,3 +206,27 @@ TEST(m2_gate_farming_arises_in_several_plausible_regions) {
         }
     }
 }
+
+TEST(farming_herding_wins_on_dry_grassland) {
+    CHECK(pasture_quality(Biome::TemperateGrassland) > pasture_quality(Biome::TemperateForest));
+    CHECK(pasture_quality(Biome::DryShrubland) > pasture_quality(Biome::Desert));
+    WorldParams p;
+    p.grid_level = 5;
+    const World w = generate_test_world(p);
+    const auto& species = w.content->species;
+    // Every domesticate known: on dry grassland away from rivers the herds
+    // feed more than the crops.
+    std::uint32_t all = 0;
+    for (std::size_t sp = 0; sp < species.size(); ++sp) all |= 1u << sp;
+    std::size_t dry = 0, pastoral = 0;
+    for (CellId c = 0; c < w.cell_count(); ++c) {
+        if (w.biome[c] != static_cast<std::uint8_t>(Biome::TemperateGrassland) || is_river(w, c)) continue;
+        if (w.precipitation_mm[c] > 350.0) continue;
+        const FarmParts parts = farm_parts(w, c, all);
+        if (parts.herds <= 0.0) continue;
+        ++dry;
+        if (pastoral_share(parts) >= 0.5) ++pastoral;
+    }
+    CHECK(dry > 0);
+    CHECK(pastoral * 4 >= dry * 3);  // at least three in four
+}

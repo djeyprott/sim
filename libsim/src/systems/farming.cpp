@@ -46,10 +46,35 @@ FarmParts farm_parts(const World& w, CellId c, std::uint32_t known, std::uint64_
     const double soil = 0.35 + 0.65 * w.soil_fertility[c];
     const double flood = is_river(w, c) ? 1.0 + FarmingSystem::kFloodplainBonus * std::min(1.0, w.discharge_m3s[c] / 5000.0) : 1.0;
     const double season = std::min(1.0, (w.growing_months[c] + 1.0) / 5.0);
+    // A river waters its floodplain; elsewhere crops need reliable rain.
+    const double rain = is_river(w, c) ? 1.0
+                                       : std::clamp((w.precipitation_mm[c] - FarmingSystem::kDryFarmingMm) /
+                                                        FarmingSystem::kDryFarmingSpanMm,
+                                                    FarmingSystem::kDryFloor, 1.0);
     const TechEffects tech = technique_effects(w, c, techniques);
-    const double crops = FarmingSystem::kCropDensity * crop * soil * flood * season * (1.0 + tech.crop_yield);
-    const double herds = FarmingSystem::kHerdDensity * herd * (1.0 + tech.herd_yield);
+    const double crops = FarmingSystem::kCropDensity * crop * soil * flood * season * rain * (1.0 + tech.crop_yield);
+    const double herds = FarmingSystem::kHerdDensity * herd * pasture_quality(static_cast<Biome>(w.biome[c])) *
+                         (1.0 + tech.herd_yield);
     return {crops, herds};
+}
+
+double pasture_quality(Biome b) {
+    switch (b) {
+        case Biome::TemperateGrassland: return 1.6;
+        case Biome::DryShrubland: return 1.3;
+        case Biome::TropicalSavanna: return 1.2;
+        case Biome::Mediterranean: return 1.0;
+        case Biome::Tundra: return 0.8;  // reindeer
+        case Biome::Desert: return 0.6;
+        case Biome::TemperateForest:
+        case Biome::WarmTemperateForest:
+        case Biome::BorealForest: return 0.7;
+        case Biome::TropicalRainforest: return 0.4;
+        case Biome::Ocean:
+        case Biome::IceSheet:
+        case Biome::Count: return 0.0;
+    }
+    return 0.0;
 }
 
 double harvest_factor(const World& w, const SimState& s, CellId c) {

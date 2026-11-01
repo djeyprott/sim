@@ -600,15 +600,18 @@ int wars(const Options& o) {
     const histsim::World& w = sim.world();
     std::printf("Every 500 years:\n");
     std::int64_t last_deaths = 0, last_year = 0;
+    std::int64_t raids_since = 0;
     for (const histsim::YearRecord& r : s.history) {
+        raids_since += r.raids;
         if (r.year % 500 != 0) continue;
         const double per_year = r.year > last_year ? static_cast<double>(r.war_deaths_total - last_deaths) /
                                                          static_cast<double>(r.year - last_year)
                                                    : 0.0;
         std::printf("  year %5lld  polities %4u (states %3u, nomads %3u)  wars %3u  war deaths %8.0f/yr  "
-                    "alliances %3u  subjects %3u  raids %3u  largest %9.0f km^2\n",
+                    "alliances %3u  subjects %3u  raids %4lld in 500 yrs  largest %9.0f km^2\n",
                     static_cast<long long>(r.year), r.polities, r.states, r.nomads, r.wars, per_year, r.alliances,
-                    r.subjects, r.raids, r.largest_polity_km2);
+                    r.subjects, static_cast<long long>(raids_since), r.largest_polity_km2);
+        raids_since = 0;
         last_deaths = r.war_deaths_total;
         last_year = r.year;
     }
@@ -626,6 +629,15 @@ int wars(const Options& o) {
                     war.defenders.size(), static_cast<long long>(war.deaths), war.cells_taken, war.cells_lost,
                     histsim::war_outcome_name(war.outcome));
     }
+    // Nomads: conquest dynasties, and the confederations alive now.
+    std::size_t dynasties = 0, ever = 0, now = 0;
+    for (const histsim::Event& e : s.events) dynasties += e.type == histsim::EventType::ConquestDynasty ? 1 : 0;
+    for (const histsim::Polity& p : s.polities) {
+        if (!p.nomadic && p.settling_since == histsim::kNever) continue;
+        ++ever;
+        now += p.ended == histsim::kNever ? 1 : 0;
+    }
+    std::printf("\nNomads: %zu confederations founded (%zu alive), %zu conquest dynasties.\n", ever, now, dynasties);
     // Realms: each free polity with its subjects.
     std::vector<std::int64_t> people(s.polities.size(), 0);
     std::vector<double> area(s.polities.size(), 0.0);
@@ -640,7 +652,7 @@ int wars(const Options& o) {
         if (s.polities[id].ended == histsim::kNever && s.polities[id].overlord == 0 && people[id] > 0) realms.push_back(id);
     }
     std::stable_sort(realms.begin(), realms.end(), [&](auto a, auto b) { return area[a] > area[b]; });
-    std::printf("\nLargest realms in year %lld:\n", static_cast<long long>(sim.year()));
+    std::printf("\nLargest realms in year %lld (* nomads):\n", static_cast<long long>(sim.year()));
     for (std::size_t i = 0; i < realms.size() && i < 12; ++i) {
         const std::uint32_t id = realms[i];
         std::string subjects, allies;
@@ -652,7 +664,8 @@ int wars(const Options& o) {
             }
             if (q != id && histsim::allied(s, id, q)) allies += (allies.empty() ? "" : ", ") + p.name;
         }
-        std::printf("  %-14s %-13s %9.0f km^2 %10lld people%s%s%s%s\n", s.polities[id].name.c_str(),
+        std::printf("  %-14s %-13s %9.0f km^2 %10lld people%s%s%s%s\n",
+                    (s.polities[id].name + (s.polities[id].nomadic ? "*" : "")).c_str(),
                     histsim::polity_level(w, s, id), area[id], static_cast<long long>(people[id]),
                     subjects.empty() ? "" : "  subjects: ", subjects.c_str(), allies.empty() ? "" : "  allies: ",
                     allies.c_str());

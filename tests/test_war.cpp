@@ -1,6 +1,7 @@
 // War, diplomacy and nomads (M3 slice 3).
 #include <algorithm>
 #include <string>
+#include <vector>
 
 #include "histsim/simulation.hpp"
 #include "histsim/systems/polity.hpp"
@@ -153,4 +154,74 @@ TEST(war_nomad_confederations_reach_far_and_raise_big_levies) {
     CHECK_NEAR(polity_reach(w, s, 1), PolitySystem::kNomadReach * settled_reach, 1e-9);
     CHECK(polity_strengths(w, s)[1] > WarSystem::kNomadLevy * settled_strength);  // more levy, firmer control
     CHECK(std::string(polity_level(w, s, 1)) == "confederation");
+}
+
+TEST(war_nomads_raid_the_richest_farmers_within_reach) {
+    WorldParams p;
+    p.grid_level = 5;
+    const Simulation sim = Simulation::create(p);
+    const World& w = sim.world();
+    SimState s = sim.state();
+    // Herders at one cell; a rich town two cells away, and nobody else farms.
+    CellId camp = kInvalidCell, town = kInvalidCell;
+    std::vector<CellId> near;
+    for (CellId c = 0; c < w.cell_count() && town == kInvalidCell; ++c) {
+        if (s.cell_population[c] < 500) continue;
+        cells_within(w, c, WarSystem::kRaidKm, near);
+        for (CellId x : near) {
+            const double d = w.grid.distance_km(c, x);
+            if (d > 300.0 && s.cell_population[x] >= 500) {
+                camp = c;
+                town = x;
+                break;
+            }
+        }
+    }
+    CHECK(town != kInvalidCell);
+    CHECK(std::find(near.begin(), near.end(), camp) != near.end());
+    s.env.farming.assign(w.cell_count(), 0.0);
+    s.env.pastoral.assign(w.cell_count(), 0.0);
+    s.env.farming[town] = 1.0;
+    s.urban[town] = 0.3;
+    CHECK(raid_wealth(s, town) > 0.0);
+    CHECK_EQ(raid_wealth(s, camp), 0.0);
+    s.env.farming[camp] = 1.0;
+    s.env.pastoral[camp] = 1.0;
+    CHECK_EQ(raid_wealth(s, camp), 0.0);  // herders have little to take
+    s.polities.resize(2);
+    s.polities[1].id = 1;
+    s.polities[1].name = "Riders";
+    s.polities[1].capital = camp;
+    s.polities[1].nomadic = true;
+    s.polities[1].culture = s.cohorts_in(camp).front().culture;
+    s.polity_of[camp] = 1;
+    run_war_system(w, s, 200);
+    CHECK(s.last_raid[town] != kNever);
+    bool logged = false;
+    for (const Event& e : s.events) logged |= e.type == EventType::Raid && e.cell == town && e.value == 1;
+    CHECK(logged);
+    // Only the rich town was worth raiding.
+    for (CellId c = 0; c < w.cell_count(); ++c) {
+        if (c != town) CHECK_EQ(s.last_raid[c], kNever);
+    }
+}
+
+TEST(war_conquest_dynasties_settle_down) {
+    Setup x = two_polities();
+    SimState& s = x.s;
+    const World& w = x.sim.world();
+    s.polities[1].nomadic = true;
+    s.polities[1].settling_since = s.tick;
+    PolitySystem polities;
+    for (std::int64_t y = 0; y <= PolitySystem::kSettleYears; ++y) {
+        CHECK(s.polities[1].nomadic);
+        StepContext ctx{w, s, 3, s.tick};
+        polities.step(ctx);
+        s.tick += kTicksPerYear;
+        if (s.polities[1].ended != kNever) break;  // fell meanwhile: nothing left to test
+    }
+    if (s.polities[1].ended == kNever) {
+        CHECK(!s.polities[1].nomadic);
+        CHECK_EQ(s.polities[1].settling_since, kNever);
+    }
 }

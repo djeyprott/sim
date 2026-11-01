@@ -203,6 +203,9 @@ struct Polity {
     std::array<double, kPressureCount> pressure{};  // this year's pressures
     PolityFate fate = PolityFate::Living;
     std::uint8_t fate_cause = 0;
+    // Nomads who conquered a settled state rule from its capital and settle
+    // down over a few generations (kNever = not settling).
+    Tick settling_since = kNever;
 };
 
 // A defensive alliance: each joins a war against the other.
@@ -293,6 +296,8 @@ enum class EventType : std::uint32_t {
     AllianceFormed = 18,  // cell = one ally's capital; value = alliance index
     Subjugated = 19,      // a polity became a tributary or vassal; value = its id
     Absorbed = 20,        // a vassal was absorbed by its overlord; value = the vassal's id
+    Raid = 21,            // nomads raided a cell; value = the raiders' polity id
+    ConquestDynasty = 22, // nomads took a settled state and rule it; cell = its capital; value = the nomads' id
 };
 
 struct Event {
@@ -449,6 +454,7 @@ struct SimState {
     std::vector<std::uint8_t> strife;
     std::int64_t war_deaths_total = 0;
     std::uint32_t raids = 0;  // this year
+    std::vector<Tick> last_raid;  // per cell: when nomads last raided it (kNever = never)
 
     // ---- Derived data: rebuilt by refresh(), never saved or hashed.
     std::vector<std::uint32_t> cell_population;

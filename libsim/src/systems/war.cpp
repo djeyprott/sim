@@ -163,6 +163,27 @@ Armies raise_armies(const World& w, const SimState& s) {
 
 std::vector<double> polity_strengths(const World& w, const SimState& s) { return raise_armies(w, s).strength; }
 
+void cells_within(const World& w, CellId start, double km, std::vector<CellId>& out) {
+    out.clear();
+    out.push_back(start);
+    for (std::size_t i = 0; i < out.size(); ++i) {
+        for (CellId nb : w.grid.neighbors(out[i])) {
+            if (w.grid.distance_km(start, nb) > km) continue;
+            if (std::find(out.begin(), out.end(), nb) == out.end()) out.push_back(nb);
+        }
+    }
+}
+
+double raid_wealth(const SimState& s, CellId c) {
+    if (c >= s.cell_population.size() || s.cell_population[c] == 0) return 0.0;
+    const double farming = s.env.farming.empty() ? 0.0 : s.env.farming[c];
+    const double pastoral = s.env.pastoral.empty() ? 0.0 : s.env.pastoral[c];
+    if (farming < 0.5 || pastoral >= 0.5) return 0.0;
+    const double people = static_cast<double>(s.cell_population[c]);
+    const double town = s.urban.empty() ? 0.0 : s.urban[c];
+    return people * (town + 0.05 * (1.0 - town));
+}
+
 std::uint32_t top_overlord(const SimState& s, std::uint32_t id) {
     for (std::size_t guard = 0; guard < s.polities.size() && id != 0 && id < s.polities.size(); ++guard) {
         const std::uint32_t up = s.polities[id].overlord;
@@ -249,6 +270,7 @@ void WarSystem::step(StepContext& ctx) {
     s.war_deaths.assign(n, 0);
     s.strife.assign(n, 0);
     s.raids = 0;
+    if (s.last_raid.size() != n) s.last_raid.assign(n, kNever);
     const Tick tick = ctx.tick;
     const std::size_t np = s.polities.size();
     const std::size_t i_warfare = trait_index(content, "warfare");
@@ -481,7 +503,19 @@ void WarSystem::step(StepContext& ctx) {
                     subjugate(s, lead_a, lead_d, Bond::Vassal, tick);
                 }
             } else if (winner == lead_a && war.goal == WarGoal::Tribute) {
-                subjugate(s, lead_d, lead_a, Bond::Tributary, tick);
+                Polity& nomads = s.polities[lead_a];
+                const CellId seat = s.polities[lead_d].capital;
+                const bool civilised = polity_has_writing(w, s, lead_d) || s.city_of[seat] != 0;
+                if (capital_fell && nomads.nomadic && civilised &&
+                    power[lead_a] >= kConquestDynastyRatio * power[lead_d]) {
+                    // A conquest dynasty: the nomads rule the state from its capital.
+                    annex(lead_d, lead_a);
+                    nomads.capital = seat;
+                    nomads.settling_since = tick;
+                    s.events.push_back({tick, EventType::ConquestDynasty, seat, static_cast<std::int64_t>(lead_a)});
+                } else {
+                    subjugate(s, lead_d, lead_a, Bond::Tributary, tick);
+                }
             } else if (winner == lead_a && capital_fell) {
                 if (own_cells(loser) <= kAnnexBelowCells) {
                     annex(loser, winner);
@@ -604,25 +638,26 @@ void WarSystem::step(StepContext& ctx) {
         }
     }
 
-    // ---- Nomad raids on settled neighbours.
+    // ---- Nomad raids on the richest settled farmers within reach.
+    std::vector<CellId> around;
     for (std::uint32_t id = 1; id < np; ++id) {
         const Polity& p = s.polities[id];
         if (!alive(s, id) || !p.nomadic || p.bond != Bond::None) continue;
         RngStream rng = ctx.rng(Stream::War, kRaidEntity | id);
         if (rng.uniform() >= kRaid) continue;
         CellId target = kInvalidCell;
+        double richest = 0.0;
         for (CellId c : cells[id]) {
-            for (CellId nb : w.grid.neighbors(c)) {
+            cells_within(w, c, kRaidKm, around);
+            for (CellId nb : around) {
                 const std::uint32_t owner = s.polity_of[nb];
-                if (owner == id || s.cell_population[nb] == 0) continue;
+                if (owner == id) continue;
                 if (owner != 0 && (s.polities[owner].nomadic || top_overlord(s, owner) == id || allied(s, id, owner))) {
                     continue;
                 }
-                const double farming = s.env.farming.empty() ? 0.0 : s.env.farming[nb];
-                const double pastoral = s.env.pastoral.empty() ? 0.0 : s.env.pastoral[nb];
-                if (farming < 0.5 || pastoral >= 0.5) continue;
-                if (target == kInvalidCell || s.cell_population[nb] > s.cell_population[target] ||
-                    (s.cell_population[nb] == s.cell_population[target] && nb < target)) {
+                const double wealth = raid_wealth(s, nb);
+                if (wealth > richest || (wealth == richest && wealth > 0.0 && nb < target)) {
+                    richest = wealth;
                     target = nb;
                 }
             }
@@ -635,6 +670,8 @@ void WarSystem::step(StepContext& ctx) {
         if (attack <= 0.0 || rng.uniform() >= attack / (attack + defence)) continue;
         ++s.raids;
         s.strife[target] = 3;
+        s.last_raid[target] = tick;
+        s.events.push_back({tick, EventType::Raid, target, static_cast<std::int64_t>(id)});
         kill(s, target, kRaidDeaths, false, rng);
         if (owner != 0) s.polities[owner].shock += kShockRaid;
         if (have_stocks) {
@@ -645,8 +682,8 @@ void WarSystem::step(StepContext& ctx) {
                 s.stocks[p.capital * ng + g] += q;
             }
         }
-        // A weaker victim buys peace with tribute.
-        if (owner != 0 && s.polities[owner].bond == Bond::None && power[id] > 0.7 * power[owner] &&
+        // The victim's ruler buys peace with tribute.
+        if (owner != 0 && s.polities[owner].bond == Bond::None && power[id] > kRaidTributeRatio * power[owner] &&
             war_between(s, id, owner) == 0 && rng.uniform() < kRaidTribute) {
             subjugate(s, owner, id, Bond::Tributary, tick);
         }

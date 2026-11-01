@@ -121,14 +121,21 @@ public:
     static constexpr double kCoreControl = 0.5;
     static constexpr double kSuccessorKm = 250.0;
     static constexpr double kSuccessorStability = 0.5;
-    // Nomad confederations form where herds give at least kNomadPastoral of
-    // the farm food, people ride horses and warfare is at least
-    // kNomadWarfare: chance kNomadFormation x warfare per check. Their rule
-    // reaches kNomadReach times as far.
+    // Nomad confederations form on open pasture (pasture quality at least
+    // kNomadPasture: grassland, shrubland, savanna) where herds give at least
+    // kNomadPastoral of the farm food, people ride horses and warfare is at
+    // least kNomadWarfare: chance kNomadFormation x warfare x (1 + wealth of
+    // the farmers within raiding range / kShadowWealth, at most kShadowMax)
+    // per check. Their rule reaches kNomadReach times as far. Conquest
+    // dynasties stop being nomads kSettleYears after taking a state.
+    static constexpr double kNomadPasture = 1.0;
     static constexpr double kNomadPastoral = 0.5;
     static constexpr double kNomadWarfare = 0.4;
     static constexpr double kNomadFormation = 0.01;
+    static constexpr double kShadowWealth = 20000.0;
+    static constexpr double kShadowMax = 5.0;
     static constexpr double kNomadReach = 3.0;
+    static constexpr std::int64_t kSettleYears = 60;
 };
 
 // Towns raise mortality (x (1 + kUrbanMortality x urban share)) and disease

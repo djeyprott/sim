@@ -41,6 +41,12 @@ public:
     static constexpr double kCropDensity = 0.6;
     static constexpr double kHerdDensity = 0.15;
     static constexpr double kFloodplainBonus = 1.0;
+    // Rain-fed crops fail often in dry land: away from rivers, crops x
+    // clamp((rainfall - kDryFarmingMm) / kDryFarmingSpanMm, kDryFloor, 1).
+    // Where the grass is good but the rain is not, herding wins: the steppe.
+    static constexpr double kDryFarmingMm = 200.0;
+    static constexpr double kDryFarmingSpanMm = 400.0;
+    static constexpr double kDryFloor = 0.05;
     // Learning a domesticate from a neighbour that knows it, per year (x 0.5
     // + openness, for 50,000 km^2 cells): farming spreads ~1 km a year, as
     // across Neolithic Europe.
@@ -71,6 +77,10 @@ struct FarmParts {
     double crops = 0.0, herds = 0.0;
 };
 FarmParts farm_parts(const World& world, CellId cell, std::uint32_t domesticates, std::uint64_t techniques = 0);
+
+// How good a biome's grazing is for herds (x the herd yield): open
+// grassland best, then shrubland and savanna; forests and deserts poor.
+double pasture_quality(Biome biome);
 
 // Share of a cell's farm food that comes from herds (1 = pastoralists).
 [[nodiscard]] inline double pastoral_share(const FarmParts& p) {
