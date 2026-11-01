@@ -42,16 +42,20 @@ struct RouteLine {
     bool migration = false;  // a folk migration from a to b, drawn as an arrow
 };
 
+inline constexpr std::uint8_t kFocusMain = 255;
+
 struct RenderOptions {
     bool coastlines = true;  // dark line where land meets ocean
     bool rivers = false;     // rivers drawn as blue lines, wider for more flow
     // Optional per-cell flags (size = cell count): flagged cells are lightened
     // and outlined, e.g. to preview the area an intervention will touch.
     const std::vector<std::uint8_t>* highlight = nullptr;
-    // Optional per-cell flags (size = cell count): land outside the flagged
-    // cells is faded and the flagged ones outlined, e.g. every cell of the
-    // selected cell's language.
+    // Optional per-cell focus (size = cell count), e.g. the selected cell's
+    // language: kFocusMain where it is the main group (outlined, unfaded);
+    // 1-254 where it is a minority, by its share of the people (faded land
+    // tinted with focus_color, more for larger shares); 0 faded.
     const std::vector<std::uint8_t>* focus = nullptr;
+    Rgba focus_color{255, 255, 255, 255};
     // Optional per-cell region ids (size = cell count), e.g. the polity ruling
     // each cell: a line is drawn where land cells of different regions meet
     // (and around a region where it meets unclaimed land).

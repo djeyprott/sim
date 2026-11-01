@@ -107,9 +107,13 @@ std::vector<MapLabel> polity_labels(const Simulation& sim);
 
 // For modes that group cells (language, language family, culture,
 // religion, polity, realm, stability): marks the cells in the same group as
-// `cell` (its main language, its faith, its ruler, ...). Returns false and
-// leaves `out` empty for other modes, or when the cell has no group.
-bool same_group_cells(const Simulation& sim, std::string_view mode_id, CellId cell, std::vector<std::uint8_t>& out);
+// `cell` (its main language, its faith, its ruler, ...): kFocusMain where it
+// is the main group, and for languages, families and cultures 1-254 by the
+// share of the people where it is a minority (0 elsewhere). `group_color`,
+// if given, gets the group's map color. Returns false and leaves `out`
+// empty for other modes, or when the cell has no group.
+bool same_group_cells(const Simulation& sim, std::string_view mode_id, CellId cell, std::vector<std::uint8_t>& out,
+                      Rgba* group_color = nullptr);
 
 // Neutral colors shared by modes and overlays.
 Rgba ocean_neutral();

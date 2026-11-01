@@ -1379,21 +1379,49 @@ std::vector<MapLabel> polity_labels(const Simulation& sim) {
     return out;
 }
 
-bool same_group_cells(const Simulation& sim, std::string_view mode_id, CellId cell, std::vector<std::uint8_t>& out) {
+bool same_group_cells(const Simulation& sim, std::string_view mode_id, CellId cell, std::vector<std::uint8_t>& out,
+                      Rgba* group_color) {
     out.clear();
     const World& w = sim.world();
     const SimState& s = sim.state();
     const std::size_t n = w.cell_count();
     if (cell >= n || s.cell_population[cell] == 0) return false;
     const std::string id(mode_id);
-    std::vector<std::uint32_t> key(n, 0);
     if (id == "language" || id == "language_family" || id == "culture") {
+        // Groups of people: the selected cell's main language (family,
+        // culture) is the main one in some cells and a minority in others.
+        auto key_of = [&](const Cohort& co) -> std::uint32_t {
+            return id == "culture" ? co.culture : id == "language" ? co.language : s.languages[co.language].family;
+        };
+        const MainPeople picked = main_people(s, cell);
+        const std::uint32_t key = id == "culture"    ? picked.culture
+                                  : id == "language" ? picked.language
+                                                     : s.languages[picked.language].family;
+        if (key == 0) return false;
+        if (group_color != nullptr) {
+            *group_color = id == "culture"    ? culture_color(s, key)
+                           : id == "language" ? language_color(s, key)
+                                              : language_family_color(s, picked.language);
+        }
+        out.assign(n, 0);
         for (CellId c = 0; c < n; ++c) {
             if (s.cell_population[c] == 0) continue;
             const MainPeople m = main_people(s, c);
-            key[c] = id == "culture" ? m.culture : id == "language" ? m.language : s.languages[m.language].family;
+            const std::uint32_t main = id == "culture" ? m.culture : id == "language" ? m.language : s.languages[m.language].family;
+            if (main == key) {
+                out[c] = kFocusMain;
+                continue;
+            }
+            std::int64_t members = 0;
+            for (const Cohort& co : s.cohorts_in(c)) members += key_of(co) == key ? co.total() : 0;
+            if (members == 0) continue;
+            const double share = static_cast<double>(members) / static_cast<double>(s.cell_population[c]);
+            out[c] = static_cast<std::uint8_t>(1 + std::lround(std::min(1.0, share) * 253.0));
         }
-    } else if (id == "religion") {
+        return true;
+    }
+    std::vector<std::uint32_t> key(n, 0);
+    if (id == "religion") {
         if (s.faith_of.size() != n) return false;
         key = s.faith_of;
     } else if (id == "polity" || id == "stability" || id == "realms") {
@@ -1405,8 +1433,11 @@ bool same_group_cells(const Simulation& sim, std::string_view mode_id, CellId ce
         return false;
     }
     if (key[cell] == 0) return false;
+    if (group_color != nullptr) {
+        *group_color = id == "religion" ? religion_color(w, s, key[cell]) : polity_color(s, key[cell]);
+    }
     out.assign(n, 0);
-    for (CellId c = 0; c < n; ++c) out[c] = key[c] == key[cell] ? 1 : 0;
+    for (CellId c = 0; c < n; ++c) out[c] = key[c] == key[cell] ? kFocusMain : 0;
     return true;
 }
 

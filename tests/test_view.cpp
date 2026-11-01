@@ -142,13 +142,22 @@ TEST(view_a_kept_cell_brings_out_its_group) {
     std::vector<std::uint8_t> group;
     CHECK(same_group_cells(sim, "language", c, group));
     CHECK_EQ(group.size(), sim.world().cell_count());
-    CHECK_EQ(group[c], std::uint8_t{1});
-    std::size_t members = 0;
+    CHECK_EQ(group[c], kFocusMain);
+    std::size_t main = 0;
     for (CellId o = 0; o < group.size(); ++o) {
-        members += group[o];
+        main += group[o] == kFocusMain ? 1 : 0;
         if (group[o]) CHECK(s.cell_population[o] > 0);  // only peopled cells speak it
+        // Where it is a minority, the mark grows with its share of the people.
+        if (group[o] != 0 && group[o] != kFocusMain) {
+            std::int64_t speakers = 0;
+            for (const Cohort& co : s.cohorts_in(o)) speakers += co.language == s.cohorts_in(c).front().language ? co.total() : 0;
+            CHECK(speakers > 0);
+        }
     }
-    CHECK(members >= 1 && members < sim.world().cell_count() / 2);
+    CHECK(main >= 1 && main < sim.world().cell_count() / 2);
+    Rgba color{};
+    CHECK(same_group_cells(sim, "language", c, group, &color));
+    CHECK(color.a == 255);
     // Modes without groups, and empty cells, bring out nothing.
     CHECK(!same_group_cells(sim, "terrain", c, group));
     CHECK(group.empty());

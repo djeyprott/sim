@@ -110,4 +110,5 @@ private:
     bool highlight_on_ = false;
     std::vector<std::uint8_t> focus_;
     bool focus_on_ = false;
+    histsim::view::Rgba focus_color_{255, 255, 255, 255};
 };

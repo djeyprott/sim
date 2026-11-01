@@ -196,13 +196,27 @@ void render(const MapRaster& raster, const World& world, const std::vector<Rgba>
             if (fo != nullptr && world.is_land[c]) {
                 const CellId right = cells[static_cast<std::size_t>(y) * w + (x + 1) % w];
                 const CellId down = y + 1 < h ? cells[i + w] : c;
-                const bool in = (*fo)[c] != 0;
-                if ((world.is_land[right] && (*fo)[right] != in) || (world.is_land[down] && (*fo)[down] != in)) {
+                const auto main = [&](CellId o) { return (*fo)[o] == kFocusMain; };
+                const bool in = main(c);
+                if ((world.is_land[right] && main(right) != in) || (world.is_land[down] && main(down) != in)) {
                     color = focus_edge;
                 } else if (!in) {
-                    // Faded toward a dark gray: the region stands out.
+                    // Faded toward a dark gray, so the group stands out...
                     auto fade = [](std::uint8_t v) { return static_cast<std::uint8_t>((v * 15 + 85 * 52) / 100); };
                     color = {fade(color.r), fade(color.g), fade(color.b), color.a};
+                    // ...and, where it is a minority, its color over plain
+                    // gray (so other groups' faded colors cannot be mistaken
+                    // for it): faintly for a few, more for a large share.
+                    if ((*fo)[c] != 0) {
+                        const double share = static_cast<double>((*fo)[c] - 1) / 253.0;
+                        const double t = 0.35 + 0.4 * std::min(1.0, 2.0 * share);
+                        color = {52, 52, 52, color.a};
+                        auto mix = [t](std::uint8_t a, std::uint8_t b) {
+                            return static_cast<std::uint8_t>(std::lround(a + t * (static_cast<double>(b) - a)));
+                        };
+                        const Rgba g = options.focus_color;
+                        color = {mix(color.r, g.r), mix(color.g, g.g), mix(color.b, g.b), color.a};
+                    }
                 }
             }
             if (hl != nullptr) {

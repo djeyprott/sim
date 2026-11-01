@@ -263,6 +263,7 @@ Ref<Image> HistSimWorld::render_map(const String& mode, bool coastlines, bool ri
         }
         if (focus_on_ && focus_.size() == sim_->world().cell_count()) {
             options.focus = &focus_;
+            options.focus_color = focus_color_;
         }
         std::vector<histsim::view::RouteLine> lines;
         if (routes) {
@@ -396,7 +397,8 @@ bool HistSimWorld::set_focus(const String& mode, int64_t cell) {
     focus_on_ = false;
     if (!sim_ || cell < 0 || static_cast<std::size_t>(cell) >= sim_->world().cell_count()) return false;
     try {
-        focus_on_ = histsim::view::same_group_cells(*sim_, to_std(mode), static_cast<histsim::CellId>(cell), focus_);
+        focus_on_ = histsim::view::same_group_cells(*sim_, to_std(mode), static_cast<histsim::CellId>(cell), focus_,
+                                                    &focus_color_);
     } catch (const std::exception& e) {
         fail(e.what());
     }
