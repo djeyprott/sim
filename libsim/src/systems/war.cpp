@@ -422,6 +422,8 @@ void WarSystem::step(StepContext& ctx) {
                 }
             }
             if (refuge != kInvalidCell) flee(s, target, refuge, kRefugees, rng, arrivals);
+            // Settlers and garrisons from the conquering side move in.
+            flee(s, from, target, kConquestSettlers, rng, arrivals);
             s.polity_of[target] = s.polity_of[from];
             s.strife[target] = 2;
             return true;
@@ -510,6 +512,9 @@ void WarSystem::step(StepContext& ctx) {
                     power[lead_a] >= kConquestDynastyRatio * power[lead_d]) {
                     // A conquest dynasty: the nomads rule the state from its capital.
                     annex(lead_d, lead_a);
+                    // The horde comes with them.
+                    RngStream horde = ctx.rng(Stream::War, kWarEntity | 0x08000000u | war.id);
+                    flee(s, nomads.capital, seat, kDynastyHerders, horde, arrivals);
                     nomads.capital = seat;
                     nomads.settling_since = tick;
                     s.events.push_back({tick, EventType::ConquestDynasty, seat, static_cast<std::int64_t>(lead_a)});

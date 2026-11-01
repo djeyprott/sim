@@ -59,6 +59,14 @@ public:
     [[nodiscard]] Tick period() const noexcept override { return kTicksPerYear; }
     void step(StepContext& ctx) override;
 
+    // Each year the rulers' people (the capital's speakers of the polity's
+    // language) send kOfficials x control x the people of each province held
+    // at least kMinControl: officials, garrisons and merchants, who carry
+    // the rulers' language (and, with its prestige, spread it).
+    static constexpr double kOfficials = 0.001;
+    // The capital moves to a town of the realm (for nomads, any cell) with
+    // this many times as many townspeople (people) as the old seat.
+    static constexpr double kCapitalMove = 2.0;
     // Reach of a capital's rule without administrative techniques.
     static constexpr double kBaseReachKm = 100.0;
     // Below this control a polity cannot take a cell; below kSecedeBelow a

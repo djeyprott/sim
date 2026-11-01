@@ -9,10 +9,12 @@
 //   histsim polities [--seed N] [--level L] [--years Y]
 //   histsim trade [--seed N] [--level L] [--years Y]
 //   histsim wars [--seed N] [--level L] [--years Y]
+//   histsim migrations [--seed N] [--level L] [--years Y]
 //
 // With no arguments (for example, double-clicked in Explorer) it runs a short
 // demo and waits for Enter so the window stays open.
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -82,7 +84,8 @@ struct Options {
                  "                 language_family culture farming domesticates disease\n"
                  "                 technology polity towns realms war stability trade resources\n"
                  "                 (polity borders are drawn on all, trade routes on trade\n"
-                 "                 and resources)\n"
+                 "                 and resources, the last 50 years' folk migrations on\n"
+                 "                 population, language, language_family and culture)\n"
                  "  histsim farming [--seed N] [--level L] [--years Y]\n"
                  "                 where and when species were domesticated, techniques\n"
                  "                 invented and diseases emerged, Bond events, and farmers,\n"
@@ -96,6 +99,10 @@ struct Options {
                  "  histsim wars [--seed N] [--level L] [--years Y]\n"
                  "                 war and diplomacy every 500 years, the deadliest wars, and\n"
                  "                 the largest realms with their subjects and allies\n"
+                 "  histsim migrations [--seed N] [--level L] [--years Y]\n"
+                 "                 colonists and folk migrations every 500 years, the largest\n"
+                 "                 movements with the chains they set off, and how the language\n"
+                 "                 families' lands changed\n"
                  "  histsim languages [--seed N] [--level L] [--years Y] [--top N]\n"
                  "                 family trees of the languages alive after Y years, largest\n"
                  "                 families first, with speakers and sample words\n"
@@ -373,9 +380,12 @@ int map_images(const Options& o) {
     ro.rivers = o.rivers;
     ro.borders = &sim.state().polity_of;
     const std::vector<histsim::view::RouteLine> routes = histsim::view::route_lines(sim);
+    const std::vector<histsim::view::RouteLine> moves = histsim::view::migration_lines(sim);
     for (const auto& id : modes) {
         histsim::view::color_cells(sim, id, colors);
         ro.routes = id == "trade" || id == "resources" ? &routes : nullptr;
+        const bool peoples = id == "language" || id == "language_family" || id == "culture" || id == "population";
+        ro.migrations = peoples ? &moves : nullptr;
         histsim::view::render(raster, sim.world(), colors, rgba, ro);
         const std::string path = o.out + "-" + id + ".png";
         histsim::view::write_png(path, o.width, height, rgba);
@@ -673,6 +683,119 @@ int wars(const Options& o) {
     return 0;
 }
 
+// Colonists, folk migrations and chain reactions; language families' lands.
+int migrations(const Options& o) {
+    Simulation sim = Simulation::create(o.params);
+    // Each cell's main language family at the start.
+    auto families = [&]() {
+        const histsim::SimState& st = sim.state();
+        std::vector<std::uint32_t> fam(sim.world().cell_count(), 0);
+        for (histsim::CellId c = 0; c < fam.size(); ++c) {
+            const histsim::Cohort* lead = nullptr;
+            for (const histsim::Cohort& co : st.cohorts_in(c)) {
+                if (lead == nullptr || co.total() > lead->total()) lead = &co;
+            }
+            if (lead != nullptr) fam[c] = st.languages[lead->language].family;
+        }
+        return fam;
+    };
+    const std::vector<std::uint32_t> start = families();
+    apply_due_now(sim, o, true);
+    advance(sim, o.years, o, true);
+    const histsim::SimState& s = sim.state();
+    const histsim::World& w = sim.world();
+    std::printf("Every 500 years:\n");
+    std::int64_t colonists = 0, movers = 0;
+    std::size_t next = 0;
+    std::array<std::size_t, 4> by_cause{};
+    for (const histsim::YearRecord& r : s.history) {
+        colonists += r.colonists;
+        movers += r.folk_movers;
+        if (r.year % 500 != 0) continue;
+        by_cause.fill(0);
+        while (next < s.migrations.size() && s.migrations[next].tick < r.year * histsim::kTicksPerYear) {
+            ++by_cause[static_cast<std::size_t>(s.migrations[next].cause)];
+            ++next;
+        }
+        std::printf("  year %5lld  colonists %9lld  folk movers %9lld  folk migrations: famine %3zu, war %3zu, raids %3zu, "
+                    "pushed on %3zu\n",
+                    static_cast<long long>(r.year), static_cast<long long>(colonists), static_cast<long long>(movers),
+                    by_cause[0], by_cause[1], by_cause[2], by_cause[3]);
+        colonists = movers = 0;
+    }
+    // The longest chains: movements that pushed others on.
+    std::vector<std::size_t> depth(s.migrations.size(), 0);
+    for (std::size_t i = 0; i < s.migrations.size(); ++i) {
+        const std::uint32_t up = s.migrations[i].pushed_by;
+        if (up != 0) depth[i] = depth[up - 1] + 1;
+    }
+    std::vector<std::size_t> order(s.migrations.size());
+    for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
+    std::stable_sort(order.begin(), order.end(),
+                     [&](auto a, auto b) { return s.migrations[a].people > s.migrations[b].people; });
+    static const char* const causes[] = {"famine", "war", "raids", "pushed on"};
+    std::printf("\nLargest folk migrations (%zu in all):\n", s.migrations.size());
+    for (std::size_t k = 0; k < order.size() && k < 12; ++k) {
+        const histsim::FolkMovement& m = s.migrations[order[k]];
+        std::printf("  year %5lld  %8lld %-14s %-10s %5.0f km  %s\n", static_cast<long long>(m.tick / histsim::kTicksPerYear),
+                    static_cast<long long>(m.people), s.languages[m.language].name.c_str(),
+                    causes[static_cast<std::size_t>(m.cause)], w.grid.distance_km(m.from, m.to),
+                    m.pushed_by != 0 ? ("pushed by the " + s.languages[s.migrations[m.pushed_by - 1].language].name).c_str()
+                                     : "");
+    }
+    std::size_t chains = 0, longest = 0;
+    for (std::size_t d : depth) {
+        chains += d > 0 ? 1 : 0;
+        longest = std::max(longest, d);
+    }
+    std::printf("  %zu were pushed on by others; the longest chain had %zu links.\n", chains, longest + 1);
+    // Famine migrations in Bond events (cold, dry centuries) against the rest.
+    std::int64_t bond_years = 0;
+    for (const histsim::BondEvent& b : s.climate.bond_history) bond_years += b.years;
+    std::size_t famine = 0, famine_in_bond = 0;
+    for (const histsim::FolkMovement& m : s.migrations) {
+        if (m.cause != histsim::MigrationCause::Famine && m.cause != histsim::MigrationCause::Displaced) continue;
+        ++famine;
+        const std::int64_t year = m.tick / histsim::kTicksPerYear;
+        for (const histsim::BondEvent& b : s.climate.bond_history) {
+            if (year >= b.start_year && year < b.start_year + b.years) {
+                ++famine_in_bond;
+                break;
+            }
+        }
+    }
+    if (sim.year() > 0 && famine > 0) {
+        std::printf("  Bond events covered %.0f%% of the years and saw %.0f%% of the hunger migrations.\n",
+                    100.0 * static_cast<double>(bond_years) / static_cast<double>(sim.year()),
+                    100.0 * static_cast<double>(famine_in_bond) / static_cast<double>(famine));
+    }
+    // Language families: land then and now.
+    const std::vector<std::uint32_t> now = families();
+    std::map<std::uint32_t, std::pair<std::size_t, std::size_t>> land;  // family -> (start, now)
+    std::size_t same = 0, total = 0;
+    for (std::size_t c = 0; c < now.size(); ++c) {
+        if (start[c] != 0) ++land[start[c]].first;
+        if (now[c] != 0) ++land[now[c]].second;
+        if (start[c] != 0 && now[c] != 0) {
+            ++total;
+            same += start[c] == now[c] ? 1 : 0;
+        }
+    }
+    std::vector<std::pair<std::uint32_t, std::pair<std::size_t, std::size_t>>> fams(land.begin(), land.end());
+    std::stable_sort(fams.begin(), fams.end(), [](const auto& a, const auto& b) {
+        return static_cast<long>(a.second.second) - static_cast<long>(a.second.first) >
+               static_cast<long>(b.second.second) - static_cast<long>(b.second.first);
+    });
+    std::printf("\nLanguage families: %.0f%% of inhabited land speaks the same family as at the start.\n",
+                total > 0 ? 100.0 * static_cast<double>(same) / static_cast<double>(total) : 0.0);
+    std::printf("Families that spread most (cells at the start -> now):\n");
+    for (std::size_t k = 0; k < fams.size() && k < 8; ++k) {
+        std::printf("  %-16s %4zu -> %4zu\n", s.languages[fams[k].first].name.c_str(), fams[k].second.first,
+                    fams[k].second.second);
+    }
+    return 0;
+}
+
 int world_info(const Options& o) {
     const histsim::World w = histsim::generate_test_world(o.params);
     std::size_t land = 0;
@@ -752,6 +875,9 @@ int main(int argc, char** argv) {
         }
         if (cmd == "polities") {
             return polities(parse(args, 2));
+        }
+        if (cmd == "migrations") {
+            return migrations(parse(args, 2));
         }
         if (cmd == "wars") {
             return wars(parse(args, 2));

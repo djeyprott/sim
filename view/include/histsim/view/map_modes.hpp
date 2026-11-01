@@ -84,6 +84,9 @@ std::vector<std::string> native_species(const Simulation& sim, CellId cell);
 // The links of today's trade routes, for RenderOptions::routes.
 std::vector<RouteLine> route_lines(const Simulation& sim);
 
+// Folk migrations of the last `years` years, as arrows (strength by size).
+std::vector<RouteLine> migration_lines(const Simulation& sim, std::int64_t years = 50);
+
 // Neutral colors shared by modes and overlays.
 Rgba ocean_neutral();
 Rgba coastline_color();

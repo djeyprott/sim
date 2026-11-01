@@ -24,7 +24,9 @@ scarcity in every market and carried overland, down rivers and by sea along
 trade routes, with food feeding towns and copper and tin gating metalwork;
 and polities go to war, make vassals and tributaries, form alliances and
 fight wars of independence, while mounted nomad confederations raid their
-settled neighbours. A Godot viewer shows it as a map or globe with
+settled neighbours. Farmers colonize new land and carry their languages, and
+peoples flee famine, war and raids in folk migrations that push others on.
+A Godot viewer shows it as a map or globe with
 twenty-seven map modes, polity borders, trade routes, world charts, a cell
 inspector and a god mode.
 
@@ -79,6 +81,10 @@ ctest --test-dir build --output-on-failure
 
 # Wars, alliances and the largest realms after 9,000 years
 ./build/cli/histsim wars --years 9000
+
+# Colonists, folk migrations and their chain reactions, and how language
+# families spread, over 9,000 years
+./build/cli/histsim migrations --years 9000
 
 # Goods, prices and the busiest trade routes after 6,000 years
 ./build/cli/histsim trade --years 6000

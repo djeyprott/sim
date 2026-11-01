@@ -50,7 +50,7 @@ public:
     // Learning a domesticate from a neighbour that knows it, per year (x 0.5
     // + openness, for 50,000 km^2 cells): farming spreads ~1 km a year, as
     // across Neolithic Europe.
-    static constexpr double kLearning = 0.0015;
+    static constexpr double kLearning = 0.0005;
     // A domestication is a new, independent origin only if nobody within
     // this distance already knows the species.
     static constexpr double kIndependentOriginKm = 1000.0;

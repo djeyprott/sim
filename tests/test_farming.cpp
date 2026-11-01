@@ -1,6 +1,8 @@
 // Bond events, domestication and farming (M2 slice 3), and the M2 gate.
 #include <algorithm>
 #include <cmath>
+#include <map>
+#include <vector>
 
 #include "histsim/simulation.hpp"
 #include "histsim/systems/climate.hpp"
@@ -161,6 +163,24 @@ TEST(farming_starts_with_dogs_only) {
 // worlds, within 3,000 years, crops are domesticated independently in at
 // least three places, some of them far apart, always where their wild
 // ancestors grow; farming spreads, and the population grows.
+namespace {
+
+// Each cell's main language family (0 where nobody lives).
+std::vector<std::uint32_t> main_families(const Simulation& sim) {
+    const SimState& s = sim.state();
+    std::vector<std::uint32_t> out(sim.world().cell_count(), 0);
+    for (CellId c = 0; c < out.size(); ++c) {
+        const Cohort* lead = nullptr;
+        for (const Cohort& co : s.cohorts_in(c)) {
+            if (lead == nullptr || co.total() > lead->total()) lead = &co;
+        }
+        if (lead != nullptr) out[c] = s.languages[lead->language].family;
+    }
+    return out;
+}
+
+}  // namespace
+
 TEST(m2_gate_farming_arises_in_several_plausible_regions) {
     for (std::uint64_t seed : {1u, 2u, 3u}) {
         WorldParams p;
@@ -168,6 +188,7 @@ TEST(m2_gate_farming_arises_in_several_plausible_regions) {
         p.grid_level = 4;
         Simulation sim = Simulation::create(p);
         const std::int64_t start = sim.state().total_population();
+        const std::vector<std::uint32_t> families_then = main_families(sim);
         sim.step_years(3000);
         const SimState& s = sim.state();
         const World& w = sim.world();
@@ -193,6 +214,24 @@ TEST(m2_gate_farming_arises_in_several_plausible_regions) {
         CHECK(farmers > 0.2);
         CHECK(farmers < 0.98);  // foragers remain somewhere
         CHECK(last.population > start + start / 5);
+
+        // Farmers spread their languages: a sizable share of the land changes
+        // family, and some family gains much land.
+        const std::vector<std::uint32_t> families_now = main_families(sim);
+        std::map<std::uint32_t, long> gained;
+        std::size_t same = 0, both = 0;
+        for (CellId cell = 0; cell < w.cell_count(); ++cell) {
+            if (families_then[cell] != 0) --gained[families_then[cell]];
+            if (families_now[cell] != 0) ++gained[families_now[cell]];
+            if (families_then[cell] != 0 && families_now[cell] != 0) {
+                ++both;
+                same += families_then[cell] == families_now[cell] ? 1 : 0;
+            }
+        }
+        long most = 0;
+        for (const auto& [family, cells] : gained) most = std::max(most, cells);
+        CHECK(static_cast<double>(same) < 0.9 * static_cast<double>(both));
+        CHECK(most >= 10);
 
         // Farming only where people know a domesticate that can be raised.
         for (CellId cell = 0; cell < w.cell_count(); ++cell) {

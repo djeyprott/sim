@@ -101,6 +101,11 @@ public:
     // seated in a city, in a war for tribute, and are this many times as
     // strong rule it instead.
     static constexpr double kConquestDynastyRatio = 1.5;
+    // Share of the people of the cell a conquest was launched from who move
+    // into the taken cell (settlers and garrisons), and of the nomads'
+    // homeland who follow a conquest dynasty to its new capital.
+    static constexpr double kConquestSettlers = 0.03;
+    static constexpr double kDynastyHerders = 0.1;
     // The toll of war on stability (Polity::shock, which PolitySystem lets
     // fade): land lost (per share of people in it), war dead (per share of
     // people), a lost war, a raid; a won war eases it.

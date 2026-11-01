@@ -248,6 +248,24 @@ struct War {
     std::uint32_t cells_lost = 0;   // retaken by the defenders
 };
 
+// Why a people left its land in a body.
+enum class MigrationCause : std::uint8_t {
+    Famine = 0,     // the land could no longer feed them (often a climate shift)
+    War = 1,        // their land was taken in war
+    Raid = 2,       // nomads raided them
+    Displaced = 3,  // a stronger people arrived and pushed them out (a chain reaction)
+};
+
+// A folk migration: a people moving in a body to land further off.
+struct FolkMovement {
+    Tick tick = 0;
+    CellId from = kInvalidCell, to = kInvalidCell;
+    std::int64_t people = 0;
+    std::uint32_t language = 0, culture = 0;
+    MigrationCause cause = MigrationCause::Famine;
+    std::uint32_t pushed_by = 0;  // for Displaced: the index of the movement that pushed them, + 1
+};
+
 // Where a technique was invented independently.
 struct Invention {
     Tick tick = 0;
@@ -298,6 +316,7 @@ enum class EventType : std::uint32_t {
     Absorbed = 20,        // a vassal was absorbed by its overlord; value = the vassal's id
     Raid = 21,            // nomads raided a cell; value = the raiders' polity id
     ConquestDynasty = 22, // nomads took a settled state and rule it; cell = its capital; value = the nomads' id
+    FolkMigration = 23,   // a people left its land in a body; cell = where from; value = index into SimState::migrations
 };
 
 struct Event {
@@ -377,6 +396,8 @@ struct YearRecord {
     std::uint32_t subjects = 0;           // tributaries and vassals
     std::uint32_t nomads = 0;             // nomad confederations
     std::uint32_t raids = 0;              // nomad raids this year
+    std::int64_t colonists = 0;           // farmers who left to settle new land this year
+    std::int64_t folk_movers = 0;         // people in folk migrations this year
 };
 
 // ---------------------------------------------------------------- state
@@ -455,6 +476,22 @@ struct SimState {
     std::int64_t war_deaths_total = 0;
     std::uint32_t raids = 0;  // this year
     std::vector<Tick> last_raid;  // per cell: when nomads last raided it (kNever = never)
+
+    // Folk migrations, in the order they happened (at least
+    // MigrationSystem::kFolkRecordPeople people each), and this year's totals.
+    std::vector<FolkMovement> migrations;
+    // Per cell: the last recorded folk migration to arrive (index + 1, 0 =
+    // none) and when, so a people driven out by newcomers can be traced back
+    // to them.
+    std::vector<std::uint32_t> last_arrival;
+    std::vector<Tick> last_arrival_tick;
+    // Per cell: what the land has fed lately (capacity smoothed over a few
+    // years) and usually (over about fifty), so a lasting dearth, not one bad
+    // harvest, can be told apart.
+    std::vector<double> recent_capacity;
+    std::vector<double> usual_capacity;
+    std::int64_t colonists = 0;
+    std::int64_t folk_movers = 0;
 
     // ---- Derived data: rebuilt by refresh(), never saved or hashed.
     std::vector<std::uint32_t> cell_population;

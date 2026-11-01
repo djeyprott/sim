@@ -8,9 +8,11 @@
 //     adapt to the land (data/culture.json);
 //   - dialects drift and are pulled toward speakers of the same language in
 //     the cell and next door, so separated groups grow apart;
-//   - in a cell with several languages, speakers of the smaller ones shift
-//     to the largest (keeping their customs), and minorities slowly adopt
-//     the larger culture (keeping their language);
+//   - in a cell with several languages, speakers of the others shift to the
+//     one with the most pull (keeping their customs), and minorities slowly
+//     adopt the culture with the most pull (keeping their language); pull is
+//     people weighted by prestige: farmers over foragers, the rulers'
+//     people over their subjects;
 //   - every language changes its words and sounds (language.hpp).
 //
 // Every 20 years, a language whose dialects have spread too far apart
@@ -57,6 +59,12 @@ public:
     // between the largest group's share of the cell and their own.
     static constexpr double kLanguageShiftRate = 0.03;
     static constexpr double kAssimilationRate = 0.015;
+    // Prestige in shift and assimilation: a group's pull is its people x (1 +
+    // kFarmerPrestige x its farming share) x (1 + kRulerPrestige x control)
+    // if it speaks the rulers' language (or keeps their culture). So farmers
+    // absorb foragers, and conquerors' tongues spread through what they hold.
+    static constexpr double kFarmerPrestige = 3.0;
+    static constexpr double kRulerPrestige = 1.5;
 };
 
 // The circumstances that push culture traits at a cell, each 0-1 (see

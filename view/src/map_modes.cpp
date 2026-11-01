@@ -449,6 +449,21 @@ std::vector<RouteLine> route_lines(const Simulation& sim) {
     return out;
 }
 
+std::vector<RouteLine> migration_lines(const Simulation& sim, std::int64_t years) {
+    std::vector<RouteLine> out;
+    const SimState& s = sim.state();
+    for (auto it = s.migrations.rbegin(); it != s.migrations.rend(); ++it) {
+        if (s.tick - it->tick > years * kTicksPerYear) break;
+        RouteLine l;
+        l.a = it->from;
+        l.b = it->to;
+        l.strength = std::min(1.0, static_cast<double>(it->people) / 30000.0);
+        l.migration = true;
+        out.push_back(l);
+    }
+    return out;
+}
+
 Rgba ocean_neutral() { return kOceanNeutral; }
 Rgba coastline_color() { return kCoastline; }
 
@@ -1027,6 +1042,14 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
                                   with_commas(std::llround(town)) + fmt(" people (%.0f%%)", 100.0 * s.urban[c])});
     }
 
+    if (s.last_arrival.size() == w.cell_count() && s.last_arrival[c] != 0 && s.last_arrival[c] <= s.migrations.size()) {
+        const FolkMovement& move = s.migrations[s.last_arrival[c] - 1];
+        static const char* const why[] = {"fleeing famine", "fleeing war", "fleeing raids", "pushed out by others"};
+        f.push_back({"Newcomers", with_commas(move.people) + " " + s.languages[move.language].name + " speakers in year " +
+                                      with_commas(static_cast<long long>(move.tick / kTicksPerYear)) + ", " +
+                                      why[static_cast<std::size_t>(move.cause)] +
+                                      fmt(", from %.0f km away", w.grid.distance_km(move.from, move.to))});
+    }
     if (s.last_raid.size() == w.cell_count() && s.last_raid[c] != kNever) {
         f.push_back({"Last raided", "by nomads in year " + with_commas(static_cast<long long>(s.last_raid[c] / kTicksPerYear))});
     }

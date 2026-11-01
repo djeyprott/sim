@@ -94,6 +94,7 @@ void draw_routes(const World& world, const std::vector<RouteLine>& routes, int w
                  std::vector<std::uint8_t>& rgba) {
     const Rgba road = hex("#5a3208");
     const Rgba sea = hex("#14306a");
+    const Rgba folk = hex("#c2185b");
     const double scale = static_cast<double>(w) / 2048.0;
     for (const RouteLine& r : routes) {
         double x0, y0, x1, y1;
@@ -102,6 +103,19 @@ void draw_routes(const World& world, const std::vector<RouteLine>& routes, int w
         if (std::fabs(x1 - x0) > 0.5 * w) continue;  // crosses the date line
         const int base = r.strength < 0.25 ? 1 : (r.strength < 0.6 ? 2 : 3);
         const int width = std::max(1, static_cast<int>(std::lround(base * scale)));
+        if (r.migration) {
+            // A line with an arrowhead at the destination.
+            line(rgba, w, h, x0, y0, x1, y1, width, folk);
+            const double dx = x1 - x0, dy = y1 - y0;
+            const double len = std::sqrt(dx * dx + dy * dy);
+            if (len > 1.0) {
+                const double head = std::max(4.0, 7.0 * scale);
+                const double ux = dx / len, uy = dy / len;
+                line(rgba, w, h, x1, y1, x1 - head * (ux + 0.6 * uy), y1 - head * (uy - 0.6 * ux), width, folk);
+                line(rgba, w, h, x1, y1, x1 - head * (ux - 0.6 * uy), y1 - head * (uy + 0.6 * ux), width, folk);
+            }
+            continue;
+        }
         line(rgba, w, h, x0, y0, x1, y1, width, r.sea ? sea : road, r.sea ? std::max(2, 3 * width) : 0);
     }
 }
@@ -199,6 +213,9 @@ void render(const MapRaster& raster, const World& world, const std::vector<Rgba>
     }
     if (options.routes != nullptr) {
         draw_routes(world, *options.routes, w, h, rgba);
+    }
+    if (options.migrations != nullptr) {
+        draw_routes(world, *options.migrations, w, h, rgba);
     }
 }
 

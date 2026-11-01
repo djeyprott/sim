@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "histsim/language.hpp"
+#include "histsim/systems/polity.hpp"
 
 namespace histsim {
 
@@ -363,17 +364,26 @@ void CultureSystem::step(StepContext& ctx) {
     std::vector<std::int64_t> pop(count);
     for (std::size_t i = 0; i < count; ++i) pop[i] = s.cohorts[i].total();
 
-    // Per cell: the largest language and culture (ties: the lower id) and
-    // their largest cohort, which newcomers to them learn from.
+    // Per cell: the language and culture with the most pull (people weighted
+    // by prestige; ties: the lower id) and their largest cohort, which
+    // newcomers to them learn from; and each cohort's own language's and
+    // culture's pull there. Prestige: farmers count more than foragers, and
+    // the people of the cell's rulers more again, as far as their rule
+    // reaches.
     struct Top {
         std::uint32_t language = 0, culture = 0;
-        std::int64_t language_pop = 0, culture_pop = 0;
+        double language_pull = 0.0, culture_pull = 0.0, total = 0.0;
         std::size_t language_cohort = 0, culture_cohort = 0;
     };
     std::vector<Top> cell_top(n);
+    std::vector<double> own_language_pull(count, 0.0), own_culture_pull(count, 0.0);
     {
-        std::vector<std::pair<std::uint32_t, std::int64_t>> langs, cults;
-        auto add = [](std::vector<std::pair<std::uint32_t, std::int64_t>>& v, std::uint32_t id, std::int64_t p) {
+        std::vector<double> reach(s.polities.size(), 0.0);
+        for (std::size_t p = 1; p < s.polities.size(); ++p) {
+            if (s.polities[p].ended == kNever) reach[p] = polity_reach(w, s, static_cast<std::uint32_t>(p));
+        }
+        std::vector<std::pair<std::uint32_t, double>> langs, cults;
+        auto add = [](std::vector<std::pair<std::uint32_t, double>>& v, std::uint32_t id, double p) {
             for (auto& e : v) {
                 if (e.first == id) {
                     e.second += p;
@@ -387,21 +397,42 @@ void CultureSystem::step(StepContext& ctx) {
             if (first == last) continue;
             langs.clear();
             cults.clear();
-            for (auto j = first; j < last; ++j) {
-                add(langs, s.cohorts[j].language, pop[j]);
-                add(cults, s.cohorts[j].culture, pop[j]);
-            }
+            const std::uint32_t ruler = s.polity_of.size() == n ? s.polity_of[c] : 0;
+            const bool ruled = ruler != 0 && s.polities[ruler].ended == kNever && reach[ruler] > 0.0;
+            const double control =
+                ruled ? polity_control(w.grid.distance_km(s.polities[ruler].capital, c), reach[ruler]) : 0.0;
             Top& t = cell_top[c];
+            for (auto j = first; j < last; ++j) {
+                const Cohort& o = s.cohorts[j];
+                const double base = static_cast<double>(pop[j]) * (1.0 + kFarmerPrestige * o.farming);
+                const bool rulers_tongue = ruled && o.language == s.polities[ruler].language;
+                const bool rulers_ways = ruled && o.culture == s.polities[ruler].culture;
+                add(langs, o.language, base * (1.0 + (rulers_tongue ? kRulerPrestige * control : 0.0)));
+                add(cults, o.culture, base * (1.0 + (rulers_ways ? kRulerPrestige * control : 0.0)));
+            }
             t.language = langs[0].first;
-            t.language_pop = -1;
+            t.language_pull = -1.0;
             for (const auto& [id, p] : langs) {
-                if (p > t.language_pop || (p == t.language_pop && id < t.language)) t.language = id, t.language_pop = p;
+                if (p > t.language_pull || (p == t.language_pull && id < t.language)) t.language = id, t.language_pull = p;
+                t.total += p;
             }
             t.culture = cults[0].first;
-            t.culture_pop = -1;
+            t.culture_pull = -1.0;
             for (const auto& [id, p] : cults) {
-                if (p > t.culture_pop || (p == t.culture_pop && id < t.culture)) t.culture = id, t.culture_pop = p;
+                if (p > t.culture_pull || (p == t.culture_pull && id < t.culture)) t.culture = id, t.culture_pull = p;
             }
+            double culture_total = 0.0;
+            for (const auto& e : cults) culture_total += e.second;
+            for (auto j = first; j < last; ++j) {
+                for (const auto& [id, p] : langs) {
+                    if (id == s.cohorts[j].language) own_language_pull[j] = p / t.total;
+                }
+                for (const auto& [id, p] : cults) {
+                    if (id == s.cohorts[j].culture) own_culture_pull[j] = p / culture_total;
+                }
+            }
+            t.culture_pull /= culture_total;
+            t.language_pull /= t.total;
             std::int64_t best_l = -1, best_c = -1;
             for (auto j = first; j < last; ++j) {
                 if (s.cohorts[j].language == t.language && pop[j] > best_l) best_l = pop[j], t.language_cohort = j;
@@ -418,18 +449,14 @@ void CultureSystem::step(StepContext& ctx) {
         std::array<double, kDialectDims> speech{};
         double w_same = 0.0, w_other = 0.0, w_speech = 0.0;
         // Who lives here, for language shift and assimilation.
-        std::int64_t cell_pop = 0, own_lang = 0, own_culture = 0;
+        std::int64_t cell_pop = 0;
 
         auto visit = [&](CellId cell, bool home) {
             const auto first = s.cohort_begin[cell], last = s.cohort_begin[cell + 1];
             for (auto j = first; j < last; ++j) {
                 const Cohort& o = s.cohorts[j];
                 const auto wj = static_cast<double>(pop[j]);
-                if (home) {
-                    cell_pop += pop[j];
-                    if (o.language == co.language) own_lang += pop[j];
-                    if (o.culture == co.culture) own_culture += pop[j];
-                }
+                if (home) cell_pop += pop[j];
                 if (j == i) continue;
                 if (o.culture == co.culture) {
                     for (std::size_t t = 0; t < nt; ++t) same[t] += wj * o.traits[t];
@@ -448,8 +475,8 @@ void CultureSystem::step(StepContext& ctx) {
         for (CellId nb : w.grid.neighbors(co.cell)) visit(nb, false);
 
         const std::uint32_t top_lang = cell_top[co.cell].language, top_culture = cell_top[co.cell].culture;
-        const std::int64_t top_lang_pop = cell_top[co.cell].language_pop;
-        const std::int64_t top_culture_pop = cell_top[co.cell].culture_pop;
+        const double top_lang_pull = cell_top[co.cell].language_pull;
+        const double top_culture_pull = cell_top[co.cell].culture_pull;
         const std::size_t top_lang_cohort = cell_top[co.cell].language_cohort;
         const std::size_t top_culture_cohort = cell_top[co.cell].culture_cohort;
 
@@ -486,8 +513,8 @@ void CultureSystem::step(StepContext& ctx) {
         // Language shift: some of a minority's people take up the cell's
         // main language, keeping their customs.
         if (cell_pop > 0 && top_lang != co.language) {
-            const double gap = static_cast<double>(top_lang_pop - own_lang) / static_cast<double>(cell_pop);
-            const double rate = std::min(1.0, kLanguageShiftRate * gap);
+            const double gap = top_lang_pull - own_language_pull[i];
+            const double rate = std::clamp(kLanguageShiftRate * gap, 0.0, 1.0);
             Cohort moved;
             moved.cell = co.cell;
             moved.culture = co.culture;
@@ -511,8 +538,8 @@ void CultureSystem::step(StepContext& ctx) {
         // Assimilation: some take up the cell's main culture, keeping their
         // language.
         if (cell_pop > 0 && top_culture != co.culture) {
-            const double gap = static_cast<double>(top_culture_pop - own_culture) / static_cast<double>(cell_pop);
-            const double rate = std::min(1.0, kAssimilationRate * gap);
+            const double gap = top_culture_pull - own_culture_pull[i];
+            const double rate = std::clamp(kAssimilationRate * gap, 0.0, 1.0);
             Cohort moved;
             moved.cell = co.cell;
             moved.culture = top_culture;

@@ -17,6 +17,7 @@ constexpr std::uint32_t kCivilWarEntity = 0x40000000u;
 constexpr std::uint32_t kFormationEntity = 0x20000000u;
 constexpr std::uint32_t kNameEntity = 0x60000000u;
 constexpr std::uint32_t kCollapseEntity = 0x10000000u;
+constexpr std::uint32_t kOfficialsEntity = 0x70000000u;
 
 std::size_t trait_index(const Content& c, const char* id) {
     for (std::size_t t = 0; t < c.traits.size(); ++t) {
@@ -237,6 +238,17 @@ void PolitySystem::step(StepContext& ctx) {
                 if (s.cell_population[c] > s.cell_population[best]) best = c;
             }
             p.capital = best;
+        } else {
+            // The seat moves to a town (or, for nomads, a camp) that has far
+            // outgrown it.
+            auto seat_size = [&](CellId c) {
+                return static_cast<double>(s.cell_population[c]) * (p.nomadic ? 1.0 : s.urban[c]);
+            };
+            CellId best = p.capital;
+            for (CellId c : cells[id]) {
+                if (seat_size(c) > seat_size(best) || (seat_size(c) == seat_size(best) && c < best)) best = c;
+            }
+            if (best != p.capital && seat_size(best) > kCapitalMove * seat_size(p.capital)) p.capital = best;
         }
     }
 
@@ -437,6 +449,48 @@ void PolitySystem::step(StepContext& ctx) {
                 // The rest fight to keep them.
                 start_war(w, s, ctx.tick, rebel, static_cast<std::uint32_t>(id), WarGoal::Independence);
             }
+        }
+    }
+
+    // ---- Officials, garrisons and merchants of the rulers' people settle in
+    // the provinces they hold well, so the rulers' language takes root there.
+    {
+        std::vector<Cohort> settlers;
+        for (std::size_t id = 1; id < np; ++id) {
+            const Polity& pol = s.polities[id];
+            if (pol.ended != kNever) continue;
+            Cohort* home = nullptr;
+            for (auto i = s.cohort_begin[pol.capital]; i < s.cohort_begin[pol.capital + 1]; ++i) {
+                Cohort& co = s.cohorts[i];
+                if (co.language == pol.language && (home == nullptr || co.total() > home->total())) home = &co;
+            }
+            if (home == nullptr) continue;
+            RngStream rng = ctx.rng(Stream::Polity, kOfficialsEntity | static_cast<std::uint32_t>(id));
+            for (CellId c : cells[id]) {
+                if (c == pol.capital || s.polity_of[c] != id || s.cell_population[c] == 0) continue;
+                const double control = control_of(id, c);
+                if (control < kMinControl) continue;
+                const double want = kOfficials * control * static_cast<double>(s.cell_population[c]);
+                const double share = want / static_cast<double>(std::max<std::int64_t>(1, home->total()));
+                Cohort band = *home;
+                band.cell = c;
+                for (int b = 0; b < kAgeBins; ++b) {
+                    band.female[b] = static_cast<std::uint32_t>(
+                        std::min<std::int64_t>(home->female[b], stochastic_round(share * home->female[b], rng)));
+                    band.male[b] = static_cast<std::uint32_t>(
+                        std::min<std::int64_t>(home->male[b], stochastic_round(share * home->male[b], rng)));
+                    home->female[b] -= band.female[b];
+                    home->male[b] -= band.male[b];
+                }
+                if (band.total() > 0) {
+                    s.ledger.migrants += band.total();
+                    settlers.push_back(band);
+                }
+            }
+        }
+        if (!settlers.empty()) {
+            s.cohorts.insert(s.cohorts.end(), settlers.begin(), settlers.end());
+            s.normalize_cohorts(n);
         }
     }
 

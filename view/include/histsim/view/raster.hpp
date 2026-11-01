@@ -39,6 +39,7 @@ struct RouteLine {
     CellId a = kInvalidCell, b = kInvalidCell;
     double strength = 0.0;  // 0-1: share of the busiest link's value
     bool sea = false;       // drawn dashed
+    bool migration = false;  // a folk migration from a to b, drawn as an arrow
 };
 
 struct RenderOptions {
@@ -53,6 +54,8 @@ struct RenderOptions {
     const std::vector<std::uint32_t>* borders = nullptr;
     // Optional trade routes, drawn over everything else.
     const std::vector<RouteLine>* routes = nullptr;
+    // Optional folk migrations (RouteLine::migration), drawn on top.
+    const std::vector<RouteLine>* migrations = nullptr;
 };
 
 // Fill `rgba` (width * height * 4 bytes) from one color per cell.

@@ -179,6 +179,7 @@ func _check_api() -> void:
 	_expect(w.describe_cell(cell).size() >= 4, "describe_cell lists fields")
 	_expect(w.render_map("biome", true, false) != null, "render without rivers")
 	_expect(w.render_map("trade", true, true, true, true) != null, "render with borders and trade routes")
+	_expect(w.render_map("language", true, true, true, true, true) != null, "render with migrations")
 	var h: Dictionary = w.get_history(100)
 	_expect(h["year"].size() == 50 and h["population"].size() == 50, "history has one row per year")
 	_expect(w.get_capacity() > 0.0, "capacity")

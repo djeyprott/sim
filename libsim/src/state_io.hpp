@@ -342,6 +342,22 @@ void serialize(Ar& ar, SimState& s) {
     ar.i64(s.war_deaths_total);
     ar.u32(s.raids);
     vec(ar, s.last_raid, [&](Tick& t) { ar.i64(t); });
+    vec(ar, s.migrations, [&](FolkMovement& m) {
+        ar.i64(m.tick);
+        ar.u32(m.from);
+        ar.u32(m.to);
+        ar.i64(m.people);
+        ar.u32(m.language);
+        ar.u32(m.culture);
+        u8(ar, m.cause);
+        ar.u32(m.pushed_by);
+    });
+    vec(ar, s.last_arrival, [&](std::uint32_t& v) { ar.u32(v); });
+    vec(ar, s.last_arrival_tick, [&](Tick& t) { ar.i64(t); });
+    doubles(ar, s.recent_capacity);
+    doubles(ar, s.usual_capacity);
+    ar.i64(s.colonists);
+    ar.i64(s.folk_movers);
     vec(ar, s.domestications, [&](Domestication& d) {
         ar.i64(d.tick);
         ar.u32(d.cell);
@@ -379,6 +395,8 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(r.subjects);
         ar.u32(r.nomads);
         ar.u32(r.raids);
+        ar.i64(r.colonists);
+        ar.i64(r.folk_movers);
     });
 }
 

@@ -52,6 +52,7 @@ godot --headless --path godot/project --script res://tests/smoke.gd
 | Rivers checkbox | Show / hide rivers (line width grows with flow) |
 | Borders checkbox | Show / hide the borders of chiefdoms and states |
 | Trade routes checkbox | Show / hide the busiest trade routes |
+| Migrations checkbox | Show / hide the last 50 years' folk migrations as arrows |
 | Scroll, drag (map) | Zoom in and out around the cursor, pan when zoomed in |
 | Home | Zoom the map back out to the whole world |
 | G | Toggle map / globe (drag to turn, the grabbed point stays under the cursor; scroll to zoom) |
