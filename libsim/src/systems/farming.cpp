@@ -44,13 +44,16 @@ FarmParts farm_parts(const World& w, CellId c, std::uint32_t known, std::uint64_
         best = std::max(best, v);
     }
     const double soil = 0.35 + 0.65 * w.soil_fertility[c];
-    const double flood = is_river(w, c) ? 1.0 + FarmingSystem::kFloodplainBonus * std::min(1.0, w.discharge_m3s[c] / 5000.0) : 1.0;
+    // Floodplains: the share of the land along a river (at level 5, river
+    // cells), by the river's flow.
+    const double along = river_share(w, c);
+    const double flow = along > 0.0 ? (c < w.river_flow.size() ? w.river_flow[c] : w.discharge_m3s[c]) : 0.0;
+    const double flood = 1.0 + FarmingSystem::kFloodplainBonus * (along * std::min(1.0, flow / 5000.0));
     const double season = std::min(1.0, (w.growing_months[c] + 1.0) / 5.0);
     // A river waters its floodplain; elsewhere crops need reliable rain.
-    const double rain = is_river(w, c) ? 1.0
-                                       : std::clamp((w.precipitation_mm[c] - FarmingSystem::kDryFarmingMm) /
-                                                        FarmingSystem::kDryFarmingSpanMm,
-                                                    FarmingSystem::kDryFloor, 1.0);
+    const double rain = along * 1.0 + (1.0 - along) * std::clamp((w.precipitation_mm[c] - FarmingSystem::kDryFarmingMm) /
+                                                                     FarmingSystem::kDryFarmingSpanMm,
+                                                                 FarmingSystem::kDryFloor, 1.0);
     const TechEffects tech = technique_effects(w, c, techniques);
     const double crops = FarmingSystem::kCropDensity * crop * soil * flood * season * rain * (1.0 + tech.crop_yield);
     const double herds = FarmingSystem::kHerdDensity * herd * pasture_quality(static_cast<Biome>(w.biome[c])) *

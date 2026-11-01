@@ -265,6 +265,10 @@ void WarSystem::step(StepContext& ctx) {
     const Content& content = *w.content;
     SimState& s = ctx.state;
     const std::size_t n = w.cell_count();
+    // Grid scale (see World::cell_scale): pushes per level-5 cell of land on
+    // finer grids; on coarser ones each cell is several level-5 cells.
+    const int pushes_per_cell = static_cast<int>(std::max<std::size_t>(1, w.cells_for(1)));
+    const double coarse = std::max(1.0, w.cell_scale() * w.cell_scale());
     if (s.polity_of.size() != n) return;
     if (s.wars.empty()) s.wars.emplace_back();
     s.war_deaths.assign(n, 0);
@@ -407,7 +411,7 @@ void WarSystem::step(StepContext& ctx) {
                 }
             }
             if (target == kInvalidCell || ratio <= 1.0) return false;
-            if (rng.uniform() >= kSeize * std::min(2.0, ratio - 1.0)) return false;
+            if (rng.uniform() >= kSeize * std::min(2.0, ratio - 1.0) / coarse) return false;
             const std::uint32_t loser = s.polity_of[target];
             // Losing land shakes the loser in proportion to the people lost.
             blow(loser, kShockLand * static_cast<double>(s.cell_population[target]));
@@ -428,10 +432,12 @@ void WarSystem::step(StepContext& ctx) {
             s.strife[target] = 2;
             return true;
         };
-        for (int k = 0; k < std::clamp(static_cast<int>(pa / pd), 1, kMaxPushes); ++k) {
+        // On finer grids, as many pushes as cells make up a level-5 cell, so
+        // land changes hands at the same pace in km^2.
+        for (int k = 0; k < std::clamp(static_cast<int>(pa / pd), 1, kMaxPushes) * pushes_per_cell; ++k) {
             if (push(1, pa / pd)) ++war.cells_taken;
         }
-        for (int k = 0; k < std::clamp(static_cast<int>(pd / pa), 1, kMaxPushes); ++k) {
+        for (int k = 0; k < std::clamp(static_cast<int>(pd / pa), 1, kMaxPushes) * pushes_per_cell; ++k) {
             if (push(2, pd / pa)) ++war.cells_lost;
         }
 
@@ -499,7 +505,7 @@ void WarSystem::step(StepContext& ctx) {
                 if (winner == lead_a) {
                     Polity& rebel = s.polities[lead_a];
                     if (rebel.overlord == lead_d) rebel.overlord = 0, rebel.bond = Bond::None;
-                } else if (own_cells(lead_a) <= kAnnexBelowCells) {
+                } else if (own_cells(lead_a) <= w.cells_for(kAnnexBelowCells)) {
                     annex(lead_a, lead_d);
                 } else {
                     subjugate(s, lead_a, lead_d, Bond::Vassal, tick);
@@ -522,7 +528,7 @@ void WarSystem::step(StepContext& ctx) {
                     subjugate(s, lead_d, lead_a, Bond::Tributary, tick);
                 }
             } else if (winner == lead_a && capital_fell) {
-                if (own_cells(loser) <= kAnnexBelowCells) {
+                if (own_cells(loser) <= w.cells_for(kAnnexBelowCells)) {
                     annex(loser, winner);
                 } else {
                     subjugate(s, loser, winner, Bond::Vassal, tick);
@@ -669,22 +675,33 @@ void WarSystem::step(StepContext& ctx) {
         }
         if (target == kInvalidCell) continue;
         const std::uint32_t owner = s.polity_of[target];
-        const double defence = owner != 0 ? power[owner] * control_of(owner, target)
-                                          : static_cast<double>(s.cell_population[target]) * kLevy;
+        // A raid strikes the target's hinterland (the cell itself at level 5).
+        std::vector<CellId> struck;
+        double struck_people = 0.0;
+        w.for_hinterland(target, [&](CellId h) {
+            if (h != target && (s.polity_of[h] != owner || s.cell_population[h] == 0)) return;
+            struck.push_back(h);
+            struck_people += static_cast<double>(s.cell_population[h]);
+        });
+        const double defence = owner != 0 ? power[owner] * control_of(owner, target) : struck_people * kLevy;
         const double attack = power[id] * control_of(id, target);
         if (attack <= 0.0 || rng.uniform() >= attack / (attack + defence)) continue;
         ++s.raids;
-        s.strife[target] = 3;
-        s.last_raid[target] = tick;
         s.events.push_back({tick, EventType::Raid, target, static_cast<std::int64_t>(id)});
-        kill(s, target, kRaidDeaths, false, rng);
+        for (CellId h : struck) {
+            s.strife[h] = 3;
+            s.last_raid[h] = tick;
+            kill(s, h, kRaidDeaths, false, rng);
+        }
         if (owner != 0) s.polities[owner].shock += kShockRaid;
         if (have_stocks) {
-            for (std::size_t g = 0; g < ng; ++g) {
-                if (g == content.food_good) continue;
-                const double q = kRaidLoot * s.stocks[target * ng + g];
-                s.stocks[target * ng + g] -= q;
-                s.stocks[p.capital * ng + g] += q;
+            for (CellId h : struck) {
+                for (std::size_t g = 0; g < ng; ++g) {
+                    if (g == content.food_good) continue;
+                    const double q = kRaidLoot * s.stocks[h * ng + g];
+                    s.stocks[h * ng + g] -= q;
+                    s.stocks[p.capital * ng + g] += q;
+                }
             }
         }
         // The victim's ruler buys peace with tribute.

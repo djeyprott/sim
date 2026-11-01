@@ -274,7 +274,7 @@ double species_suitability(const World& w, const SpeciesDef& s, CellId c) {
                s.annual_precip_mm(w.precipitation_mm[c]) * s.rain_season(w.rain_season[c]) *
                s.elevation_m(w.elevation_m[c]);
     if (s.river_affinity > 0.0) {
-        const double river = std::min(1.0, w.discharge_m3s[c] / 1500.0);
+        const double river = river_effect(w, c, [](double q) { return std::min(1.0, q / 1500.0); });
         v *= (1.0 - s.river_affinity) + s.river_affinity * river;
     }
     return v;
@@ -303,7 +303,7 @@ double cultivated_suitability(const World& w, const SpeciesDef& s, CellId c) {
                widen_rain(s.annual_precip_mm)(w.precipitation_mm[c]) * s.rain_season(w.rain_season[c]) *
                widen(s.elevation_m, 500.0)(w.elevation_m[c]);
     if (s.river_affinity > 0.0) {
-        const double river = std::min(1.0, w.discharge_m3s[c] / 1500.0);
+        const double river = river_effect(w, c, [](double q) { return std::min(1.0, q / 1500.0); });
         const double a = 0.5 * s.river_affinity;
         v *= (1.0 - a) + a * river;
     }
@@ -620,6 +620,41 @@ double World::month_precipitation_mm(CellId c, int m) const noexcept {
     return precipitation_mm[c] / 12.0 * (1.0 + rain_season[c] * pmath::cos(season_phase(grid.center(c).z, m)));
 }
 
+// River corridors and coastal strips (see World::river_share).
+void build_corridors(World& w) {
+    const std::size_t n = w.cell_count();
+    w.river_share.assign(n, 0.0);
+    w.river_flow.assign(n, 0.0);
+    w.coast_share.assign(n, 0.0);
+    const double coarse = std::min(1.0, 1.0 / w.cell_scale());  // a cell's share of a strip one level-5 cell wide
+    const int reach = w.reach_steps();
+    // Coasts: the cells within a level-5 spacing of the sea.
+    for (CellId c = 0; c < n; ++c) {
+        if (w.is_land[c] && w.coast_distance[c] >= 1 && static_cast<int>(w.coast_distance[c]) <= reach) {
+            w.coast_share[c] = coarse;
+        }
+    }
+    // Rivers: a corridor centred on the river, a level-5 spacing wide: on
+    // finer grids the cells within reach / 2 - 1 steps wholly, those at
+    // reach / 2 steps by half.
+    std::vector<std::uint8_t> mark(n, 0);
+    std::vector<std::pair<CellId, int>> ball;
+    const int half = reach / 2;
+    for (CellId c = 0; c < n; ++c) {
+        if (!is_river(w, c)) continue;
+        const double flow = w.discharge_m3s[c];
+        w.grid.cells_within(c, half, ball, mark);
+        for (const auto& [h, steps] : ball) {
+            if (!w.is_land[h]) continue;
+            const double share = reach == 1 ? coarse : (steps < half ? 1.0 : 0.5);
+            if (share > w.river_share[h] || (share == w.river_share[h] && flow > w.river_flow[h])) {
+                w.river_share[h] = share;
+                w.river_flow[h] = flow;
+            }
+        }
+    }
+}
+
 World generate_test_world(const WorldParams& params, const Content& content) {
     World w;
     w.params = params;
@@ -753,6 +788,7 @@ World generate_test_world(const WorldParams& params, const Content& content) {
 
     // --- Rivers, soils, aquatic foraging -----------------------------------------
     build_rivers(w, runoff_m3s);
+    build_corridors(w);
     w.soil_fertility.assign(n, 0.0);
     w.aquatic_bonus.assign(n, 0.0);
     w.forager_capacity.assign(n, 0.0);
@@ -762,16 +798,15 @@ World generate_test_world(const WorldParams& params, const Content& content) {
         for (CellId nb : w.grid.neighbors(c)) {
             if (w.is_land[nb]) relief = std::max(relief, std::fabs(w.elevation_m[nb] - w.elevation_m[c]));
         }
-        const double q = w.discharge_m3s[c];
-        const double alluvium = 0.35 * q / (q + 1500.0);
+        const double alluvium = river_effect(w, c, [](double q) { return 0.35 * q / (q + 1500.0); });
         const double variety = 0.2 * (fractal_noise(params.seed ^ 0x501Lu, w.grid.center(c), 4) - 0.5);
         const double base = biome_soil(static_cast<Biome>(w.biome[c]));
         w.soil_fertility[c] = std::clamp(base / (1.0 + relief / 1500.0) + alluvium + variety, 0.0, 1.0);
 
         // Coasts (shellfish, fish) and big rivers (fish, waterfowl) feed
         // foragers more densely than land alone.
-        const double coast = w.coast_distance[c] == 1 ? 0.3 : 0.0;
-        w.aquatic_bonus[c] = std::min(0.8, coast + 0.6 * q / (q + 3000.0));
+        const double coast = 0.3 * coast_share(w, c);
+        w.aquatic_bonus[c] = std::min(0.8, coast + river_effect(w, c, [](double q) { return 0.6 * q / (q + 3000.0); }));
         w.forager_capacity[c] = forager_density(w.temperature_c[c], w.precipitation_mm[c]) *
                                 w.grid.area_km2(c) * (1.0 + w.aquatic_bonus[c]);
     }
@@ -796,6 +831,18 @@ World generate_test_world(const WorldParams& params, const Content& content) {
     build_trade_edges(w);
     assign_initial_groups(w);
     build_climate_mapping(w);
+    // Hinterlands (see World::hinterland_begin).
+    {
+        const int steps = w.hinterland_steps();
+        std::vector<std::uint8_t> mark(n, 0);
+        std::vector<std::pair<CellId, int>> ball;
+        w.hinterland_begin.assign(n + 1, 0);
+        for (CellId c = 0; c < n; ++c) {
+            w.grid.cells_within(c, steps, ball, mark);
+            for (const auto& e : ball) w.hinterland_ids.push_back(e.first);
+            w.hinterland_begin[c + 1] = static_cast<std::uint32_t>(w.hinterland_ids.size());
+        }
+    }
     return w;
 }
 

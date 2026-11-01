@@ -174,6 +174,23 @@ Grid make_icosahedral_grid(int level) {
     return g;
 }
 
+void Grid::cells_within(CellId c, int steps, std::vector<std::pair<CellId, int>>& out,
+                        std::vector<std::uint8_t>& mark) const {
+    out.clear();
+    out.emplace_back(c, 0);
+    mark[c] = 1;
+    for (std::size_t i = 0; i < out.size(); ++i) {
+        const auto [cell, d] = out[i];
+        if (d >= steps) continue;
+        for (CellId nb : neighbors(cell)) {
+            if (mark[nb]) continue;
+            mark[nb] = 1;
+            out.emplace_back(nb, d + 1);
+        }
+    }
+    for (const auto& e : out) mark[e.first] = 0;
+}
+
 double Grid::distance_km(CellId a, CellId b) const noexcept {
     // Chord length c = 2 sin(theta / 2), so theta = 2 asin(c / 2).
     const double s = std::min(1.0, 0.5 * norm(sub(center_[a], center_[b])));

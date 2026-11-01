@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <span>
+#include <utility>
 #include <vector>
 
 #include "histsim/types.hpp"
@@ -42,6 +43,12 @@ public:
     // Great-circle distance between two cell centers, in km. Uses only
     // arithmetic and sqrt (accurate to about 1e-7 relative at any angle).
     [[nodiscard]] double distance_km(CellId a, CellId b) const noexcept;
+
+    // Cells within `steps` grid steps of c, with their step counts: c first
+    // (0 steps), then ring by ring, each ring in a fixed order. `mark` is
+    // scratch of cell_count() zeros, and is left all zero.
+    void cells_within(CellId c, int steps, std::vector<std::pair<CellId, int>>& out,
+                      std::vector<std::uint8_t>& mark) const;
 
     // Subdivision level and a hash of the full geometry (for world-file checks).
     [[nodiscard]] int level() const noexcept { return level_; }
