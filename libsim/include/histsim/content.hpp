@@ -138,6 +138,7 @@ enum class CultureVar : std::uint8_t {
     WildPlants,
     Farming,
     Ruled,
+    Herding,  // share of food from herds (farming x pastoral share)
     Count
 };
 inline constexpr std::size_t kCultureVarCount = static_cast<std::size_t>(CultureVar::Count);

@@ -68,6 +68,10 @@ public:
     // On finer grids the rates scale up (see World::per_step_diffusion), to
     // at most this share a year.
     static constexpr double kMaxGridRate = 0.5;
+    // Strength of mobility's effect (see mobility_factor) on wandering (only
+    // ever more, for the more mobile) and on folk migrations.
+    static constexpr double kMobileWander = 0.5;
+    static constexpr double kMobileExodus = 0.25;
     static constexpr double kClimbCostPerKm = 2.0;  // a 500 m climb halves a destination's appeal
     static constexpr std::int64_t kMinGroupSize = 20;
     static constexpr double kMinGroupShare = 0.10;

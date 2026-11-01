@@ -307,8 +307,8 @@ void load_phonology(Content& c, std::string_view text) {
 
 // ---- culture
 
-constexpr const char* kVars[] = {"crowding", "aquatic",     "seasonality", "growing_season",
-                                 "game",     "wild_plants", "farming",     "ruled"};
+constexpr const char* kVars[] = {"crowding",    "aquatic", "seasonality", "growing_season", "game",
+                                 "wild_plants", "farming", "ruled",       "herding"};
 
 void load_culture(Content& c, std::string_view text) {
     const json::Value doc = json::parse(text, "data/culture.json");
@@ -327,7 +327,7 @@ void load_culture(Content& c, std::string_view text) {
             while (i < kCultureVarCount && key != kVars[i]) ++i;
             if (i == kCultureVarCount) {
                 fail(val, "is not a culture variable (crowding, aquatic, seasonality, growing_season, game, "
-                          "wild_plants, farming, ruled)");
+                          "wild_plants, farming, ruled, herding)");
             }
             t.push[i] = val.as_number();
             if (t.push[i] < -1.0 || t.push[i] > 1.0) fail(val, "must be between -1 and 1");

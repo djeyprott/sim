@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "histsim/language.hpp"
+#include "histsim/systems/culture.hpp"
 #include "histsim/systems/farming.hpp"
 #include "histsim/systems/religion.hpp"
 #include "histsim/systems/technology.hpp"
@@ -342,6 +343,7 @@ void PolitySystem::step(StepContext& ctx) {
     }
 
     // ---- Stability: resilience against this year's pressures.
+    const std::size_t i_mobility = trait_index(content, "mobility");
     const std::size_t i_ritual = trait_index(content, "ritual");
     std::size_t writing = content.techniques.size(), bureaucracy = content.techniques.size();
     for (std::size_t k = 0; k < content.techniques.size(); ++k) {
@@ -354,6 +356,8 @@ void PolitySystem::step(StepContext& ctx) {
         const std::uint32_t root = s.cultures[pol.culture].root;
         double people = 0.0, unfed = 0.0, held = 0.0, trade = 0.0, sick = 0.0, others = 0.0;
         double faithful = 0.0, heretics = 0.0;
+        // Mobile subjects (herders, foragers) are held more loosely: they can
+        // move away from tax collectors and garrisons.
         const bool faiths = s.faith_of.size() == s.cell_population.size();
         const bool organized = faiths && religion_organized(w, s, pol.religion);
         const std::uint32_t creed = organized ? religion_family(s, pol.religion) : 0;
@@ -366,7 +370,7 @@ void PolitySystem::step(StepContext& ctx) {
             }
             people += pop;
             unfed += std::max(0.0, pop - s.env.capacity[c]);
-            held += pop * control_of(id, c);
+            held += pop * control_of(id, c) * (1.0 - kMobileRule * cell_trait(s, c, i_mobility));
             if (!s.trade_value.empty()) trade += s.trade_value[c];
             if (!s.disease_deaths.empty()) sick += s.disease_deaths[c];
             for (const Cohort& co : s.cohorts_in(c)) {
@@ -572,7 +576,10 @@ void PolitySystem::step(StepContext& ctx) {
                     for (CellId nb : in_reach) wealth += raid_wealth(s, nb);
                     const double lure = std::min(kShadowMax, 1.0 + wealth / kShadowWealth);
                     RngStream rng = ctx.rng(Stream::Polity, kFormationEntity | c);
-                    if (rng.uniform() < w.per_area(kNomadFormation * warfare * lure)) s.polity_of[c] = found(c, 0, true);
+                    const double roaming = mobility_factor(cell_trait(s, c, trait_index(content, "mobility")), 0.5);
+                    if (rng.uniform() < w.per_area(kNomadFormation * warfare * lure * roaming)) {
+                        s.polity_of[c] = found(c, 0, true);
+                    }
                 }
                 continue;
             }

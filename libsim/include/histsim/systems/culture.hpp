@@ -102,6 +102,15 @@ inline constexpr double kInitialAreaPerLanguageKm2 = 300000.0;
 // cover the same land at every grid level.
 inline constexpr double kReferenceCellAreaKm2 = 50000.0;
 
+// How much more (or less) readily a people moves than foragers of typical
+// mobility (kMobilityTypical), with the given strength: 1 - strength for the
+// most settled, 1 at typical, 1 + strength / 3 for the most nomadic. Scales
+// wandering, folk migrations and the forming of nomad confederations.
+inline constexpr double kMobilityTypical = 0.75;
+[[nodiscard]] inline double mobility_factor(double mobility, double strength) {
+    return 1.0 - strength + strength * mobility / kMobilityTypical;
+}
+
 // Counts of living languages, families and cultures.
 struct PeopleCounts {
     std::uint32_t languages = 0, families = 0, cultures = 0;

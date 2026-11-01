@@ -19,18 +19,21 @@
 //   wild_plants     wild ancestors of crops native to the cell (4 or more = 1)
 //   farming         share of the people's food from crops and herds
 //   ruled           1 where a chiefdom or state rules the cell
+//   herding         share of the people's food from herds (part of farming)
 //
 // The pushes follow forager ethnography: storable aquatic foods go with
 // settled, ranked societies (the Pacific Northwest); strong seasons with
 // food storage and wide sharing; crowding with raiding and clans. Farming
 // settles people, makes them store, rank and hold land by lineage, and gives
-// more to fight over. Rulers bring rank, war and ceremony.
+// more to fight over; but herders follow their animals, so herding more than
+// undoes farming's pull toward settled life. Rulers bring rank, war and
+// ceremony.
 {
   "version": 1,
   "traits": [
     {"id": "mobility", "name": "Mobility", "low": "settled", "high": "nomadic",
-     "drift": 0.05, "adapt": 0.25, "base": 0.75,
-     "push": {"aquatic": -0.6, "seasonality": 0.15, "crowding": -0.2, "farming": -0.6}},
+     "drift": 0.05, "adapt": 1.0, "base": 0.75,
+     "push": {"aquatic": -0.6, "seasonality": 0.15, "crowding": -0.2, "farming": -0.6, "herding": 1.0}},
     {"id": "plant_reliance", "name": "Plant foods", "low": "hunting", "high": "gathering",
      "drift": 0.05, "adapt": 0.25, "base": 0.3,
      "push": {"growing_season": 0.4, "wild_plants": 0.25, "game": -0.2, "seasonality": -0.2, "farming": 0.4}},

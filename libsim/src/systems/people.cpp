@@ -202,6 +202,17 @@ void MigrationSystem::step(StepContext& ctx) {
 
     std::vector<Cohort> arrivals;
     std::vector<std::pair<CellId, std::uint32_t>> carried;  // (destination, domesticates)
+    const std::size_t i_mobility = [&] {
+        const auto& traits = w.content->traits;
+        for (std::size_t t = 0; t < traits.size(); ++t) {
+            if (traits[t].id == "mobility") return t;
+        }
+        return traits.size();
+    }();
+    // How readily a group moves, by its mobility (1 for typical foragers).
+    auto restless = [&](const Cohort& co, double strength) {
+        return i_mobility < kMaxTraits ? mobility_factor(co.traits[i_mobility], strength) : 1.0;
+    };
     std::int64_t moved = 0;
     std::array<double, 8> weight{};
     std::array<CellId, 8> dest{};
@@ -240,6 +251,9 @@ void MigrationSystem::step(StepContext& ctx) {
         for (auto i = first; i < last; ++i) {
             Cohort& co = s.cohorts[i];
             const double settled = co.farming * (1.0 - pastoral);
+            // The most mobile wander more; settled farmers already stay put
+            // (kFarmerStay).
+            const double moves = std::max(1.0, restless(co, kMobileWander));
             RngStream rng = ctx.rng(Stream::Migration, i);
             // Pick this band's destination.
             double pick = rng.uniform() * weight_sum;
@@ -257,7 +271,7 @@ void MigrationSystem::step(StepContext& ctx) {
             band.farming = co.farming;
             std::int64_t band_size = 0;
             for (int b = 0; b < kAgeBins; ++b) {
-                const double share = std::min(1.0, rate * kMigrationByAge[b] * (1.0 - kFarmerStay * settled));
+                const double share = std::min(1.0, rate * kMigrationByAge[b] * (1.0 - kFarmerStay * settled) * moves);
                 const auto mf = std::min<std::int64_t>(co.female[b], stochastic_round(share * co.female[b], rng));
                 const auto mm = std::min<std::int64_t>(co.male[b], stochastic_round(share * co.male[b], rng));
                 co.female[b] -= static_cast<std::uint32_t>(mf);
@@ -434,10 +448,12 @@ void MigrationSystem::step(StepContext& ctx) {
         if (strife == 2 && kExodusWar > chance) chance = kExodusWar, cause = MigrationCause::War;
         if (strife == 3 && kExodusRaid > chance) chance = kExodusRaid, cause = MigrationCause::Raid;
         if (chance <= 0.0) continue;
-        RngStream rng = ctx.rng(Stream::Migration, kExodusEntity | c);
-        if (rng.uniform() >= chance) continue;
         Cohort* folk = largest_cohort(c, false);
         if (folk == nullptr) continue;
+        // Mobile peoples take to the road more readily.
+        chance = std::min(1.0, chance * restless(*folk, kMobileExodus));
+        RngStream rng = ctx.rng(Stream::Migration, kExodusEntity | c);
+        if (rng.uniform() >= chance) continue;
         // Driven out by hunger soon after newcomers came: pushed out by them.
         std::uint32_t pushed_by = 0;
         if (cause == MigrationCause::Famine && s.last_arrival[c] != 0 &&
