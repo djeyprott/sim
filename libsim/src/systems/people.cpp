@@ -38,6 +38,47 @@ double crowding_of(const SimState& s, CellId c) {
 
 }  // namespace
 
+// Life expectancy and net reproduction for yearly death chances by bin,
+// counting person-years by single years of age (at mid-year).
+LifeTable life_table(const std::array<double, kAgeBins>& q) {
+    LifeTable t;
+    double alive = 1.0;
+    for (int age = 0; age < kAgeBins * kYearsPerAgeBin + 10; ++age) {
+        const int b = std::min(kAgeBins - 1, age / kYearsPerAgeBin);
+        const double mid = alive * (1.0 - 0.5 * q[b]);
+        t.life_expectancy += mid;
+        t.net_reproduction += mid * vital::kForagerFertility[b] * vital::kFemaleShareOfBirths;
+        alive *= 1.0 - q[b];
+    }
+    return t;
+}
+
+const LifeTable& forager_life_table() {
+    static const LifeTable t = [] {
+        std::array<double, kAgeBins> q{};
+        for (int b = 0; b < kAgeBins; ++b) q[b] = vital::kForagerDeathProb[b];
+        return life_table(q);
+    }();
+    return t;
+}
+
+LifeTable cell_life_table(const SimState& s, CellId c) {
+    std::array<double, kAgeBins> q{};
+    const double urban = s.urban.size() > c ? s.urban[c] : 0.0;
+    const bool sick = s.env.disease_mortality.size() >= (static_cast<std::size_t>(c) + 1) * kDiseaseAgeGroups;
+    for (int b = 0; b < kAgeBins; ++b) {
+        const double extra = sick ? s.env.disease_mortality[c * kDiseaseAgeGroups + disease_age_group(b)] : 0.0;
+        q[b] = std::min(1.0, vital::kForagerDeathProb[b] * (1.0 + kUrbanMortality * urban) + extra);
+    }
+    return life_table(q);
+}
+
+double cell_replacement_fertility(const SimState& s, CellId c) {
+    const double nrr = cell_life_table(s, c).net_reproduction;
+    if (nrr <= 0.0) return 1.0 / vital::kReplacementFertilityMultiplier;
+    return vital::kReplacementFertilityMultiplier * forager_life_table().net_reproduction / nrr;
+}
+
 double forager_death_probability(int b) { return vital::kForagerDeathProb[b]; }
 double forager_fertility(int b) { return vital::kForagerFertility[b]; }
 double stable_age_share(int b) { return vital::kStableAgeShare[b]; }
@@ -73,12 +114,21 @@ void DemographySystem::step(StepContext& ctx) {
     s.disease_deaths.assign(n, 0);
     std::int64_t births_total = 0, deaths_total = 0;
 
+    // Births replace deaths at capacity under each cell's own death rates.
+    CellId cached = kInvalidCell;
+    double replacement = vital::kReplacementFertilityMultiplier;
     for (std::size_t i = 0; i < s.cohorts.size(); ++i) {
         Cohort& co = s.cohorts[i];
         const double crowding = crowding_of(s, co.cell);
-        const double fert_mult = std::max(
-            kMinFertilityMultiplier, 1.0 - (1.0 - vital::kReplacementFertilityMultiplier) * crowding) *
-            (1.0 + kFarmerExtraFertility * co.farming);
+        if (co.cell != cached) {
+            cached = co.cell;
+            replacement = cell_replacement_fertility(s, co.cell);
+        }
+        // Farmers' extra fertility is room to grow, not an excess at capacity.
+        const double headroom = (1.0 + kFarmerExtraFertility * co.farming) / vital::kReplacementFertilityMultiplier - 1.0;
+        const double fert_mult = std::min(
+            kMaxFertilityMultiplier,
+            std::max(kMinFertilityMultiplier, std::min(kMaxReplacement, replacement) * (1.0 + headroom * (1.0 - crowding))));
         // Famine past capacity; stores (pottery, granaries) soften it.
         const double famine = crowding > 1.0
                                   ? kFamineMortalityPerCrowding * (crowding - 1.0) *

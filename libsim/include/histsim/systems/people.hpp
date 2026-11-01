@@ -14,6 +14,15 @@ namespace histsim {
 // toward its foraging capacity, fertility falls to replacement (poorer
 // nutrition, longer birth spacing); beyond capacity, famine raises mortality.
 // So populations grow ~0.7% a year on empty land and settle near capacity.
+//
+// "Replacement" is worked out for each cell's actual death rates (the life
+// table, towns and disease, but not famine, which is what pushes back past
+// capacity): where disease kills more children, women bear more, as in
+// historical high-mortality regimes, so disease shortens lives without
+// leaving farmland empty. Fertility = replacement x (1 + headroom x (1 -
+// crowding)), headroom such that on empty land foragers bear at the life
+// table's full rate and farmers 25% more (farming.hpp): farmers grow faster
+// into empty land but, like foragers, just replace themselves at capacity.
 class DemographySystem final : public System {
 public:
     [[nodiscard]] std::string_view name() const noexcept override { return "demography"; }
@@ -24,6 +33,12 @@ public:
     static constexpr double kFamineMortalityPerCrowding = 2.5;  // mortality x(1 + 2.5 (crowding - 1))
     static constexpr double kMaxMortalityMultiplier = 6.0;
     static constexpr double kMinFertilityMultiplier = 0.2;
+    // Women can only bear so many children: replacement is made up to at
+    // most kMaxReplacement x the life table's fertility (TFR ~7), and
+    // fertility never exceeds kMaxFertilityMultiplier (TFR ~8). Beyond that,
+    // death outruns birth and disease does thin a people.
+    static constexpr double kMaxReplacement = 1.3;
+    static constexpr double kMaxFertilityMultiplier = 1.5;
 };
 
 // Yearly moves between neighboring cells.
@@ -123,6 +138,17 @@ public:
     [[nodiscard]] Tick period() const noexcept override { return kTicksPerYear; }
     void step(StepContext& ctx) override;
 };
+
+// Life expectancy at birth and the net reproduction rate (daughters per
+// woman at full fertility) under a cell's death rates this year: the life
+// table, raised in towns, plus disease (famine excluded).
+struct LifeTable {
+    double life_expectancy = 0.0;
+    double net_reproduction = 0.0;
+};
+LifeTable cell_life_table(const SimState& state, CellId cell);
+// Fertility multiplier that just replaces the people under those death rates.
+double cell_replacement_fertility(const SimState& state, CellId cell);
 
 // A cohort of n people in the stationary age structure of the life table,
 // split between the sexes by the sex ratio at birth. Integer-exact.

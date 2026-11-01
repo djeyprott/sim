@@ -4,6 +4,7 @@
 #include "histsim/portable_math.hpp"
 #include "histsim/simulation.hpp"
 #include "histsim/systems/disease.hpp"
+#include "histsim/systems/people.hpp"
 #include "testing.hpp"
 
 using namespace histsim;
@@ -108,4 +109,41 @@ TEST(disease_virgin_soil_epidemic_strikes_then_burns_out) {
     // Bad input is refused.
     cmd.amount = 99;
     CHECK(!sim.apply(cmd).ok);
+}
+
+TEST(disease_heavy_disease_shortens_lives_but_people_still_fill_the_land) {
+    WorldParams p;
+    p.grid_level = 3;
+    const Simulation sim = Simulation::create(p);
+    SimState s = sim.state();
+    const World& w = sim.world();
+    CellId cell = 0;
+    while (s.cell_population[cell] < 1000) ++cell;
+    // No disease: the forager life table's own replacement.
+    s.env.disease_mortality.assign(w.cell_count() * kDiseaseAgeGroups, 0.0);
+    CHECK_NEAR(cell_replacement_fertility(s, cell), replacement_fertility_multiplier(), 1e-12);
+    const double healthy = cell_life_table(s, cell).life_expectancy;
+    CHECK(healthy > 25.0 && healthy < 35.0);
+    // Heavy endemic disease, mostly of children.
+    for (CellId c = 0; c < w.cell_count(); ++c) {
+        s.env.disease_mortality[c * kDiseaseAgeGroups + 0] = 0.03;
+        s.env.disease_mortality[c * kDiseaseAgeGroups + 1] = 0.01;
+        s.env.disease_mortality[c * kDiseaseAgeGroups + 2] = 0.004;
+        s.env.disease_mortality[c * kDiseaseAgeGroups + 3] = 0.006;
+    }
+    CHECK(cell_life_table(s, cell).life_expectancy < healthy - 3.0);
+    const double replacement = cell_replacement_fertility(s, cell);
+    CHECK(replacement > replacement_fertility_multiplier());
+    // Women bear more children, and the people still grow to what the land
+    // feeds (demography alone, the land held fixed).
+    const double capacity = s.env.capacity[cell];
+    DemographySystem demography;
+    for (int y = 0; y < 600; ++y) {
+        StepContext ctx{w, s, 1, s.tick};
+        demography.step(ctx);
+        s.env.capacity[cell] = capacity;
+        s.tick += kTicksPerYear;
+    }
+    CHECK(static_cast<double>(s.cell_population[cell]) > 0.85 * capacity);
+    CHECK(static_cast<double>(s.cell_population[cell]) < 1.15 * capacity);
 }

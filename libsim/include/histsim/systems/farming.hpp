@@ -63,7 +63,7 @@ public:
 };
 
 // Farmers' effects on demography and migration.
-inline constexpr double kFarmerExtraFertility = 0.25;  // fertility x (1 + 0.25 x farming share)
+inline constexpr double kFarmerExtraFertility = 0.25;  // on empty land, fertility x (1 + 0.25 x farming share)
 inline constexpr double kFarmerStay = 0.6;             // migration x (1 - 0.6 x farming share x (1 - pastoral))
 
 // People per km^2 a cell's land would feed if fully farmed with the given

@@ -7,6 +7,7 @@
 
 #include "histsim/language.hpp"
 #include "histsim/systems/economy.hpp"
+#include "histsim/systems/people.hpp"
 #include "histsim/systems/polity.hpp"
 #include "histsim/systems/war.hpp"
 
@@ -902,6 +903,14 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
     f.push_back({"Crowding", fmt("%.2f of capacity", crowding(s, c))});
     const Pyramid p = cell_pyramid(sim, c);
     f.push_back({"Median age", fmt("%.1f years", median_age(p))});
+    {
+        const LifeTable life = cell_life_table(s, c);
+        double full = 0.0;  // children per woman at the life table's full fertility
+        for (int b = 0; b < kAgeBins; ++b) full += kYearsPerAgeBin * forager_fertility(b);
+        const double tfr = full * std::min(DemographySystem::kMaxReplacement, cell_replacement_fertility(s, c));
+        f.push_back({"Life expectancy", fmt("%.0f years at birth", life.life_expectancy) +
+                                            fmt("; %.1f children per woman replace them", tfr)});
+    }
     std::int64_t children = 0, total = 0;
     for (int b = 0; b < kAgeBins; ++b) {
         total += p.female[b] + p.male[b];
