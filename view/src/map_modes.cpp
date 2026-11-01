@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <iterator>
 #include <stdexcept>
 
 #include "histsim/language.hpp"
@@ -1221,10 +1222,17 @@ std::vector<Row> describe_cell_rows(const Simulation& sim, CellId c,
     mark("People");
     if (s.last_arrival.size() == w.cell_count() && s.last_arrival[c] != 0 && s.last_arrival[c] <= s.migrations.size()) {
         const FolkMovement& move = s.migrations[s.last_arrival[c] - 1];
-        static const char* const why[] = {"fleeing famine", "fleeing war", "fleeing raids", "pushed out by others"};
-        f.push_back({"Newcomers", with_commas(move.people) + " " + s.languages[move.language].name + " speakers in year " +
+        static const char* const why[] = {"fleeing famine", "fleeing war", "fleeing raids", "pushed out by others",
+                                          "a whole people on the move"};
+        const auto cause = static_cast<std::size_t>(move.cause);
+        std::string who = s.languages[move.language].name + " speakers";
+        if (move.cause == MigrationCause::Wandering && move.polity < s.polities.size()) {
+            who = "of the " + s.polities[move.polity].name + (s.polities[move.polity].nomadic ? " (nomads)" : " (a tribe)") +
+                  ", " + who;
+        }
+        f.push_back({"Newcomers", with_commas(move.people) + " " + who + " in year " +
                                       with_commas(static_cast<long long>(move.tick / kTicksPerYear)) + ", " +
-                                      why[static_cast<std::size_t>(move.cause)] +
+                                      (cause < std::size(why) ? why[cause] : "moving") +
                                       fmt(", from %.0f km away", w.grid.distance_km(move.from, move.to))});
     }
     mark("Rule");

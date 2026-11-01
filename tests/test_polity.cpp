@@ -70,7 +70,10 @@ TEST(polity_chiefdoms_cycle_and_states_form_with_writing) {
         CHECK(s.polity_of[pol.capital] == id || ruling.count(id) == 1);
         if (polity_has_writing(w, s, id)) ++states;
         const PolitySize z = polity_size(w, s, id);
-        CHECK(z.area_km2 < 3.0e6);  // no empires without later techniques
+        // No continent-spanning empires yet. (Level 4 runs somewhat ahead of
+        // level 5 and its cells are 200,000 km^2, so the bound is loose:
+        // land left by wandering tribes can be annexed quickly.)
+        CHECK(z.area_km2 < 4.0e6);
     }
     CHECK(living > 5);
     CHECK(ended > living);  // chiefdoms rise and fall

@@ -175,3 +175,57 @@ TEST(culture_farmers_outweigh_more_numerous_foragers_in_language_shift) {
     for (const Cohort& co : s.cohorts_in(x.home)) speakers += co.language == other ? co.total() : 0;
     CHECK(speakers > farmers_before);
 }
+
+TEST(migration_a_hard_pressed_tribe_moves_as_a_whole_and_the_locals_mostly_stay) {
+    Start x = start();
+    SimState& s = x.s;
+    const World& w = x.sim.world();
+    // A herding tribe, starving, rules the home cell.
+    s.polity_of.assign(w.cell_count(), 0);
+    s.polities.assign(1, Polity{});
+    Polity tribe;
+    tribe.id = 1;
+    tribe.name = "Testfolk";
+    tribe.capital = x.home;
+    tribe.culture = s.cohorts_in(x.home).front().culture;
+    tribe.language = s.cohorts_in(x.home).front().language;
+    tribe.pressure[static_cast<std::size_t>(Pressure::Famine)] = 1.0;
+    s.polities.push_back(tribe);
+    s.polity_of[x.home] = 1;
+    std::size_t i_mobility = 0;
+    while (w.content->traits[i_mobility].id != "mobility") ++i_mobility;
+    for (auto i = s.cohort_begin[x.home]; i < s.cohort_begin[x.home + 1]; ++i) s.cohorts[i].traits[i_mobility] = 0.9;
+    const std::int64_t people = s.total_population();
+    const std::uint32_t root = s.cultures[tribe.culture].root;
+    auto others = [&](CellId c) {
+        std::int64_t n = 0;
+        for (const Cohort& co : s.cohorts_in(c)) n += s.cultures[co.culture].root != root ? co.total() : 0;
+        return n;
+    };
+    std::vector<std::int64_t> before(w.cell_count(), 0);
+    for (int year = 0; year < 300 && s.polities[1].wandered == kNever; ++year) {
+        for (CellId c = 0; c < w.cell_count(); ++c) before[c] = others(c);
+        s.polities[1].pressure[static_cast<std::size_t>(Pressure::Famine)] = 1.0;
+        migrate(w, s);
+    }
+    const Polity& moved = s.polities[1];
+    CHECK(moved.wandered != kNever);
+    CHECK(moved.capital != x.home);
+    CHECK(s.polity_of[x.home] != 1);  // the land left behind is free
+    CHECK_EQ(s.polity_of[moved.capital], 1u);
+    CHECK_EQ(s.total_population(), people);  // moving, not dying
+    bool logged = false;
+    for (const FolkMovement& m : s.migrations) {
+        logged |= m.cause == MigrationCause::Wandering && m.polity == 1 && m.to == moved.capital;
+    }
+    CHECK(logged);
+    // Its people now live in the new land, and most of the locals there
+    // stay to live under them (at most kMaxDisplace are pushed on).
+    std::int64_t newcomers = 0;
+    for (const Cohort& co : s.cohorts_in(moved.capital)) newcomers += s.cultures[co.culture].root == root ? co.total() : 0;
+    CHECK(newcomers > 0);
+    for (CellId c = 0; c < w.cell_count(); ++c) {
+        if (s.polity_of[c] != 1 || before[c] == 0) continue;
+        CHECK(static_cast<double>(others(c)) >= 0.5 * static_cast<double>(before[c]));
+    }
+}

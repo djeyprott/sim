@@ -108,7 +108,9 @@ public:
     // kExodusShare of its largest people to the most open land within
     // kExodusKm (spare capacity, less with distance). Arriving at least
     // kDisplaceRatio as many as the largest people there, and no less
-    // warlike, they push kDisplace of them on in turn: chain reactions.
+    // warlike, they push some of them on in turn (chain reactions): kDisplace
+    // x newcomers / locals, at most kMaxDisplace. Outnumbered locals flee;
+    // where the newcomers are few, nearly all stay and live under them.
     static constexpr std::int64_t kFolkMinPeople = 500;
     static constexpr double kExodusWar = 0.3;
     static constexpr double kExodusRaid = 0.1;
@@ -128,11 +130,47 @@ public:
     static constexpr double kExodusDistanceKm = 300.0;  // appeal / (1 + distance / this)
     static constexpr double kDisplaceRatio = 0.3;
     static constexpr double kDisplace = 0.15;
+    static constexpr double kMaxDisplace = 0.4;
     // A displaced people may push on others in turn, up to this many links
     // in one year; and a people that leaves in famine within kChainYears of
     // newcomers' arrival is counted as pushed out by them.
     static constexpr int kMaxChainLinks = 5;
     static constexpr std::int64_t kChainYears = 30;
+    // Wandering peoples: a tribe or confederation (a polity without writing;
+    // literate states stay put) of at least kWanderMinPeople moves as a whole
+    // when hard pressed: pressure = the largest of its war shock, its famine,
+    // a lasting dearth on its land, land hunger (people beyond what the
+    // land feeds) and a stronger neighbour (a realm seated within
+    // kWanderThreatKm with more than kWanderThreat times its people, full at
+    // kWanderThreat + kWanderThreatSpan times); at kWanderPressure or more it sets out with chance kWander
+    // x pressure x how readily its people move (mobility_factor, strength
+    // kWanderMobility: x0.3 for settled farmers to x1.15 for nomads) a year,
+    // at most once every kWanderYears. Peoples more mobile than
+    // kWanderRoamMobility also roam unpressed, with chance kWanderRoam a
+    // year at full mobility (herders moving on to pastures new). It goes as far as kWanderKm +
+    // kWanderKmMobile x mobility to the most open land (pasture for herders)
+    // not held by anyone at least kWanderStronger times its people, takes as
+    // many cells around it as it held, and kWanderShare of its people (the
+    // rulers' lineage) move there with their crops, rulers, name and faith.
+    // Its wars end in its flight (lost where it led a side). The land left
+    // behind is free; the locals where they arrive are pushed
+    // on (as in chain reactions, by how outnumbered they are) and their
+    // rulers shaken; the rest stay and live under the newcomers.
+    static constexpr double kWander = 0.03;
+    static constexpr double kWanderPressure = 0.3;
+    static constexpr std::int64_t kWanderMinPeople = 5000;
+    static constexpr double kWanderMobility = 0.75;
+    static constexpr double kWanderKm = 600.0;
+    static constexpr double kWanderKmMobile = 1400.0;
+    static constexpr double kWanderShare = 0.6;
+    static constexpr std::int64_t kWanderYears = 50;
+    static constexpr double kWanderStronger = 0.5;
+    static constexpr double kWanderShock = 0.3;
+    static constexpr double kWanderThreatKm = 600.0;
+    static constexpr double kWanderThreat = 5.0;
+    static constexpr double kWanderRoam = 0.006;
+    static constexpr double kWanderRoamMobility = 0.4;
+    static constexpr double kWanderThreatSpan = 6.0;  // to the rulers of land the newcomers take
     // Folk migrations of at least this many people are recorded.
     static constexpr std::int64_t kFolkRecordPeople = 1000;
 };

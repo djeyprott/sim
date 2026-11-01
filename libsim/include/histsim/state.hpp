@@ -221,6 +221,7 @@ struct Polity {
     // down over a few generations (kNever = not settling).
     Tick settling_since = kNever;
     std::uint32_t religion = 0;  // the rulers' faith (that of the capital)
+    Tick wandered = kNever;      // when it last moved to new land as a whole people
 };
 
 // A defensive alliance: each joins a war against the other.
@@ -269,6 +270,7 @@ enum class MigrationCause : std::uint8_t {
     War = 1,        // their land was taken in war
     Raid = 2,       // nomads raided them
     Displaced = 3,  // a stronger people arrived and pushed them out (a chain reaction)
+    Wandering = 4,  // a tribe or confederation moved as a whole, rulers and all
 };
 
 // A folk migration: a people moving in a body to land further off.
@@ -279,6 +281,7 @@ struct FolkMovement {
     std::uint32_t language = 0, culture = 0;
     MigrationCause cause = MigrationCause::Famine;
     std::uint32_t pushed_by = 0;  // for Displaced: the index of the movement that pushed them, + 1
+    std::uint32_t polity = 0;     // for Wandering: the polity on the move
 };
 
 // Where a technique was invented independently.
@@ -335,6 +338,7 @@ enum class EventType : std::uint32_t {
     ReligionFounded = 24, // an organized religion arose; value = religion id
     Schism = 25,          // a sect split from its parent; value = the new religion's id
     StateConversion = 26, // a polity's rulers took up another faith; cell = capital; value = polity id
+    PolityWandered = 27,  // a tribe or confederation moved to new land; cell = its new capital; value = polity id
 };
 
 struct Event {
