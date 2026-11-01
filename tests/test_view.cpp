@@ -71,7 +71,7 @@ TEST(view_every_mode_colors_every_cell_and_has_a_legend) {
         }();
         // A mode that paints one flat color is broken. Farming has barely
         // begun after 20 years, so those modes show only a few classes yet.
-        const bool early = mode.id == "farming" || mode.id == "domesticates" || mode.id == "technology" ||
+        const bool early = mode.id == "subsistence" || mode.id == "farming" || mode.id == "domesticates" || mode.id == "technology" ||
                            mode.id == "disease" || mode.id == "polity" || mode.id == "towns";
         // No polities, so no realms or wars, this early: land and sea only.
         const bool quiet = mode.id == "realms" || mode.id == "war" || mode.id == "stability";

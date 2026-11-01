@@ -27,7 +27,7 @@ fight wars of independence, while mounted nomad confederations raid their
 settled neighbours. Farmers colonize new land and carry their languages, and
 peoples flee famine, war and raids in folk migrations that push others on.
 A Godot viewer shows it as a map or globe with
-twenty-seven map modes, polity borders, trade routes, world charts, a cell
+twenty-nine map modes (plus one per culture trait), polity borders, trade routes, world charts, a cell
 inspector and a god mode.
 
 ## Download

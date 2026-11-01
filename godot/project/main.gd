@@ -64,6 +64,7 @@ var river_check: CheckBox
 var border_check: CheckBox
 var route_check: CheckBox
 var migration_check: CheckBox
+var trait_option: OptionButton
 var species_label: Label
 var mode_buttons := {}
 var legend_title: Label
@@ -239,6 +240,12 @@ func _set_mode(id: String) -> void:
 	mode_id = id
 	if mode_buttons.has(id):
 		mode_buttons[id].button_pressed = true
+		if trait_option != null:
+			trait_option.select(0)
+	elif id.begins_with("trait:"):
+		# A trait mode: no grid button is current.
+		for button in mode_buttons.values():
+			button.button_pressed = false
 	_update_legend()
 	map_dirty = true
 	render_cooldown = 0.0
@@ -841,7 +848,11 @@ func _build_side_panel() -> Control:
 	var group := ButtonGroup.new()
 	var modes: Array = world.get_modes() if world != null else _fallback_modes()
 	var number := 1
+	var trait_modes: Array = []
 	for mode in modes:
+		if String(mode["id"]).begins_with("trait:"):
+			trait_modes.append(mode)  # in the picker below the grid
+			continue
 		var button := Button.new()
 		button.text = ("%d  %s" % [number % 10, mode["name"]]) if number <= 10 else ("    " + mode["name"])
 		button.tooltip_text = mode["description"]
@@ -856,6 +867,25 @@ func _build_side_panel() -> Control:
 		mode_grid.add_child(button)
 		mode_buttons[mode["id"]] = button
 		number += 1
+	if not trait_modes.is_empty():
+		var trait_row := HBoxContainer.new()
+		var trait_label := Label.new()
+		trait_label.text = "Culture trait"
+		trait_label.add_theme_font_size_override("font_size", 12)
+		trait_row.add_child(trait_label)
+		trait_option = OptionButton.new()
+		trait_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		trait_option.add_theme_font_size_override("font_size", 12)
+		trait_option.add_item("(pick one to map)")
+		for mode in trait_modes:
+			trait_option.add_item(mode["name"])
+			trait_option.set_item_metadata(trait_option.item_count - 1, mode["id"])
+			trait_option.set_item_tooltip(trait_option.item_count - 1, mode["description"])
+		trait_option.item_selected.connect(func(index: int) -> void:
+			if index > 0:
+				_set_mode(trait_option.get_item_metadata(index)))
+		trait_row.add_child(trait_option)
+		panel.add_child(trait_row)
 
 	coastline_check = CheckBox.new()
 	coastline_check.text = "Coastlines"

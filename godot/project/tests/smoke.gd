@@ -40,6 +40,10 @@ func _process(_delta: float) -> bool:
 	if frames == 3:
 		main._set_playing(true)
 		main.speed_index = 3  # 1,000 years per second
+	if frames == 8:
+		main._set_mode("trait:kinship")
+		if main.mode_id != "trait:kinship":
+			failures.append("a culture trait mode could not be chosen")
 	if frames == 10:
 		main._set_mode("population")
 	if frames == 20:

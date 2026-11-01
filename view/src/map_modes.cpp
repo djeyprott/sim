@@ -155,6 +155,22 @@ const ColorScale& trade_scale() {  // value carried a year, log: teal, light to 
     return s;
 }
 const Rgba kNoTrade = hex("#dcd9cf");
+// Ways of life.
+const Rgba kHunting = hex("#9bb07a");     // hunting and gathering
+const Rgba kFishing = hex("#5fa3b5");     // fishing and gathering
+const Rgba kMixed = hex("#d9c56b");       // farming and foraging
+const Rgba kCrops = hex("#c08a2e");       // crop farming
+const Rgba kIrrigation = hex("#2f6f9f");  // irrigation farming
+const Rgba kHerding = hex("#8a5a3c");     // herding
+const Rgba kTowns = hex("#7a2f4f");       // a fifth or more in towns and cities
+const ColorScale& trait_scale() {  // low pole (teal) - middle (gray) - high pole (orange)
+    static const ColorScale s({{0, hex("#1f6f80")},
+                               {0.25, hex("#7fb6bf")},
+                               {0.5, hex("#efeee9")},
+                               {0.75, hex("#e8a77a")},
+                               {1, hex("#a8461e")}});
+    return s;
+}
 const ColorScale& stability_scale() {  // fragile (red) to steady (green)
     static const ColorScale s({{0, hex("#9e1f1a")},
                                {0.3, hex("#e0784f")},
@@ -269,6 +285,7 @@ const std::vector<MapModeInfo> kModes = {
     {"technology", "Technology", "Number of techniques the people know"},
     {"polity", "Polities", "Chiefdoms, states and empires; each its own color"},
     {"towns", "Towns", "Share of people living in towns and cities"},
+    {"subsistence", "Way of life", "How people get their food: foraging, fishing, farming, herding, towns"},
     {"realms", "Realms", "Polities with their vassals and tributaries (lighter), each realm its own color"},
     {"war", "War", "Wars, battles, conquests and nomad raids this year"},
     {"stability", "Stability", "How steady each polity is against famine, war, overreach and other pressures"},
@@ -468,10 +485,20 @@ std::vector<RouteLine> migration_lines(const Simulation& sim, std::int64_t years
 Rgba ocean_neutral() { return kOceanNeutral; }
 Rgba coastline_color() { return kCoastline; }
 
-const std::vector<MapModeInfo>& map_modes() { return kModes; }
+// The fixed modes, then one per culture trait ("trait:<id>").
+const std::vector<MapModeInfo>& map_modes() {
+    static const std::vector<MapModeInfo> modes = [] {
+        std::vector<MapModeInfo> all = kModes;
+        for (const CultureTrait& t : default_content().traits) {
+            all.push_back({"trait:" + t.id, t.name, "Culture trait: from " + t.low + " to " + t.high});
+        }
+        return all;
+    }();
+    return modes;
+}
 
 const MapModeInfo& map_mode(std::string_view id) {
-    for (const auto& m : kModes) {
+    for (const auto& m : map_modes()) {
         if (m.id == id) return m;
     }
     throw std::invalid_argument("unknown map mode: " + std::string(id));
@@ -505,6 +532,36 @@ double median_age(const Pyramid& p) {
     return kYearsPerAgeBin * kAgeBins;
 }
 
+namespace {
+
+// A trait averaged over a cell's people (0.5 if unknown).
+double cell_trait_mean(const SimState& s, CellId c, std::size_t t) {
+    double sum = 0.0, people = 0.0;
+    for (const Cohort& co : s.cohorts_in(c)) {
+        const auto n = static_cast<double>(co.total());
+        sum += n * (t < kMaxTraits ? co.traits[t] : 0.5);
+        people += n;
+    }
+    return people > 0.0 ? sum / people : 0.5;
+}
+
+Rgba way_of_life_color(const World& w, const SimState& s, CellId c, std::size_t irrigation) {
+    const double farming = s.env.farming.empty() ? 0.0 : s.env.farming[c];
+    const double pastoral = s.env.pastoral.empty() ? 0.0 : s.env.pastoral[c];
+    const double towns = s.urban.empty() ? 0.0 : s.urban[c];
+    if (towns >= 0.2) return kTowns;
+    if (farming >= 0.5) {
+        if (pastoral >= 0.5) return kHerding;
+        const bool irrigates = irrigation < 64 && !s.techniques.empty() && ((s.techniques[c] >> irrigation) & 1u) &&
+                               is_river(w, c);
+        return irrigates ? kIrrigation : kCrops;
+    }
+    if (farming >= 0.15) return kMixed;
+    return w.aquatic_bonus[c] >= 0.3 ? kFishing : kHunting;
+}
+
+}  // namespace
+
 void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rgba>& out) {
     const World& w = sim.world();
     const SimState& s = sim.state();
@@ -512,6 +569,16 @@ void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rg
     out.resize(n);
     const std::string id(map_mode(mode_id).id);
 
+    // The technique and trait a mode needs.
+    std::size_t irrigation = w.content->techniques.size(), trait = kMaxTraits;
+    for (std::size_t k = 0; k < w.content->techniques.size(); ++k) {
+        if (w.content->techniques[k].id == "irrigation") irrigation = k;
+    }
+    if (id.rfind("trait:", 0) == 0) {
+        for (std::size_t t = 0; t < w.content->traits.size(); ++t) {
+            if ("trait:" + w.content->traits[t].id == id) trait = t;
+        }
+    }
     // Polities at war now (for the war map).
     std::vector<std::uint8_t> at_war(s.polities.size(), 0);
     if (id == "war") {
@@ -566,6 +633,10 @@ void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rg
             out[c] = !inhabited ? kEmptyLand : (p == 0 ? kStateless : polity_color(s, p));
         } else if (id == "towns") {
             out[c] = inhabited ? towns_scale()(s.urban.empty() ? 0.0 : s.urban[c]) : kEmptyLand;
+        } else if (id == "subsistence") {
+            out[c] = inhabited ? way_of_life_color(w, s, c, irrigation) : kEmptyLand;
+        } else if (id.rfind("trait:", 0) == 0) {
+            out[c] = inhabited ? trait_scale()(cell_trait_mean(s, c, trait)) : kEmptyLand;
         } else if (id == "realms") {
             const std::uint32_t p = s.polity_of.empty() ? 0 : s.polity_of[c];
             const std::uint32_t top = top_overlord(s, p);
@@ -703,6 +774,25 @@ Legend legend(std::string_view mode_id) {
         l.title = "Share of people living in towns";
         l.ramp = {{"0%", towns_scale()(0)}, {"3%", towns_scale()(0.03)}, {"8%", towns_scale()(0.08)},
                   {"15%", towns_scale()(0.15)}, {"30%", towns_scale()(0.3)}};
+        l.swatches = empty_and_ocean;
+    } else if (id == "subsistence") {
+        l.title = "Way of life (how most food is got)";
+        l.swatches = {{"Hunting and gathering", kHunting},
+                      {"Fishing and gathering (coasts and rivers)", kFishing},
+                      {"Farming and foraging", kMixed},
+                      {"Crop farming", kCrops},
+                      {"Irrigation farming (on rivers)", kIrrigation},
+                      {"Herding (pastoralists)", kHerding},
+                      {"Towns and cities (a fifth or more in towns)", kTowns},
+                      {"Uninhabited", kEmptyLand},
+                      {"Ocean", kOceanNeutral}};
+    } else if (id.rfind("trait:", 0) == 0) {
+        for (const CultureTrait& t : default_content().traits) {
+            if ("trait:" + t.id != id) continue;
+            l.title = t.name + " (average of the people)";
+            l.ramp = {{t.low, trait_scale()(0)}, {"", trait_scale()(0.25)}, {"middle", trait_scale()(0.5)},
+                      {"", trait_scale()(0.75)}, {t.high, trait_scale()(1)}};
+        }
         l.swatches = empty_and_ocean;
     } else if (id == "realms") {
         l.title = "Realms (subjects in lighter shades; nomad confederations in browns)";
@@ -955,20 +1045,15 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
     f.push_back({"Culture", cul.name + (m.culture_pop < s.cell_population[c]
                                             ? fmt(", %.0f%%", 100.0 * static_cast<double>(m.culture_pop) / cell_pop)
                                             : "")});
-    // The culture's most distinctive ways here: traits far from the middle.
+    // The culture's ways here, every trait.
     for (const Cohort& co : s.cohorts_in(c)) {
         if (co.culture != m.culture) continue;
-        std::vector<std::pair<double, std::string>> marked;
         for (std::size_t t = 0; t < content.traits.size(); ++t) {
+            const CultureTrait& def = content.traits[t];
             const double x = co.traits[t];
-            if (std::fabs(x - 0.5) >= 0.15) {
-                marked.emplace_back(std::fabs(x - 0.5), x < 0.5 ? content.traits[t].low : content.traits[t].high);
-            }
+            const char* lean = x < 0.35 ? def.low.c_str() : x > 0.65 ? def.high.c_str() : "between";
+            f.push_back({def.name, fmt("%.0f%%, ", 100.0 * x) + lean});
         }
-        std::stable_sort(marked.begin(), marked.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
-        std::string text;
-        for (std::size_t i = 0; i < marked.size() && i < 4; ++i) text += (i ? ", " : "") + marked[i].second;
-        if (!text.empty()) f.push_back({"Ways", text});
         break;
     }
 

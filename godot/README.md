@@ -3,8 +3,9 @@
 A simple interface for the simulation: a flat map or a globe with switchable
 map modes and legends (terrain, biomes, climate, rivers, soils, wild species,
 population, languages, language families, cultures, farming, known
-domesticates, disease, technology, polities, realms, war, towns, trade and
-resources, and
+domesticates, way of life, disease, technology, polities, realms, war,
+stability, towns, trade and resources, any culture trait (from the "Culture
+trait" picker), and
 more), overlays for coastlines, rivers, polity borders and trade routes, play/pause and
 speed controls, world charts of population vs. capacity and global
 temperature, a cell inspector (hover to look, click to keep) with the cell's age pyramid and its peoples
