@@ -1326,6 +1326,90 @@ std::vector<Row> describe_cell_rows(const Simulation& sim, CellId c,
 }
 }  // namespace
 
+std::vector<MapLabel> polity_labels(const Simulation& sim) {
+    const World& w = sim.world();
+    const SimState& s = sim.state();
+    std::vector<MapLabel> out;
+    if (s.polity_of.size() != w.cell_count()) return out;
+    const std::size_t np = s.polities.size();
+    std::vector<double> area(np, 0.0);
+    std::vector<Vec3> sum(np, Vec3{0, 0, 0});
+    for (CellId c = 0; c < s.polity_of.size(); ++c) {
+        const std::uint32_t p = s.polity_of[c];
+        if (p == 0) continue;
+        const double a = w.grid.area_km2(c);
+        area[p] += a;
+        const Vec3& v = w.grid.center(c);
+        sum[p] = {sum[p].x + a * v.x, sum[p].y + a * v.y, sum[p].z + a * v.z};
+    }
+    std::vector<std::uint32_t> chosen;
+    for (std::uint32_t p = 1; p < np; ++p) {
+        if (area[p] <= 0.0 || s.polities[p].ended != kNever) continue;
+        if (area[p] >= kLabelMinAreaKm2 || polity_has_writing(w, s, p)) chosen.push_back(p);
+    }
+    std::stable_sort(chosen.begin(), chosen.end(), [&](auto a, auto b) { return area[a] > area[b]; });
+    if (chosen.size() > kMaxLabels) chosen.resize(kMaxLabels);
+    for (std::uint32_t p : chosen) {
+        // The middle of its land; if that falls outside (a crescent, a realm
+        // split by sea), its cell nearest the middle.
+        const Vec3 m = sum[p];
+        const double len = std::sqrt(m.x * m.x + m.y * m.y + m.z * m.z);
+        Vec3 at = len > 0.0 ? Vec3{m.x / len, m.y / len, m.z / len} : w.grid.center(s.polities[p].capital);
+        CellId nearest = s.polities[p].capital;
+        double best = -2.0;
+        for (CellId c = 0; c < s.polity_of.size(); ++c) {
+            if (s.polity_of[c] != p) continue;
+            const Vec3& v = w.grid.center(c);
+            const double d = v.x * at.x + v.y * at.y + v.z * at.z;
+            if (d > best) best = d, nearest = c;
+        }
+        const double spacing_km = std::sqrt(w.grid.area_km2(nearest));
+        if (std::acos(std::clamp(best, -1.0, 1.0)) * kPlanetRadiusKm > 1.5 * spacing_km) {
+            at = w.grid.center(nearest);
+        }
+        MapLabel l;
+        l.name = s.polities[p].name;
+        l.u = (std::atan2(at.y, at.x) * 180.0 / kPi + 180.0) / 360.0;
+        l.v = (90.0 - std::asin(std::clamp(at.z, -1.0, 1.0)) * 180.0 / kPi) / 180.0;
+        l.area_km2 = area[p];
+        l.level = polity_level(w, s, p);
+        l.polity = p;
+        out.push_back(std::move(l));
+    }
+    return out;
+}
+
+bool same_group_cells(const Simulation& sim, std::string_view mode_id, CellId cell, std::vector<std::uint8_t>& out) {
+    out.clear();
+    const World& w = sim.world();
+    const SimState& s = sim.state();
+    const std::size_t n = w.cell_count();
+    if (cell >= n || s.cell_population[cell] == 0) return false;
+    const std::string id(mode_id);
+    std::vector<std::uint32_t> key(n, 0);
+    if (id == "language" || id == "language_family" || id == "culture") {
+        for (CellId c = 0; c < n; ++c) {
+            if (s.cell_population[c] == 0) continue;
+            const MainPeople m = main_people(s, c);
+            key[c] = id == "culture" ? m.culture : id == "language" ? m.language : s.languages[m.language].family;
+        }
+    } else if (id == "religion") {
+        if (s.faith_of.size() != n) return false;
+        key = s.faith_of;
+    } else if (id == "polity" || id == "stability" || id == "realms") {
+        if (s.polity_of.size() != n) return false;
+        for (CellId c = 0; c < n; ++c) {
+            key[c] = id == "realms" ? top_overlord(s, s.polity_of[c]) : s.polity_of[c];
+        }
+    } else {
+        return false;
+    }
+    if (key[cell] == 0) return false;
+    out.assign(n, 0);
+    for (CellId c = 0; c < n; ++c) out[c] = key[c] == key[cell] ? 1 : 0;
+    return true;
+}
+
 std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
     std::vector<std::pair<std::size_t, std::string>> marks;
     const std::vector<Row> rows = describe_cell_rows(sim, c, marks);

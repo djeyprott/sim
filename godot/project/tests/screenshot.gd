@@ -8,7 +8,8 @@ extends SceneTree
 ## Arguments after "--": output PNG path, map mode id, years to simulate,
 ## "map" or "globe", and optionally a god-mode tool id: the run then gets an
 ## eruption and a plague halfway through, and the panel is shown with that
-## tool previewing its area.
+## tool previewing its area ("" for none). A sixth argument "keep" keeps the
+## hovered cell, as a click would.
 
 var main: Control
 var frames := 0
@@ -17,6 +18,7 @@ var mode := "terrain"
 var years := 300
 var view := "map"
 var god_tool := ""
+var keep := false  # keep the hovered cell, as a click would
 
 
 func _initialize() -> void:
@@ -31,6 +33,8 @@ func _initialize() -> void:
 		view = args[3]
 	if args.size() > 4:
 		god_tool = args[4]
+	if args.size() > 5:
+		keep = args[5] == "keep"
 	root.size = Vector2i(1600, 900)
 	main = load("res://main.tscn").instantiate()
 	root.add_child(main)
@@ -55,6 +59,8 @@ func _process(_delta: float) -> bool:
 		main._set_view(view == "globe")
 	if frames == 6:
 		_hover_a_populated_cell()
+		if keep:
+			main._select(main.hover_cell)
 		if god_tool != "":
 			main._set_god_mode(true)
 			main.god_panel.set_tool(god_tool)

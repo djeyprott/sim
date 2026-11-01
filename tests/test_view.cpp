@@ -131,3 +131,31 @@ TEST(view_png_has_valid_structure) {
     const std::uint8_t iend[12] = {0, 0, 0, 0, 'I', 'E', 'N', 'D', 0xAE, 0x42, 0x60, 0x82};
     CHECK(std::equal(iend, iend + 12, png.end() - 12));
 }
+
+TEST(view_a_kept_cell_brings_out_its_group) {
+    WorldParams p;
+    p.grid_level = 4;
+    Simulation sim = Simulation::create(p);
+    const SimState& s = sim.state();
+    CellId c = 0;
+    while (s.cell_population[c] == 0) ++c;
+    std::vector<std::uint8_t> group;
+    CHECK(same_group_cells(sim, "language", c, group));
+    CHECK_EQ(group.size(), sim.world().cell_count());
+    CHECK_EQ(group[c], std::uint8_t{1});
+    std::size_t members = 0;
+    for (CellId o = 0; o < group.size(); ++o) {
+        members += group[o];
+        if (group[o]) CHECK(s.cell_population[o] > 0);  // only peopled cells speak it
+    }
+    CHECK(members >= 1 && members < sim.world().cell_count() / 2);
+    // Modes without groups, and empty cells, bring out nothing.
+    CHECK(!same_group_cells(sim, "terrain", c, group));
+    CHECK(group.empty());
+    CellId ocean = 0;
+    while (sim.world().is_land[ocean]) ++ocean;
+    CHECK(!same_group_cells(sim, "language", ocean, group));
+    // No polities yet: no names, and no group for a ruler.
+    CHECK(polity_labels(sim).empty());
+    CHECK(!same_group_cells(sim, "polity", c, group));
+}

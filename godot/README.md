@@ -55,6 +55,7 @@ godot --headless --path godot/project --script res://tests/smoke.gd
 | Borders checkbox | Show / hide the borders of chiefdoms and states |
 | Trade routes checkbox | Show / hide the busiest trade routes |
 | Migrations checkbox | Show / hide the last 50 years' folk migrations as arrows |
+| Names checkbox | Show / hide the names of states, empires and other large realms (over 400,000 km²), sized to their land, on the map and the globe |
 | Scroll, drag (map) | Zoom in and out around the cursor, pan when zoomed in |
 | Home | Zoom the map back out to the whole world |
 | G | Toggle map / globe (drag to turn, the grabbed point stays under the cursor; scroll to zoom) |
@@ -64,7 +65,7 @@ godot --headless --path godot/project --script res://tests/smoke.gd
 | Esc | Back to inspect-only; then let go of the kept cell |
 | F5 / F9 | Quicksave / quickload |
 | Hover | Show a cell in the inspector |
-| Click | Keep that cell in the inspector (outlined) so the panel can be scrolled; click it again to let go |
+| Click | Keep that cell in the inspector (outlined) so the panel can be scrolled; click it again to let go. In the language, language family, culture, religion, polity, realm and stability modes the map also brings out every cell that shares its language, culture, faith or ruler, fading the rest |
 | Click a section header | Fold or unfold that part of the inspector (Place, People, Language, Culture, Culture traits, Religion, Food, Rule, Economy, Technology, Health); folds are kept as you move between cells, and culture traits start folded |
 | New world / Random seed | Generate a new planet |
 

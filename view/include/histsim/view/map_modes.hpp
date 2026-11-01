@@ -89,6 +89,28 @@ std::vector<RouteLine> route_lines(const Simulation& sim);
 // Folk migrations of the last `years` years, as arrows (strength by size).
 std::vector<RouteLine> migration_lines(const Simulation& sim, std::int64_t years = 50);
 
+// A name to write over the map: a state, empire or other large realm, at
+// the middle of its land. u and v place it on the flat map (0-1 from the
+// left at 180 W and from the top at the north pole), which the globe shares.
+struct MapLabel {
+    std::string name;
+    double u = 0.0, v = 0.0;
+    double area_km2 = 0.0;
+    std::string level;  // "chiefdom", "state", "empire", "confederation"
+    std::uint32_t polity = 0;
+};
+// Labels for living states and empires, and other polities of at least
+// kLabelMinAreaKm2 (largest first, at most kMaxLabels).
+inline constexpr double kLabelMinAreaKm2 = 400000.0;
+inline constexpr std::size_t kMaxLabels = 60;
+std::vector<MapLabel> polity_labels(const Simulation& sim);
+
+// For modes that group cells (language, language family, culture,
+// religion, polity, realm, stability): marks the cells in the same group as
+// `cell` (its main language, its faith, its ruler, ...). Returns false and
+// leaves `out` empty for other modes, or when the cell has no group.
+bool same_group_cells(const Simulation& sim, std::string_view mode_id, CellId cell, std::vector<std::uint8_t>& out);
+
 // Neutral colors shared by modes and overlays.
 Rgba ocean_neutral();
 Rgba coastline_color();

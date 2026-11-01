@@ -159,6 +159,26 @@ func _sphere_hit(local: Vector2) -> Array:
 	return [origin + dir * (-b - sqrt(disc))]
 
 
+# Where a point of the map (u, v: 0-1 across and down the flat map) shows
+# in this control: (x, y, facing), facing > 0 on the near side (1 face on).
+func screen_of(uv: Vector2) -> Vector3:
+	if _viewport == null or size.x <= 0.0 or size.y <= 0.0:
+		return Vector3(0, 0, -1)
+	var theta := uv.x * TAU
+	var phi := uv.y * PI
+	var local := Vector3(sin(phi) * sin(theta), cos(phi), sin(phi) * cos(theta))
+	var world := _pivot.global_transform * local
+	var facing := world.normalized().dot(_camera.global_position.normalized())
+	var p := _camera.unproject_position(world) * (size / Vector2(_viewport.size))
+	return Vector3(p.x, p.y, facing)
+
+
+# The globe's radius on screen, in pixels.
+func screen_radius() -> float:
+	var d := maxf(1.01, _distance)
+	return size.y * 0.5 / tan(deg_to_rad(_camera.fov) * 0.5) / sqrt(d * d - 1.0)
+
+
 # Map pixel under a point in this control, or (-1, -1) off the globe.
 # SphereMesh lays its texture out with u along the angle atan2(x, z) and v
 # from the top (+y, north) to the bottom, matching the flat map.

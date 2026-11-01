@@ -110,6 +110,11 @@ func _check_selection_and_zoom() -> void:
 	var other := _ocean_cell()
 	main._on_cell_clicked(kept)
 	main._on_cell_hovered(other)
+	# A kept cell brings out its group in grouping modes only.
+	if not main.world.set_focus("language", kept) or main.world.set_focus("terrain", kept):
+		failures.append("set_focus does not pick out a language's cells (and only in grouping modes)")
+	if typeof(main.world.get_polity_labels()) != TYPE_ARRAY:
+		failures.append("get_polity_labels did not return an array")
 	if main.selected_cell != kept or main._inspected_cell() != kept:
 		failures.append("a clicked cell is not kept in the inspector")
 	if main.inspector_values.get("Cell", "") != main._commas(kept):

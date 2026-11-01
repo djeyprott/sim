@@ -18,7 +18,10 @@ const LEVEL_NAMES := ["Coarse (2.6k cells)", "Normal (10k cells)", "Fine (41k ce
 const STEP_BUDGET_MSEC := 12.0  # max time per frame spent simulating
 const RENDER_INTERVAL := 1.0 / 15.0  # max map redraws per second while playing
 const CHART_INTERVAL := 0.25  # chart refreshes per second while playing
-const DYNAMIC_LEGENDS := ["language", "language_family", "culture", "polity"]
+const DYNAMIC_LEGENDS := ["language", "language_family", "culture", "polity", "religion", "realms"]
+# Modes where a kept cell brings out its whole group, and what the group is.
+const FOCUS_MODES := {"language": "language", "language_family": "language family", "culture": "culture",
+	"religion": "faith", "polity": "ruler", "stability": "ruler", "realms": "realm"}
 const SIDE_PANEL_WIDTH := 360
 const CELL_KEY_WIDTH := 118  # fits the longest inspector key
 const CHART_POINTS := 400
@@ -64,6 +67,9 @@ var river_check: CheckBox
 var border_check: CheckBox
 var route_check: CheckBox
 var migration_check: CheckBox
+var names_check: CheckBox
+var flat_labels: MapLabels
+var globe_labels: MapLabels
 var trait_option: OptionButton
 var species_label: Label
 var mode_buttons := {}
@@ -165,6 +171,9 @@ func _process(delta: float) -> void:
 
 
 func _render_map() -> void:
+	# A kept cell in a mode that groups cells (language, faith, ruler, ...)
+	# brings out every cell of its group.
+	world.set_focus(mode_id, selected_cell)
 	var image: Image = world.render_map(mode_id, coastline_check.button_pressed, river_check.button_pressed,
 		border_check.button_pressed, route_check.button_pressed, migration_check.button_pressed)
 	if image == null:
@@ -179,6 +188,9 @@ func _render_map() -> void:
 		map_texture.update(image)
 	map_dirty = false
 	render_cooldown = RENDER_INTERVAL
+	var labels: Array = world.get_polity_labels() if names_check.button_pressed else []
+	flat_labels.set_labels(labels)
+	globe_labels.set_labels(labels)
 	if mode_id in DYNAMIC_LEGENDS:
 		_update_legend()  # lists the largest groups, which change as the run goes on
 	if _inspected_cell() >= 0:
@@ -225,6 +237,7 @@ func _to_floats(values: PackedInt64Array) -> PackedFloat64Array:
 func _set_view(globe_view: bool) -> void:
 	showing_globe = globe_view
 	globe.visible = globe_view
+	globe_labels.visible = globe_view
 	map_view.visible = not globe_view
 	if not globe_view:
 		_layout_map()
@@ -372,6 +385,8 @@ func _on_cell_clicked(cell: int) -> void:
 
 func _select(cell: int) -> void:
 	selected_cell = cell
+	map_dirty = true  # the kept cell's group is brought out on the map
+	render_cooldown = 0.0
 	_refresh_inspector()
 	highlight_cell = -2  # force the outline to move
 	_update_preview(hover_cell)
@@ -388,8 +403,12 @@ func _refresh_inspector() -> void:
 		_show_cell(cell)
 	else:
 		_clear_cell_info()
-	cell_hint.text = ("Kept by a click: click it again or press Esc to let go." if selected_cell >= 0
-		else "Hover over the map to look at a cell; click to keep it here.")
+	var grouped := mode_id in FOCUS_MODES
+	cell_hint.text = ("Kept by a click: click it again or press Esc to let go." +
+		(" The map brings out every cell that shares its %s." % FOCUS_MODES.get(mode_id, "") if grouped else "")
+		if selected_cell >= 0
+		else "Hover over the map to look at a cell; click to keep it here" +
+		(" and bring out every cell that shares its %s." % FOCUS_MODES.get(mode_id, "") if grouped else "."))
 	cell_hint.visible = true
 
 
@@ -751,6 +770,9 @@ func _build_ui() -> void:
 	map_rect.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	map_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	map_view.add_child(map_rect)
+	flat_labels = MapLabels.new()
+	flat_labels.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	map_rect.add_child(flat_labels)
 
 	globe = GlobeView.new()
 	globe.map_size = Vector2i(MAP_WIDTH, MAP_HEIGHT)
@@ -760,6 +782,11 @@ func _build_ui() -> void:
 	globe.pixel_clicked.connect(_on_globe_click)
 	globe.mouse_exited.connect(_on_map_mouse_exited)
 	stack.add_child(globe)
+	globe_labels = MapLabels.new()
+	globe_labels.globe = globe
+	globe_labels.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	globe_labels.visible = false
+	stack.add_child(globe_labels)
 
 	god_panel = GodPanel.new()
 	god_panel.visible = false
@@ -995,12 +1022,20 @@ func _build_side_panel() -> Control:
 	migration_check.toggled.connect(func(_on: bool) -> void:
 		map_dirty = true
 		render_cooldown = 0.0)
+	names_check = CheckBox.new()
+	names_check.text = "Names"
+	names_check.tooltip_text = "Names of states, empires and other large realms"
+	names_check.button_pressed = true
+	names_check.toggled.connect(func(_on: bool) -> void:
+		map_dirty = true
+		render_cooldown = 0.0)
 	var overlays := HFlowContainer.new()
 	overlays.add_child(coastline_check)
 	overlays.add_child(river_check)
 	overlays.add_child(border_check)
 	overlays.add_child(route_check)
 	overlays.add_child(migration_check)
+	overlays.add_child(names_check)
 	panel.add_child(overlays)
 
 	panel.add_child(HSeparator.new())

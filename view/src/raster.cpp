@@ -166,6 +166,8 @@ void render(const MapRaster& raster, const World& world, const std::vector<Rgba>
     const Rgba border = hex("#3b2a2a");
     const std::vector<std::uint8_t>* hl = options.highlight;
     auto lit = [&](CellId c) { return hl != nullptr && (*hl)[c] != 0; };
+    const std::vector<std::uint8_t>* fo = options.focus;
+    const Rgba focus_edge = hex("#ffffff");
 
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
@@ -190,6 +192,18 @@ void render(const MapRaster& raster, const World& world, const std::vector<Rgba>
                     return world.is_land[o] && region[o] != region[c] && (region[o] != 0 || region[c] != 0);
                 };
                 if (differs(right) || differs(down)) color = border;
+            }
+            if (fo != nullptr && world.is_land[c]) {
+                const CellId right = cells[static_cast<std::size_t>(y) * w + (x + 1) % w];
+                const CellId down = y + 1 < h ? cells[i + w] : c;
+                const bool in = (*fo)[c] != 0;
+                if ((world.is_land[right] && (*fo)[right] != in) || (world.is_land[down] && (*fo)[down] != in)) {
+                    color = focus_edge;
+                } else if (!in) {
+                    // Faded toward a dark gray: the region stands out.
+                    auto fade = [](std::uint8_t v) { return static_cast<std::uint8_t>((v * 15 + 85 * 52) / 100); };
+                    color = {fade(color.r), fade(color.g), fade(color.b), color.a};
+                }
             }
             if (hl != nullptr) {
                 const CellId right = cells[static_cast<std::size_t>(y) * w + (x + 1) % w];

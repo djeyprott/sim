@@ -85,6 +85,12 @@ public:
     // Outline the cells within radius_km of a cell on the next render_map
     // (cell < 0 clears it).
     void set_highlight(int64_t cell, double radius_km);
+    // Fades all but the cells in the same group as `cell` (its language,
+    // culture, faith, ruler, ...) in modes that group cells; -1 clears it.
+    // Returns whether anything is focused.
+    bool set_focus(const godot::String& mode, int64_t cell);
+    // Names to write over the map: [{name, u, v, area_km2, level}, ...].
+    godot::Array get_polity_labels() const;
 
 protected:
     static void _bind_methods();
@@ -102,4 +108,6 @@ private:
     std::vector<std::uint8_t> rgba_;
     std::vector<std::uint8_t> highlight_;
     bool highlight_on_ = false;
+    std::vector<std::uint8_t> focus_;
+    bool focus_on_ = false;
 };

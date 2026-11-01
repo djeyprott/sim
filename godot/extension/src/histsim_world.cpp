@@ -261,6 +261,9 @@ Ref<Image> HistSimWorld::render_map(const String& mode, bool coastlines, bool ri
         if (highlight_on_ && highlight_.size() == sim_->world().cell_count()) {
             options.highlight = &highlight_;
         }
+        if (focus_on_ && focus_.size() == sim_->world().cell_count()) {
+            options.focus = &focus_;
+        }
         std::vector<histsim::view::RouteLine> lines;
         if (routes) {
             lines = histsim::view::route_lines(*sim_);
@@ -389,6 +392,32 @@ PackedInt64Array HistSimWorld::get_event_years(const String& kind) const {
     return out;
 }
 
+bool HistSimWorld::set_focus(const String& mode, int64_t cell) {
+    focus_on_ = false;
+    if (!sim_ || cell < 0 || static_cast<std::size_t>(cell) >= sim_->world().cell_count()) return false;
+    try {
+        focus_on_ = histsim::view::same_group_cells(*sim_, to_std(mode), static_cast<histsim::CellId>(cell), focus_);
+    } catch (const std::exception& e) {
+        fail(e.what());
+    }
+    return focus_on_;
+}
+
+Array HistSimWorld::get_polity_labels() const {
+    Array out;
+    if (!sim_) return out;
+    for (const auto& l : histsim::view::polity_labels(*sim_)) {
+        Dictionary d;
+        d["name"] = to_godot(l.name);
+        d["u"] = l.u;
+        d["v"] = l.v;
+        d["area_km2"] = l.area_km2;
+        d["level"] = to_godot(l.level);
+        out.push_back(d);
+    }
+    return out;
+}
+
 void HistSimWorld::set_highlight(int64_t cell, double radius_km) {
     highlight_on_ = false;
     if (!sim_ || cell < 0 || static_cast<std::size_t>(cell) >= sim_->world().cell_count()) return;
@@ -428,6 +457,8 @@ void HistSimWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_event_years", "kind"), &HistSimWorld::get_event_years);
     ClassDB::bind_method(D_METHOD("get_bond_spans"), &HistSimWorld::get_bond_spans);
     ClassDB::bind_method(D_METHOD("set_highlight", "cell", "radius_km"), &HistSimWorld::set_highlight);
+    ClassDB::bind_method(D_METHOD("set_focus", "mode", "cell"), &HistSimWorld::set_focus);
+    ClassDB::bind_method(D_METHOD("get_polity_labels"), &HistSimWorld::get_polity_labels);
     ClassDB::bind_method(D_METHOD("get_modes"), &HistSimWorld::get_modes);
     ClassDB::bind_method(D_METHOD("get_legend", "mode"), &HistSimWorld::get_legend);
     ClassDB::bind_method(D_METHOD("set_map_size", "width", "height"), &HistSimWorld::set_map_size);
