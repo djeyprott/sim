@@ -70,6 +70,20 @@ void ensure(SimState& s, std::size_t n) {
 
 }  // namespace
 
+void hinterland_people(const World& w, const SimState& s, std::vector<double>& people, std::vector<double>& town) {
+    const std::size_t n = w.cell_count();
+    people.assign(n, 0.0);
+    town.assign(n, 0.0);
+    const bool towns = s.urban.size() == n;
+    for (CellId c = 0; c < n; ++c) {
+        w.for_hinterland(c, [&](CellId h) {
+            const double pop = static_cast<double>(s.cell_population[h]);
+            people[c] += pop;
+            if (towns) town[c] += s.urban[h] * pop;
+        });
+    }
+}
+
 double polity_reach_km(const World& w, const SimState& s, CellId capital) {
     const TechEffects e = technique_effects(w, capital, techniques_in(s, capital));
     return PolitySystem::kBaseReachKm * (1.0 + e.administration) * (1.0 + 0.3 * e.contact);
@@ -156,9 +170,23 @@ void SettlementSystem::step(StepContext& ctx) {
             if (target > 0.0 && p != 0 && s.polities[p].capital == c) target += kCapital;
             s.urban[c] += kRate * (target - s.urban[c]);
         }
-        const double town = s.urban[c] * static_cast<double>(s.cell_population[c]);
+    }
+    // A city is named for the town of a hinterland (the cell itself at level
+    // 5), at its centre: the cell with the most townspeople around it.
+    std::vector<double> around_people, around_town;
+    hinterland_people(w, s, around_people, around_town);
+    for (CellId c = 0; c < n; ++c) {
+        const double town = around_town[c];
         std::uint32_t& city = s.city_of[c];
-        if (city == 0 && town >= kCityPeople) {
+        bool centre = true, taken = false;
+        if (w.hinterland_steps() > 0) {
+            w.for_hinterland(c, [&](CellId h) {
+                if (h == c) return;
+                if (around_town[h] > town || (around_town[h] == town && h < c)) centre = false;
+                if (s.city_of[h] != 0) taken = true;
+            });
+        }
+        if (city == 0 && town >= kCityPeople && centre && !taken) {
             const Cohort* lead = lead_cohort(s, c);
             const Language& lang = s.languages[lead->language];
             RngStream rng = ctx.rng(Stream::Settlement, kNameEntity | c);
@@ -277,28 +305,39 @@ void PolitySystem::step(StepContext& ctx) {
         return polity_control(w.grid.distance_km(s.polities[id].capital, c), reach[id]);
     };
 
-    // ---- Expansion over stateless land: one attempt a year per polity, at
-    // the neighbouring cell it would hold best. (Land changes hands between
-    // polities only in war.)
+    // ---- Expansion over stateless land: one attempt a year per polity (per
+    // level-5 cell's worth of land on finer grids), at the neighbouring cells
+    // it would hold best. (Land changes hands between polities only in war.)
+    const std::size_t attempts = std::max<std::size_t>(1, w.cells_for(1));
+    const double cell_share = std::min(1.0, w.cell_scale() * w.cell_scale());  // of a level-5 cell
+    const double coarse = std::max(1.0, w.cell_scale() * w.cell_scale());       // level-5 cells in one
+    std::vector<std::pair<double, CellId>> frontier;
     for (std::size_t id = 1; id < np; ++id) {
         if (s.polities[id].ended != kNever) continue;
-        CellId target = kInvalidCell;
-        double best = -1.0;
+        frontier.clear();
         for (CellId c : cells[id]) {
             for (CellId nb : w.grid.neighbors(c)) {
                 if (s.polity_of[nb] != 0 || s.cell_population[nb] == 0) continue;
-                const double ctl = control_of(id, nb);
-                if (ctl > best || (ctl == best && nb < target)) best = ctl, target = nb;
+                frontier.emplace_back(control_of(id, nb), nb);
             }
         }
-        if (target == kInvalidCell || best < kMinControl) continue;
+        // Best held first (ties: lower cell), each cell once.
+        std::sort(frontier.begin(), frontier.end(), [](const auto& a, const auto& b) {
+            return a.first > b.first || (a.first == b.first && a.second < b.second);
+        });
+        frontier.erase(std::unique(frontier.begin(), frontier.end()), frontier.end());
         RngStream rng = ctx.rng(Stream::Polity, static_cast<std::uint32_t>(id));
         const double warfare = cell_trait(s, s.polities[id].capital, i_warfare);
-        const double people = static_cast<double>(s.cell_population[target]);
-        const double p = kAnnex * best * (0.5 + warfare) * std::min(1.0, strength[id] / (4.0 * people));
-        if (rng.uniform() < p) {
-            s.polity_of[target] = static_cast<std::uint32_t>(id);
-            // Rebuild later from polity_of; capitals are rechecked next year.
+        for (std::size_t k = 0; k < attempts && k < frontier.size(); ++k) {
+            const auto [best, target] = frontier[k];
+            if (best < kMinControl) break;
+            // Strength against the people of a level-5 cell's worth of land.
+            const double people = static_cast<double>(s.cell_population[target]) / cell_share;
+            const double p = kAnnex * best * (0.5 + warfare) * std::min(1.0, strength[id] / (4.0 * people)) / coarse;
+            if (rng.uniform() < p) {
+                s.polity_of[target] = static_cast<std::uint32_t>(id);
+                // Rebuild later from polity_of; capitals are rechecked next year.
+            }
         }
     }
 
@@ -442,7 +481,7 @@ void PolitySystem::step(StepContext& ctx) {
             mean_control += ctl;
             if (c != pol.capital && ctl < kSecedeBelow && rng.uniform32() < kSecession * unrest) s.polity_of[c] = 0;
         }
-        if (mine.size() >= kCivilWarCells) {
+        if (mine.size() >= w.cells_for(kCivilWarCells)) {
             mean_control /= static_cast<double>(mine.size());
             if (rng.uniform() < kCivilWar * (1.0 - mean_control) * unrest) {
                 // The half farther from the capital breaks away under its
@@ -533,7 +572,7 @@ void PolitySystem::step(StepContext& ctx) {
                     for (CellId nb : in_reach) wealth += raid_wealth(s, nb);
                     const double lure = std::min(kShadowMax, 1.0 + wealth / kShadowWealth);
                     RngStream rng = ctx.rng(Stream::Polity, kFormationEntity | c);
-                    if (rng.uniform() < kNomadFormation * warfare * lure) s.polity_of[c] = found(c, 0, true);
+                    if (rng.uniform() < w.per_area(kNomadFormation * warfare * lure)) s.polity_of[c] = found(c, 0, true);
                 }
                 continue;
             }
@@ -546,7 +585,8 @@ void PolitySystem::step(StepContext& ctx) {
                 if (!w.is_land[nb] || s.env.farm_capacity[nb] / w.grid.area_km2(nb) < 0.25 * own) ++hemmed;
             }
             const double circumscription = around > 0 ? static_cast<double>(hemmed) / around : 0.0;
-            const double p = kFormation * hierarchy * (0.5 + circumscription) * std::min(2.0, density / kMinDensity);
+            const double p =
+                w.per_area(kFormation * hierarchy * (0.5 + circumscription) * std::min(2.0, density / kMinDensity));
             RngStream rng = ctx.rng(Stream::Polity, kFormationEntity | c);
             if (rng.uniform() < p) s.polity_of[c] = found(c, 0, false);
         }

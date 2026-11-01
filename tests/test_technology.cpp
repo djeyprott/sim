@@ -73,6 +73,10 @@ TEST(technology_follows_farming_and_its_prerequisites) {
     WorldParams p;
     p.grid_level = 4;
     Simulation sim = Simulation::create(p);
+    // Techniques some peoples know from the start (canoes, bows) count as
+    // known from year 0.
+    std::uint64_t at_start = 0;
+    for (std::uint64_t k : sim.state().techniques) at_start |= k;
     sim.step_years(3000);
     const SimState& s = sim.state();
     const Content& c = *sim.world().content;
@@ -84,6 +88,9 @@ TEST(technology_follows_farming_and_its_prerequisites) {
     CHECK(first_crop >= 0);
     // Farming techniques only after crops; each invention after its prerequisites.
     std::vector<Tick> first(c.techniques.size(), -1);
+    for (std::size_t k = 0; k < c.techniques.size(); ++k) {
+        if (at_start & bit(k)) first[k] = 0;
+    }
     for (const Invention& v : s.inventions) {
         if (first[v.technique] < 0) first[v.technique] = v.tick;
     }

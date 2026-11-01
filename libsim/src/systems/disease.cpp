@@ -48,6 +48,8 @@ void DiseaseSystem::step(StepContext& ctx) {
 
     std::vector<std::uint8_t> next = s.disease_present;
     std::vector<double> burden(n * nd, 0.0);  // endemic: burden; epidemic: attack rate this year
+    std::vector<double> around_people, around_town;
+    hinterland_people(w, s, around_people, around_town);
 
     for (CellId c = 0; c < n; ++c) {
         const std::size_t base = c * nd;
@@ -59,6 +61,10 @@ void DiseaseSystem::step(StepContext& ctx) {
             continue;
         }
         const double pop = static_cast<double>(s.cell_population[c]);
+        // Thresholds count the people and towns of the hinterland (the cell
+        // itself at level 5): a disease needs a community, not a map cell.
+        const double community = around_people[c];
+        const double community_town = around_town[c];
         // Towns pack people together: more contact than the cell average.
         const double urban = s.urban.empty() ? 0.0 : s.urban[c];
         const double density = pop / w.grid.area_km2(c) * (1.0 + kUrbanCrowding * urban);
@@ -83,10 +89,10 @@ void DiseaseSystem::step(StepContext& ctx) {
 
             // Emergence: zoonoses where people keep the hosts, others in
             // their niche, both only among enough people.
-            if (!s.disease_present[k] && def.emergence_chance > 0.0 && pop >= def.emergence_min_population &&
-                urban * pop >= def.emergence_min_town &&
+            if (!s.disease_present[k] && def.emergence_chance > 0.0 && community >= def.emergence_min_population &&
+                community_town >= def.emergence_min_town &&
                 (def.hosts == 0 || (known & def.hosts) != 0)) {
-                if (rng.uniform() < def.emergence_chance * suit) {
+                if (rng.uniform() < w.per_area(def.emergence_chance) * suit) {
                     s.disease_present[k] = 1;
                     next[k] = 1;
                     // A new origin only if it never arose or circulated near
@@ -118,21 +124,21 @@ void DiseaseSystem::step(StepContext& ctx) {
                     if (s.cell_population[nb] == 0 || s.disease_present[j] || next[j]) continue;
                     if (disease_suitability(w, def, nb) <= 0.0) continue;
                     if (def.hosts != 0 && (s.domesticates[nb] & def.hosts) == 0) continue;
-                    if (rng.uniform32() < kEndemicSpread * b) next[j] = 1;
+                    if (rng.uniform32() < w.per_step(kEndemicSpread * b)) next[j] = 1;
                 }
             } else {
                 const double attack = outbreak_size(def.r0 * contact_factor(density), sus);
                 burden[k] = attack;
                 if (def.immunity_years != 0.0) sus = std::max(0.0, sus - attack);
                 // Too few people to keep it going: it burns out here.
-                if (pop < def.critical_population) next[k] = 0;
+                if (community < def.critical_population) next[k] = 0;
                 if (attack > 0.0) {
                     RngStream spread = ctx.rng(Stream::Disease, kSpreadEntity | c);
                     for (CellId nb : w.grid.neighbors(c)) {
                         const std::size_t j = nb * nd + d;
                         if (s.cell_population[nb] == 0 || s.disease_present[j] || next[j]) continue;
                         if (disease_suitability(w, def, nb) <= 0.0) continue;
-                        if (spread.uniform32() < std::min(0.9, kEpidemicSpread * attack)) next[j] = 1;
+                        if (spread.uniform32() < std::min(0.9, w.per_step(kEpidemicSpread * attack))) next[j] = 1;
                     }
                 }
             }

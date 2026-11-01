@@ -6,6 +6,7 @@
 // baselines below.
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -123,7 +124,69 @@ struct World {
     std::vector<std::array<CellId, 3>> climate_cells;
     std::vector<std::array<double, 3>> climate_weights;
 
+    // River corridors and coastal strips about as wide as a level-5 cell
+    // (225 km), at any grid level: the share (0-1) of a cell's land within a
+    // river's corridor, that river's flow (m^3/s), and the share within the
+    // coastal strip. At level 5: 1 for river cells (their own flow) and for
+    // cells on the coast, else 0. Derived, not part of the world hash.
+    std::vector<double> river_share;
+    std::vector<double> river_flow;
+    std::vector<double> coast_share;
+
+    // Each cell's hinterland: the cells within hinterland_steps() of it (the
+    // cell first), covering about the area of a level-5 cell. Built with the
+    // world; hinterland_ids[hinterland_begin[c] .. hinterland_begin[c + 1]).
+    // Derived from the grid alone, so not part of the world hash.
+    std::vector<std::uint32_t> hinterland_begin;
+    std::vector<CellId> hinterland_ids;
+
     [[nodiscard]] std::size_t cell_count() const noexcept { return grid.cell_count(); }
+
+    // ---- Grid scale. The model is tuned at grid level 5 (cells of about
+    // 50,000 km^2, 225 km apart). Rules that act cell by cell use these so
+    // the same history unfolds at any level; at level 5 every factor is
+    // exactly 1, so results there do not change.
+
+    // Mean cell spacing relative to level 5: exactly 2^(5 - level).
+    [[nodiscard]] double cell_scale() const noexcept {
+        double k = 1.0;
+        for (int l = grid.level(); l < 5; ++l) k *= 2.0;
+        for (int l = grid.level(); l > 5; --l) k *= 0.5;
+        return k;
+    }
+    // A chance a year of passing something to a neighbour, for the same pace
+    // in km a year at any level.
+    [[nodiscard]] double per_step(double p) const noexcept { return std::min(1.0, p / cell_scale()); }
+    // A rate a year of moving people to a neighbour, for the same spread
+    // (diffusion) at any level.
+    [[nodiscard]] double per_step_diffusion(double p) const noexcept {
+        return p / (cell_scale() * cell_scale());
+    }
+    // A chance per cell of an event, for the same number per area at any level.
+    [[nodiscard]] double per_area(double p) const noexcept { return p * cell_scale() * cell_scale(); }
+    // A count of level-5 cells as a count of cells at this level.
+    [[nodiscard]] std::size_t cells_for(std::size_t level5_cells) const noexcept {
+        const double k2 = cell_scale() * cell_scale();
+        return static_cast<std::size_t>(static_cast<double>(level5_cells) / k2 + 0.5);
+    }
+    // Grid steps that span one level-5 cell spacing: 2^(level - 5), at least 1.
+    [[nodiscard]] int reach_steps() const noexcept {
+        int s = 1;
+        for (int l = grid.level(); l > 5; --l) s *= 2;
+        return s;
+    }
+    // Steps of a hinterland about a level-5 cell in area: 0 at level 5 and
+    // coarser, else 2^(level - 6).
+    [[nodiscard]] int hinterland_steps() const noexcept { return reach_steps() / 2; }
+    // Calls f(cell) for each cell of c's hinterland (just c when none is built).
+    template <class F>
+    void for_hinterland(CellId c, F&& f) const {
+        if (hinterland_begin.size() != cell_count() + 1) {
+            f(c);
+            return;
+        }
+        for (std::uint32_t i = hinterland_begin[c]; i < hinterland_begin[c + 1]; ++i) f(hinterland_ids[i]);
+    }
     [[nodiscard]] std::size_t species_count() const noexcept {
         return species_mask.empty() ? 0 : species_abundance.size() / species_mask.size();
     }
@@ -188,6 +251,25 @@ inline constexpr double kRiverMinDischarge = 300.0;  // m^3/s
 
 [[nodiscard]] inline bool is_river(const World& w, CellId c) noexcept {
     return w.is_land[c] && w.basin_km2[c] >= kRiverMinBasinKm2 && w.discharge_m3s[c] >= kRiverMinDischarge;
+}
+
+// A river's effect on a cell, f(flow): the larger of its own flow's, and the
+// corridor river's scaled by the cell's share of the corridor.
+template <class F>
+[[nodiscard]] double river_effect(const World& w, CellId c, F&& f) {
+    double v = f(w.discharge_m3s[c]);
+    if (c < w.river_share.size() && w.river_share[c] > 0.0) v = std::max(v, w.river_share[c] * f(w.river_flow[c]));
+    return v;
+}
+// Share of a cell's land along a river (is_river at level 5).
+[[nodiscard]] inline double river_share(const World& w, CellId c) noexcept {
+    if (c < w.river_share.size()) return w.river_share[c];
+    return is_river(w, c) ? 1.0 : 0.0;
+}
+// Share of a cell's land in the coastal strip (coast_distance 1 at level 5).
+[[nodiscard]] inline double coast_share(const World& w, CellId c) noexcept {
+    if (c < w.coast_share.size()) return w.coast_share[c];
+    return w.coast_distance[c] == 1 ? 1.0 : 0.0;
 }
 
 }  // namespace histsim

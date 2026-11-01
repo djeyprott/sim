@@ -139,7 +139,9 @@ void ReligionSystem::step(StepContext& ctx) {
         if (rng.uniform() < kFolkFollow) s.faith_of[c] = folk_of[root_of[c]];
     }
 
-    // ---- New organized religions.
+    // ---- New organized religions, in towns counted over their hinterland.
+    std::vector<double> around_people, around_town;
+    if (year % kFoundingYears == 0) hinterland_people(w, s, around_people, around_town);
     if (year % kFoundingYears == 0) {
         for (std::size_t k = 0; k < kinds.size(); ++k) {
             const ReligionKind& kind = kinds[k];
@@ -151,7 +153,7 @@ void ReligionSystem::step(StepContext& ctx) {
                 if (f == 0 || s.religions[f].kind == k) return;  // already of this kind
                 // Cults of the city's gods grow out of its people's own beliefs.
                 if (kind.found_polity && !kinds[s.religions[f].kind].ethnic) return;
-                if (s.urban.empty() || s.urban[c] * people < kind.found_min_town) return;
+                if (around_town[c] < kind.found_min_town) return;
                 if (kind.found_min_ritual > 0.0 && cell_trait(s, c, i_ritual) < kind.found_min_ritual) return;
                 if (kind.found_technique >= 0 && !((techniques_in(s, c) >> kind.found_technique) & 1u)) return;
                 // A universal faith is not founded where one already holds.
@@ -159,7 +161,9 @@ void ReligionSystem::step(StepContext& ctx) {
                     return;
                 }
                 RngStream rng = ctx.rng(Stream::Religion, kFoundEntity | (static_cast<std::uint32_t>(k) << 24) | c);
-                if (rng.uniform() >= kind.found_chance) return;
+                // Per capital for temple cults; per area for the others.
+                const double chance = kind.found_polity ? kind.found_chance : w.per_area(kind.found_chance);
+                if (rng.uniform() >= chance) return;
                 RngStream names = ctx.rng(Stream::Religion, kNameEntity | c);
                 const std::string word = coin_religion_word(content, s, c, names);
                 const std::string name = kind.missionary > 0.0 ? "Teaching of " + word : "Cult of " + word;
@@ -246,7 +250,11 @@ void ReligionSystem::step(StepContext& ctx) {
         const double own = people * kinds[s.religions[f].kind].appeal * kAttachment;
         if (best.second <= own) continue;
         RngStream rng = ctx.rng(Stream::Religion, c);
-        if (rng.uniform() < kConversion * (best.second - own) / (best.second + own)) next[c] = best.first;
+        // Preaching passes from land to land at the same pace in km on any
+        // grid; the rulers' pull does not depend on the grid.
+        const bool rulers = ruler != 0 && best.first == s.polities[ruler].religion;
+        const double rate = rulers ? kConversion : w.per_step(kConversion);
+        if (rng.uniform() < rate * (best.second - own) / (best.second + own)) next[c] = best.first;
     }
     s.faith_of = std::move(next);
 
@@ -259,7 +267,7 @@ void ReligionSystem::step(StepContext& ctx) {
             if (w.grid.distance_km(pol.capital, s.religions[r].origin) <= kSchismKm) continue;
             std::size_t held = 0;
             for (CellId c = 0; c < n; ++c) held += s.polity_of.size() == n && s.polity_of[c] == p && s.faith_of[c] == r ? 1 : 0;
-            if (held < kSchismCells) continue;
+            if (held < w.cells_for(kSchismCells)) continue;
             RngStream rng = ctx.rng(Stream::Religion, kSchismEntity | p);
             if (rng.uniform() >= kSchism) continue;
             const std::uint32_t sect =

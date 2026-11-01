@@ -61,7 +61,9 @@ TEST(migration_crowded_farmers_send_colonists_who_keep_their_language) {
     const std::uint32_t language = s.cohorts_in(x.home).front().language;
     const std::int64_t people = s.total_population();
     std::int64_t colonists = 0;
-    for (std::int64_t y = 0; y < MigrationSystem::kColonizeYears; ++y) {  // each cell looks in its turn
+    // Each cell looks in its turn (less often on coarse grids).
+    const auto period = MigrationSystem::kColonizeYears * static_cast<std::int64_t>(std::max(1.0, w.cell_scale()));
+    for (std::int64_t y = 0; y < period; ++y) {
         s.env.capacity[x.home] = static_cast<double>(s.cell_population[x.home]);
         migrate(w, s);
         colonists += s.colonists;

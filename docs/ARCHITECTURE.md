@@ -82,6 +82,26 @@ which leaves room to parallelize later. After any change to cohorts,
 `SimState::normalize_cohorts()` re-sorts and merges them and rebuilds the
 derived per-cell totals.
 
+### Grid scale
+
+The model is tuned at grid level 5 (cells of about 50,000 km², 225 km
+apart), but the same history should unfold at any level. Rules that act cell
+by cell therefore scale with the grid (`World::cell_scale()`, exactly
+2^(5 − level), so every factor is exactly 1 at level 5 and results there do
+not change):
+
+| Rule | Scaled so that |
+| --- | --- |
+| Things passing to a neighbour (endemic and epidemic disease, preaching; crops, techniques and culture already scale with cell area) | they move the same km a year: chance ÷ scale |
+| Wandering bands | people spread (diffuse) as fast: rate ÷ scale², up to 50% a year |
+| Colonists | they leapfrog as far as at level 5: on finer grids to land 2^(level − 5) steps away (nearer only if none there has room); on coarser grids less often |
+| Coasts and rivers (fishing, alluvium, floodplain farming, irrigation, river-loving species) | the strip along a coast and the corridor along a river are about 225 km wide at any level (`World::coast_share`, `World::river_share`) |
+| Founding chances per cell (chiefdoms, nomad confederations, universal faiths, inventions, disease emergence) | as many per area: chance × scale² |
+| Town thresholds (cities, writing and other techniques, temple and universal faiths) and population thresholds (disease critical community, forgetting) | they count a hinterland about a level-5 cell in area: the cells within 2^(level − 6) steps (`World::for_hinterland`); a city is named at the hinterland's centre |
+| Annexation, conquest | the same area a year: as many attempts or pushes as cells in a level-5 cell |
+| Nomad raids | they strike the target's hinterland |
+| Thresholds in cells (civil war, schism, annexing a last province) | they mean the same area (`World::cells_for`) |
+
 ### People and environment (M1)
 
 People live in cohorts: one per (cell, culture, language), each with an

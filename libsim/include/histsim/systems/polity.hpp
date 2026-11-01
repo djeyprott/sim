@@ -30,6 +30,7 @@
 
 #include <array>
 #include <string>
+#include <vector>
 
 #include "histsim/scheduler.hpp"
 
@@ -155,6 +156,12 @@ public:
 // contact (density x (1 + kUrbanCrowding x urban share)).
 inline constexpr double kUrbanMortality = 0.3;
 inline constexpr double kUrbanCrowding = 20.0;
+
+// People and townspeople of each cell's hinterland (World::for_hinterland),
+// so thresholds like "a town of 20,000" mean the same at every grid level. At
+// grid level 5 and coarser, a cell's own.
+void hinterland_people(const World& world, const SimState& state, std::vector<double>& people,
+                       std::vector<double>& town);
 
 // How far a capital's rule reaches, in km, from the techniques known there.
 double polity_reach_km(const World& world, const SimState& state, CellId capital);

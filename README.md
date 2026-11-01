@@ -107,8 +107,10 @@ ctest --test-dir build --output-on-failure
 ```
 
 `--level` sets grid resolution: level 5 is 10,242 cells (~50,000 km² each),
-level 7 is 163,842 cells (~3,100 km²). Time is shown as years since the run
-began; the sim has no calendar years.
+level 7 is 163,842 cells (~3,100 km²). The model is tuned at level 5 and
+scales its rules to the grid, so finer levels show the same history in more
+detail (each level up takes about four times as long to run). Time is shown
+as years since the run began; the sim has no calendar years.
 
 ## Layout
 

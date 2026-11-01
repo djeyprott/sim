@@ -65,6 +65,9 @@ public:
     static constexpr double kExploratoryRate = 0.005;
     static constexpr double kRateAtCapacity = 0.04;
     static constexpr double kMaxRate = 0.15;
+    // On finer grids the rates scale up (see World::per_step_diffusion), to
+    // at most this share a year.
+    static constexpr double kMaxGridRate = 0.5;
     static constexpr double kClimbCostPerKm = 2.0;  // a 500 m climb halves a destination's appeal
     static constexpr std::int64_t kMinGroupSize = 20;
     static constexpr double kMinGroupShare = 0.10;

@@ -212,8 +212,12 @@ void MigrationSystem::step(StepContext& ctx) {
 
         const double crowding = crowding_of(s, c);
         const bool starving = s.env.capacity[c] <= 0.0;
+        // Rates are for level-5 cells; smaller cells trade people faster, for
+        // the same spread in km.
         const double rate =
-            starving ? 1.0 : std::min(kMaxRate, kExploratoryRate + kRateAtCapacity * crowding * crowding);
+            starving ? 1.0
+                     : std::min(kMaxGridRate,
+                                w.per_step_diffusion(std::min(kMaxRate, kExploratoryRate + kRateAtCapacity * crowding * crowding)));
 
         // Destinations: land neighbors that can feed someone, by spare
         // capacity (plus a little for any capacity) over the cost of climbing.
@@ -311,9 +315,15 @@ void MigrationSystem::step(StepContext& ctx) {
     // ---- Colonists: crowded farmers settle land their crops could fill.
     s.colonists = 0;
     const std::int64_t year = ctx.tick / kTicksPerYear;
+    // On grids finer than level 5, colonists go as far as a level-5 cell
+    // spacing; on coarser grids, less often.
+    const int reach = w.reach_steps();
+    const std::int64_t period = kColonizeYears * static_cast<std::int64_t>(std::max(1.0, w.cell_scale()));
+    std::vector<std::uint8_t> mark(reach > 1 ? n : 0, 0);
+    std::vector<std::pair<CellId, int>> around;
     for (CellId c = 0; c < n; ++c) {
         // Each cell looks for new land every kColonizeYears (staggered).
-        if ((year + static_cast<std::int64_t>(c)) % kColonizeYears != 0) continue;
+        if ((year + static_cast<std::int64_t>(c)) % period != 0) continue;
         if (s.cell_population[c] == 0 || s.env.farming.empty() || s.env.farming[c] < kColonizeFarming) continue;
         const double crowding = crowding_of(s, c);
         if (crowding < kColonizeCrowding) continue;
@@ -331,7 +341,18 @@ void MigrationSystem::step(StepContext& ctx) {
             const double appeal = factor * room / (1.0 + kClimbCostPerKm * climb_km);
             if (appeal > best_appeal || (appeal == best_appeal && nb < best)) best_appeal = appeal, best = nb, best_room = room;
         };
-        for (CellId nb : w.grid.neighbors(c)) consider(nb, 1.0);
+        if (reach == 1) {
+            for (CellId nb : w.grid.neighbors(c)) consider(nb, 1.0);
+        } else {
+            // Leapfrogging, as at level 5: land a level-5 spacing away first,
+            // nearer land only if none there has room.
+            w.grid.cells_within(c, reach, around, mark);
+            for (int ring = reach; ring >= 1 && best == kInvalidCell; --ring) {
+                for (std::size_t i = 1; i < around.size(); ++i) {
+                    if (around[i].second == ring) consider(around[i].first, 1.0);
+                }
+            }
+        }
         if (technique_effects(w, c, techs).water_transport > 0.0 && !w.trade_edge_begin.empty()) {
             for (std::uint32_t e : w.trade_links(c)) {
                 if (w.trade_edges[e].modes & kTradeSea) consider(w.trade_other(e, c), kSeaColonyAppeal);
@@ -340,7 +361,7 @@ void MigrationSystem::step(StepContext& ctx) {
         if (best == kInvalidCell) continue;
         Cohort* settlers = largest_cohort(c, true);
         if (settlers == nullptr) continue;
-        const double wanted = kColonizeRate * static_cast<double>(kColonizeYears) * static_cast<double>(s.cell_population[c]) *
+        const double wanted = kColonizeRate * static_cast<double>(period) * static_cast<double>(s.cell_population[c]) *
                               std::min(1.0, (crowding - kColonizeCrowding) / kColonizeRamp + 0.1);
         const double here = static_cast<double>(s.cell_population[best]);
         const double group = std::min({std::max(wanted, kColonyMinShare * here), 0.5 * best_room,

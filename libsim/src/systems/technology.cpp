@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "histsim/systems/culture.hpp"
+#include "histsim/systems/polity.hpp"
 
 namespace histsim {
 
@@ -29,9 +30,9 @@ std::size_t trait_index(const Content& c, const char* id) {
 bool technique_place_ok(const World& w, CellId c, TechPlace place) {
     switch (place) {
         case TechPlace::Anywhere: return true;
-        case TechPlace::River: return is_river(w, c);
-        case TechPlace::Coast: return w.coast_distance[c] == 1;
-        case TechPlace::Water: return is_river(w, c) || w.coast_distance[c] == 1;
+        case TechPlace::River: return river_share(w, c) >= 0.5;
+        case TechPlace::Coast: return coast_share(w, c) >= 0.5;
+        case TechPlace::Water: return river_share(w, c) >= 0.5 || coast_share(w, c) >= 0.5;
         case TechPlace::Dry: return w.precipitation_mm[c] < 900.0;
         case TechPlace::Hills: return w.elevation_m[c] > 600.0;
         case TechPlace::Forest: return is_forest(static_cast<Biome>(w.biome[c]));
@@ -108,6 +109,11 @@ void TechnologySystem::step(StepContext& ctx) {
     for (CellId c = 0; c < n; ++c) {
         if (before[c] != 0) contact_of[c] = technique_effects(w, c, before[c]).contact;
     }
+    // Towns and populations are counted over each cell's hinterland (the
+    // cell itself at level 5), and inventions come per area, so finer grids
+    // invent no more and no less.
+    std::vector<double> around_people, around_town;
+    hinterland_people(w, s, around_people, around_town);
     for (CellId c = 0; c < n; ++c) {
         const auto first = s.cohort_begin[c], last = s.cohort_begin[c + 1];
         if (first == last) {
@@ -129,13 +135,14 @@ void TechnologySystem::step(StepContext& ctx) {
         const double openness = i_openness < nt ? ways[i_openness] : 0.5;
         const std::uint32_t known = s.domesticates.empty() ? 0 : s.domesticates[c];
         Keeps kept = keeps(w, known);
-        kept.town = s.urban.empty() ? 0.0 : s.urban[c] * pop;
+        kept.town = around_town[c];
+        const double community = around_people[c];
         kept.goods = goods_in(s, c);
         std::uint64_t& mine = s.techniques[c];
         RngStream rng = ctx.rng(Stream::Technology, c);
 
         // Invention.
-        const double scale = std::sqrt(pop / 10000.0) * (0.5 + innovation);
+        const double scale = w.per_area(std::sqrt(community / 10000.0)) * (0.5 + innovation);
         for (std::size_t k = 0; k < techs.size(); ++k) {
             const TechniqueDef& t = techs[k];
             if (((mine >> k) & 1u) || t.rate <= 0.0 || !technique_usable(w, t, c, mine, known, kept)) continue;
@@ -180,7 +187,7 @@ void TechnologySystem::step(StepContext& ctx) {
         // Forgetting.
         for (std::size_t k = 0; k < techs.size(); ++k) {
             if (!((mine >> k) & 1u)) continue;
-            double loss = pop < kForgetBelowPeople ? kForgetting : 0.0;
+            double loss = community < kForgetBelowPeople ? kForgetting : 0.0;
             // A town is needed to invent writing, not to keep it.
             Keeps keep_check = kept;
             keep_check.town = 1e300;
