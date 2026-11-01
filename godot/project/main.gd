@@ -69,6 +69,10 @@ var route_check: CheckBox
 var migration_check: CheckBox
 var names_check: CheckBox
 var flat_labels: MapLabels
+# Copies of the flat map to its left and right, so it wraps around east-west.
+var map_copies: Array[TextureRect] = []
+var copy_labels: Array[MapLabels] = []
+var _labels_now: Array = []
 var globe_labels: MapLabels
 var trait_option: OptionButton
 var species_label: Label
@@ -182,6 +186,8 @@ func _render_map() -> void:
 	if map_texture == null or map_texture.get_size() != Vector2(image.get_size()):
 		map_texture = ImageTexture.create_from_image(image)
 		map_rect.texture = map_texture
+		for copy in map_copies:
+			copy.texture = map_texture
 		globe.set_texture(map_texture)
 		_layout_map()
 	else:
@@ -190,6 +196,9 @@ func _render_map() -> void:
 	render_cooldown = RENDER_INTERVAL
 	var labels: Array = world.get_polity_labels() if names_check.button_pressed else []
 	flat_labels.set_labels(labels)
+	_labels_now = labels
+	for l in copy_labels:
+		l.set_labels(labels)
 	globe_labels.set_labels(labels)
 	if mode_id in DYNAMIC_LEGENDS:
 		_update_legend()  # lists the largest groups, which change as the run goes on
@@ -425,13 +434,43 @@ func _layout_map() -> void:
 	if fit.y > view.y:
 		fit = Vector2(view.y * aspect, view.y)
 	var map_size := fit * map_zoom
-	for axis in 2:
-		if map_size[axis] <= view[axis]:
-			map_offset[axis] = (view[axis] - map_size[axis]) * 0.5
-		else:
-			map_offset[axis] = clampf(map_offset[axis], view[axis] - map_size[axis], 0.0)
+	# North-south the map stays in view; east-west it wraps around, with
+	# copies on either side filling the view.
+	if map_size.y <= view.y:
+		map_offset.y = (view.y - map_size.y) * 0.5
+	else:
+		map_offset.y = clampf(map_offset.y, view.y - map_size.y, 0.0)
+	if map_size.x > 0.0:
+		map_offset.x = -fposmod(-map_offset.x, map_size.x)  # in (-width, 0]
 	map_rect.position = map_offset
 	map_rect.size = map_size
+	_place_map_copies(view, map_size)
+
+
+# Enough copies of the map, side by side after the main one, to fill the view.
+func _place_map_copies(view: Vector2, map_size: Vector2) -> void:
+	var needed := 0
+	if map_size.x > 0.0:
+		needed = int(ceil((view.x - (map_offset.x + map_size.x)) / map_size.x)) + 1
+	while map_copies.size() < needed:
+		var copy := TextureRect.new()
+		copy.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		copy.stretch_mode = TextureRect.STRETCH_SCALE
+		copy.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		copy.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		copy.texture = map_texture
+		map_view.add_child(copy)
+		var names := MapLabels.new()
+		names.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		copy.add_child(names)
+		names.set_labels(_labels_now)
+		map_copies.append(copy)
+		copy_labels.append(names)
+	for i in map_copies.size():
+		var copy := map_copies[i]
+		copy.visible = i < needed
+		copy.position = Vector2(map_offset.x + (i + 1) * map_size.x, map_offset.y)
+		copy.size = map_size
 
 
 # Zoom by a factor, keeping the map point under `at` (view coordinates) still.
@@ -548,7 +587,8 @@ func _cell_under(local: Vector2) -> int:
 	if map_rect.size.x <= 0.0 or map_rect.size.y <= 0.0:
 		return -1
 	var pixel := (local - map_offset) / map_rect.size * tex_size
-	if pixel.x < 0 or pixel.y < 0 or pixel.x >= tex_size.x or pixel.y >= tex_size.y:
+	pixel.x = fposmod(pixel.x, tex_size.x)  # the map wraps around east-west
+	if pixel.y < 0 or pixel.y >= tex_size.y:
 		return -1
 	return world.cell_at(int(pixel.x), int(pixel.y))
 

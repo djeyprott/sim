@@ -131,8 +131,21 @@ func _check_selection_and_zoom() -> void:
 	if main.map_zoom > main.MAX_ZOOM:
 		failures.append("map zoom is not capped")
 	var r: Rect2 = Rect2(main.map_rect.position, main.map_rect.size)
-	if r.position.x > 0.0 or r.position.y > 0.0 or r.end.x < main.map_view.size.x or r.end.y < main.map_view.size.y:
-		failures.append("the zoomed map does not cover the view: %s" % r)
+	if r.position.y > 0.0 or r.end.y < main.map_view.size.y:
+		failures.append("the zoomed map does not cover the view north to south: %s" % r)
+	# East-west it wraps: every point across the view is on the map, and
+	# panning a whole map width comes back to the same cells.
+	for i in 9:
+		var p: Vector2 = Vector2(main.map_view.size.x * i / 8.0, main.map_view.size.y * 0.5)
+		if main._cell_under(p) < 0:
+			failures.append("no map at %s: the flat map does not wrap" % p)
+			break
+	var probe: Vector2 = main.map_view.size * 0.5
+	var before_pan: int = main._cell_under(probe)
+	main.map_offset.x += main.map_rect.size.x
+	main._layout_map()
+	if main._cell_under(probe) != before_pan:
+		failures.append("panning a whole map width does not come back to the same cell")
 	main._reset_map_view()
 	if main.map_zoom != 1.0:
 		failures.append("Home does not reset the map zoom")

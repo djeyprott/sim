@@ -57,7 +57,7 @@ godot --headless --path godot/project --script res://tests/smoke.gd
 | Migrations checkbox | Show / hide the last 50 years' folk migrations as arrows |
 | Capitals | In the polity and stability modes every polity's capital is marked with a dot (larger for states); in the realm mode the seats of independent states, empires and nomad confederations are large gold dots and subjects' capitals small ones |
 | Names checkbox | Show / hide the names of states, empires and other large realms (over 400,000 km²), sized to their land, on the map and the globe |
-| Scroll, drag (map) | Zoom in and out around the cursor, pan when zoomed in |
+| Scroll, drag (map) | Zoom in and out around the cursor; pan up and down when zoomed in, and east-west at any zoom: the flat map wraps around, like the globe |
 | Home | Zoom the map back out to the whole world |
 | G | Toggle map / globe (drag to turn, the grabbed point stays under the cursor; scroll to zoom) |
 | . (period) | Step one year while paused |
