@@ -94,7 +94,8 @@ not change):
 | --- | --- |
 | Things passing to a neighbour (endemic and epidemic disease, preaching; crops, techniques and culture already scale with cell area) | they move the same km a year: chance ÷ scale |
 | Wandering bands | people spread (diffuse) as fast: rate ÷ scale², up to 50% a year |
-| Colonists | on finer grids they look as far as a level-5 spacing (2^(level − 5) steps, nearer land preferred); on coarser grids less often |
+| Colonists | they leapfrog as far as at level 5: on finer grids to land 2^(level − 5) steps away (nearer only if none there has room); on coarser grids less often |
+| Coasts and rivers (fishing, alluvium, floodplain farming, irrigation, river-loving species) | the strip along a coast and the corridor along a river are about 225 km wide at any level (`World::coast_share`, `World::river_share`) |
 | Founding chances per cell (chiefdoms, nomad confederations, universal faiths, inventions, disease emergence) | as many per area: chance × scale² |
 | Town thresholds (cities, writing and other techniques, temple and universal faiths) and population thresholds (disease critical community, forgetting) | they count a hinterland about a level-5 cell in area: the cells within 2^(level − 6) steps (`World::for_hinterland`); a city is named at the hinterland's centre |
 | Annexation, conquest | the same area a year: as many attempts or pushes as cells in a level-5 cell |
