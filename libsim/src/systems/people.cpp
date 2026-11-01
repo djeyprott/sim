@@ -315,8 +315,8 @@ void MigrationSystem::step(StepContext& ctx) {
     // ---- Colonists: crowded farmers settle land their crops could fill.
     s.colonists = 0;
     const std::int64_t year = ctx.tick / kTicksPerYear;
-    // On grids finer than level 5, colonists look as far as a level-5 cell
-    // spacing (nearer land preferred); on coarser grids, less often.
+    // On grids finer than level 5, colonists go as far as a level-5 cell
+    // spacing; on coarser grids, less often.
     const int reach = w.reach_steps();
     const std::int64_t period = kColonizeYears * static_cast<std::int64_t>(std::max(1.0, w.cell_scale()));
     std::vector<std::uint8_t> mark(reach > 1 ? n : 0, 0);
@@ -344,9 +344,13 @@ void MigrationSystem::step(StepContext& ctx) {
         if (reach == 1) {
             for (CellId nb : w.grid.neighbors(c)) consider(nb, 1.0);
         } else {
+            // Leapfrogging, as at level 5: land a level-5 spacing away first,
+            // nearer land only if none there has room.
             w.grid.cells_within(c, reach, around, mark);
-            for (std::size_t i = 1; i < around.size(); ++i) {
-                consider(around[i].first, 1.0 / (1.0 + static_cast<double>(around[i].second - 1) / reach));
+            for (int ring = reach; ring >= 1 && best == kInvalidCell; --ring) {
+                for (std::size_t i = 1; i < around.size(); ++i) {
+                    if (around[i].second == ring) consider(around[i].first, 1.0);
+                }
             }
         }
         if (technique_effects(w, c, techs).water_transport > 0.0 && !w.trade_edge_begin.empty()) {
