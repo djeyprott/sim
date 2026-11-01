@@ -1,6 +1,6 @@
 # Embed the content packs in the library as bytes (a string literal would hit
 # MSVC's length limit). Re-runs automatically when a JSON file changes.
-foreach(_pack species phonology culture diseases techniques goods)
+foreach(_pack species phonology culture diseases techniques goods religions)
     string(TOUPPER "${_pack}" _PACK)
     set(_file "${PROJECT_SOURCE_DIR}/data/${_pack}.json")
     file(READ "${_file}" _hex HEX)
@@ -21,6 +21,7 @@ add_library(histsim
     src/systems/economy.cpp
     src/systems/farming.cpp
     src/systems/polity.cpp
+    src/systems/religion.cpp
     src/systems/technology.cpp
     src/systems/war.cpp
     src/rng.cpp

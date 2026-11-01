@@ -7,6 +7,7 @@
 #include "histsim/systems/culture.hpp"
 #include "histsim/systems/farming.hpp"
 #include "histsim/systems/polity.hpp"
+#include "histsim/systems/religion.hpp"
 #include "histsim/systems/technology.hpp"
 #include "histsim/systems/war.hpp"
 #include "vital_rates.inc"
@@ -576,6 +577,16 @@ void HistorySystem::step(StepContext& ctx) {
     r.raids = s.raids;
     r.colonists = s.colonists;
     r.folk_movers = s.folk_movers;
+    if (s.faith_of.size() == s.cell_population.size()) {
+        std::vector<std::uint8_t> held(s.religions.size(), 0);
+        for (CellId c = 0; c < s.faith_of.size(); ++c) {
+            const std::uint32_t f = s.faith_of[c];
+            if (f == 0) continue;
+            held[f] = 1;
+            if (religion_organized(ctx.world, s, f)) r.organized_faithful += s.cell_population[c];
+        }
+        for (std::uint8_t h : held) r.religions += h;
+    }
     s.history.push_back(r);
 }
 

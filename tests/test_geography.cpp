@@ -33,6 +33,7 @@ Content with_species(const std::string& species) {
     src.diseases = R"({"version": 1, "diseases": []})";
     src.techniques = R"({"version": 1, "techniques": []})";
     src.goods = R"({"version": 1, "goods": []})";
+    src.religions = R"({"version": 1, "kinds": []})";
     return load_content(src);
 }
 

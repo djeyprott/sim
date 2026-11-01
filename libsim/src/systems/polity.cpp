@@ -6,6 +6,7 @@
 
 #include "histsim/language.hpp"
 #include "histsim/systems/farming.hpp"
+#include "histsim/systems/religion.hpp"
 #include "histsim/systems/technology.hpp"
 #include "histsim/systems/war.hpp"
 
@@ -313,8 +314,17 @@ void PolitySystem::step(StepContext& ctx) {
         if (pol.ended != kNever) continue;
         const std::uint32_t root = s.cultures[pol.culture].root;
         double people = 0.0, unfed = 0.0, held = 0.0, trade = 0.0, sick = 0.0, others = 0.0;
+        double faithful = 0.0, heretics = 0.0;
+        const bool faiths = s.faith_of.size() == s.cell_population.size();
+        const bool organized = faiths && religion_organized(w, s, pol.religion);
+        const std::uint32_t creed = organized ? religion_family(s, pol.religion) : 0;
         for (CellId c : cells[id]) {
             const double pop = static_cast<double>(s.cell_population[c]);
+            if (faiths && s.faith_of[c] != 0) {
+                const std::uint32_t family = religion_family(s, s.faith_of[c]);
+                if (organized && family == creed) faithful += pop;
+                else if (religion_organized(w, s, s.faith_of[c])) heretics += pop;
+            }
             people += pop;
             unfed += std::max(0.0, pop - s.env.capacity[c]);
             held += pop * control_of(id, c);
@@ -334,14 +344,16 @@ void PolitySystem::step(StepContext& ctx) {
                 std::clamp(1.0 - trade / people / kTradePerPerson, 0.0, 1.0);
             pr[static_cast<std::size_t>(Pressure::Epidemic)] =
                 std::clamp(kEpidemicScale * (sick / people - kUsualDiseaseDeaths), 0.0, 1.0);
-            pr[static_cast<std::size_t>(Pressure::Division)] = others / people;
+            pr[static_cast<std::size_t>(Pressure::Division)] =
+                std::min(1.0, (others + kFaithDivision * heretics) / people);
         }
         pr[static_cast<std::size_t>(Pressure::War)] = std::min(1.0, pol.shock);
         const std::uint64_t known = techniques_in(s, pol.capital);
         double target = kStabilityBase + kHierarchyWeight * cell_trait(s, pol.capital, i_hierarchy) +
                         kRitualWeight * cell_trait(s, pol.capital, i_ritual) +
                         (writing < 64 && ((known >> writing) & 1u) ? kWritingWeight : 0.0) +
-                        (bureaucracy < 64 && ((known >> bureaucracy) & 1u) ? kBureaucracyWeight : 0.0);
+                        (bureaucracy < 64 && ((known >> bureaucracy) & 1u) ? kBureaucracyWeight : 0.0) +
+                        (people > 0.0 ? kFaithWeight * faithful / people : 0.0);
         for (std::size_t k = 0; k < kPressureCount; ++k) target -= kPressureWeight[k] * pr[k];
         target = std::clamp(target, 0.0, 1.0);
         pol.stability += (target < pol.stability ? kStabilityFall : kStabilityRise) * (target - pol.stability);

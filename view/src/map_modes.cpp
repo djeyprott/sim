@@ -9,6 +9,7 @@
 #include "histsim/systems/economy.hpp"
 #include "histsim/systems/people.hpp"
 #include "histsim/systems/polity.hpp"
+#include "histsim/systems/religion.hpp"
 #include "histsim/systems/war.hpp"
 
 namespace histsim::view {
@@ -285,6 +286,7 @@ const std::vector<MapModeInfo> kModes = {
     {"technology", "Technology", "Number of techniques the people know"},
     {"polity", "Polities", "Chiefdoms, states and empires; each its own color"},
     {"towns", "Towns", "Share of people living in towns and cities"},
+    {"religion", "Religion", "Faith of each land: organized religions in strong colors (sects in shades of their parent), folk beliefs muted"},
     {"subsistence", "Way of life", "How people get their food: foraging, fishing, farming, herding, towns"},
     {"realms", "Realms", "Polities with their vassals and tributaries (lighter), each realm its own color"},
     {"war", "War", "Wars, battles, conquests and nomad raids this year"},
@@ -439,6 +441,17 @@ Rgba culture_color(const SimState& s, std::uint32_t culture) {
     if (culture == 0 || culture >= s.cultures.size()) return kEmptyLand;
     // Offset so a culture and its founding language family differ in hue.
     return group_color(s.cultures[culture].root + 7919, culture + 7919);
+}
+
+// Organized religions: a hue per founding faith, sects as shades of it.
+// Folk beliefs: muted, a hue per people.
+Rgba religion_color(const World& w, const SimState& s, std::uint32_t religion) {
+    if (religion == 0 || religion >= s.religions.size()) return kEmptyLand;
+    if (!religion_organized(w, s, religion)) {
+        return hsl(family_hue(s.religions[religion].culture_root + 104729), 0.12,
+                   0.62 + 0.1 * unit_hash(religion));
+    }
+    return group_color(religion_family(s, religion) + 3571, religion + 3571);
 }
 
 namespace {
@@ -635,6 +648,8 @@ void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rg
             out[c] = inhabited ? towns_scale()(s.urban.empty() ? 0.0 : s.urban[c]) : kEmptyLand;
         } else if (id == "subsistence") {
             out[c] = inhabited ? way_of_life_color(w, s, c, irrigation) : kEmptyLand;
+        } else if (id == "religion") {
+            out[c] = inhabited && s.faith_of.size() == n ? religion_color(w, s, s.faith_of[c]) : kEmptyLand;
         } else if (id.rfind("trait:", 0) == 0) {
             out[c] = inhabited ? trait_scale()(cell_trait_mean(s, c, trait)) : kEmptyLand;
         } else if (id == "realms") {
@@ -794,6 +809,10 @@ Legend legend(std::string_view mode_id) {
                       {"", trait_scale()(0.75)}, {t.high, trait_scale()(1)}};
         }
         l.swatches = empty_and_ocean;
+    } else if (id == "religion") {
+        l.title = "Religion";
+        l.swatches = {{"Folk beliefs (each people its own; muted)", hsl(30.0, 0.12, 0.67)},
+                      {"Uninhabited", kEmptyLand}, {"Ocean", kOceanNeutral}};
     } else if (id == "realms") {
         l.title = "Realms (subjects in lighter shades; nomad confederations in browns)";
         l.swatches = {{"No ruler (bands, tribes, villages)", kStateless}, {"Uninhabited", kEmptyLand},
@@ -915,6 +934,36 @@ Legend legend(const Simulation& sim, std::string_view mode_id) {
         entries.insert(entries.end(), l.swatches.begin(), l.swatches.end());
         l.swatches = std::move(entries);
         l.title += " (" + with_commas(static_cast<long long>(order.size())) + ")";
+        return l;
+    }
+    if (id == "religion") {
+        const World& w = sim.world();
+        const SimState& s = sim.state();
+        std::vector<std::int64_t> people(s.religions.size(), 0);
+        for (CellId c = 0; c < s.faith_of.size(); ++c) people[s.faith_of[c]] += s.cell_population[c];
+        std::vector<std::uint32_t> order;
+        std::size_t folk = 0;
+        for (std::uint32_t i = 1; i < people.size(); ++i) {
+            if (people[i] == 0) continue;
+            if (religion_organized(w, s, i)) order.push_back(i);
+            else ++folk;
+        }
+        std::stable_sort(order.begin(), order.end(), [&](auto a, auto b) { return people[a] > people[b]; });
+        std::vector<LegendEntry> entries;
+        for (std::size_t i = 0; i < order.size() && i < 10; ++i) {
+            const std::uint32_t r = order[i];
+            entries.push_back({s.religions[r].name + " (" + religion_kind_name(w, s, r) + "): " + with_commas(people[r]),
+                               religion_color(w, s, r)});
+        }
+        if (order.size() > 10) {
+            entries.push_back({"+ " + with_commas(static_cast<long long>(order.size() - 10)) + " other organized faiths",
+                               Rgba{0, 0, 0, 0}});
+        }
+        l.swatches.front().label = "Folk beliefs of " + with_commas(static_cast<long long>(folk)) +
+                                   " peoples (muted)";
+        entries.insert(entries.end(), l.swatches.begin(), l.swatches.end());
+        l.swatches = std::move(entries);
+        l.title += " (" + with_commas(static_cast<long long>(order.size())) + " organized)";
         return l;
     }
     if (id != "language" && id != "language_family" && id != "culture") return l;
@@ -1057,6 +1106,20 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
         break;
     }
 
+    // Faith.
+    if (s.faith_of.size() == w.cell_count() && s.faith_of[c] != 0) {
+        const Religion& r = s.religions[s.faith_of[c]];
+        std::string faith = r.name + " (" + religion_kind_name(w, s, r.id) + ")";
+        if (r.founded > 0) faith += ", since year " + with_commas(static_cast<long long>(r.founded / kTicksPerYear));
+        f.push_back({"Religion", faith});
+        if (r.parent != 0) f.push_back({"Arose from", s.religions[r.parent].name});
+        if (religion_organized(w, s, r.id) && r.origin != kInvalidCell && r.origin != c) {
+            const std::uint32_t town = s.city_of.empty() ? 0 : s.city_of[r.origin];
+            f.push_back({"Began", (town != 0 ? "at " + s.cities[town].name + ", " : std::string()) +
+                                      with_commas(std::llround(w.grid.distance_km(c, r.origin))) + " km away"});
+        }
+    }
+
     // Farming.
     const double farming = s.env.farming.empty() ? 0.0 : s.env.farming[c];
     f.push_back({"Farming", farming < 0.005 ? "none: foragers" : fmt("%.0f%% of food", 100.0 * farming)});
@@ -1098,6 +1161,9 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
             f.push_back({"Stability", fmt("%.0f%%", 100.0 * pol.stability) +
                                           (pol.stability < PolitySystem::kFragile ? " (fragile)" : "") +
                                           (why.empty() ? "" : "; strained by " + why)});
+        }
+        if (pol.religion != 0 && pol.religion < s.religions.size()) {
+            f.push_back({"Rulers' faith", s.religions[pol.religion].name});
         }
         if (pol.overlord != 0 && pol.overlord < s.polities.size()) {
             f.push_back({"Overlord", std::string(pol.bond == Bond::Vassal ? "vassal of " : "pays tribute to ") +

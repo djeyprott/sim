@@ -13,6 +13,7 @@
 #include "histsim/systems/economy.hpp"
 #include "histsim/systems/farming.hpp"
 #include "histsim/systems/polity.hpp"
+#include "histsim/systems/religion.hpp"
 #include "histsim/systems/technology.hpp"
 #include "histsim/systems/war.hpp"
 #include "histsim/systems/people.hpp"
@@ -44,6 +45,7 @@ void Simulation::install_systems() {
     scheduler_.add(std::make_unique<MigrationSystem>());
     scheduler_.add(std::make_unique<CultureSystem>());
     scheduler_.add(std::make_unique<TechnologySystem>());
+    scheduler_.add(std::make_unique<ReligionSystem>());
     scheduler_.add(std::make_unique<PolitySystem>());
     scheduler_.add(std::make_unique<WarSystem>());
     scheduler_.add(std::make_unique<HistorySystem>());

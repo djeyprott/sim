@@ -306,6 +306,7 @@ void serialize(Ar& ar, SimState& s) {
         u8(ar, p.fate);
         ar.u8(p.fate_cause);
         ar.i64(p.settling_since);
+        ar.u32(p.religion);
     });
     doubles(ar, s.stocks);
     doubles(ar, s.prices);
@@ -342,6 +343,18 @@ void serialize(Ar& ar, SimState& s) {
     ar.i64(s.war_deaths_total);
     ar.u32(s.raids);
     vec(ar, s.last_raid, [&](Tick& t) { ar.i64(t); });
+    vec(ar, s.religions, [&](Religion& r) {
+        ar.u32(r.id);
+        ar.u32(r.parent);
+        ar.u8(r.kind);
+        ar.u32(r.culture_root);
+        str(ar, r.name);
+        ar.i64(r.founded);
+        ar.i64(r.extinct);
+        ar.u32(r.origin);
+        ar.u32(r.polity);
+    });
+    vec(ar, s.faith_of, [&](std::uint32_t& v) { ar.u32(v); });
     vec(ar, s.migrations, [&](FolkMovement& m) {
         ar.i64(m.tick);
         ar.u32(m.from);
@@ -397,6 +410,8 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(r.raids);
         ar.i64(r.colonists);
         ar.i64(r.folk_movers);
+        ar.u32(r.religions);
+        ar.i64(r.organized_faithful);
     });
 }
 

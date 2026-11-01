@@ -88,6 +88,20 @@ struct Culture {
     std::string name;
 };
 
+// A religion: a people's folk beliefs, a state's temple cult, or a
+// universal faith; sects split from their parents.
+struct Religion {
+    std::uint32_t id = 0;
+    std::uint32_t parent = 0;   // the religion it grew from or split from (0 = none)
+    std::uint8_t kind = 0;      // index into Content::religion_kinds
+    std::uint32_t culture_root = 0;  // for an ethnic (folk) religion: its people
+    std::string name;
+    Tick founded = 0;
+    Tick extinct = kNever;
+    CellId origin = kInvalidCell;
+    std::uint32_t polity = 0;   // the polity it arose in, if any
+};
+
 // ---------------------------------------------------------------- climate
 
 // A regional climate event imposed by an intervention: a temperature and
@@ -206,6 +220,7 @@ struct Polity {
     // Nomads who conquered a settled state rule from its capital and settle
     // down over a few generations (kNever = not settling).
     Tick settling_since = kNever;
+    std::uint32_t religion = 0;  // the rulers' faith (that of the capital)
 };
 
 // A defensive alliance: each joins a war against the other.
@@ -317,6 +332,9 @@ enum class EventType : std::uint32_t {
     Raid = 21,            // nomads raided a cell; value = the raiders' polity id
     ConquestDynasty = 22, // nomads took a settled state and rule it; cell = its capital; value = the nomads' id
     FolkMigration = 23,   // a people left its land in a body; cell = where from; value = index into SimState::migrations
+    ReligionFounded = 24, // an organized religion arose; value = religion id
+    Schism = 25,          // a sect split from its parent; value = the new religion's id
+    StateConversion = 26, // a polity's rulers took up another faith; cell = capital; value = polity id
 };
 
 struct Event {
@@ -398,6 +416,8 @@ struct YearRecord {
     std::uint32_t raids = 0;              // nomad raids this year
     std::int64_t colonists = 0;           // farmers who left to settle new land this year
     std::int64_t folk_movers = 0;         // people in folk migrations this year
+    std::uint32_t religions = 0;          // religions with followers
+    std::int64_t organized_faithful = 0;  // people in lands of organized (not folk) religions
 };
 
 // ---------------------------------------------------------------- state
@@ -476,6 +496,10 @@ struct SimState {
     std::int64_t war_deaths_total = 0;
     std::uint32_t raids = 0;  // this year
     std::vector<Tick> last_raid;  // per cell: when nomads last raided it (kNever = never)
+
+    // Religions (entry 0 a placeholder) and each cell's faith (0 = none yet).
+    std::vector<Religion> religions;
+    std::vector<std::uint32_t> faith_of;
 
     // Folk migrations, in the order they happened (at least
     // MigrationSystem::kFolkRecordPeople people each), and this year's totals.

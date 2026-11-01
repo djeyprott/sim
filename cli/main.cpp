@@ -10,6 +10,7 @@
 //   histsim trade [--seed N] [--level L] [--years Y]
 //   histsim wars [--seed N] [--level L] [--years Y]
 //   histsim migrations [--seed N] [--level L] [--years Y]
+//   histsim religions [--seed N] [--level L] [--years Y]
 //
 // With no arguments (for example, double-clicked in Explorer) it runs a short
 // demo and waits for Enter so the window stays open.
@@ -39,6 +40,8 @@
 #include "histsim/systems/culture.hpp"
 #include "histsim/systems/economy.hpp"
 #include "histsim/systems/polity.hpp"
+#include "histsim/systems/religion.hpp"
+#include "histsim/systems/technology.hpp"
 #include "histsim/systems/war.hpp"
 #include "histsim/view/map_modes.hpp"
 #include "histsim/view/png.hpp"
@@ -103,6 +106,9 @@ struct Options {
                  "                 colonists and folk migrations every 500 years, the largest\n"
                  "                 movements with the chains they set off, and how the language\n"
                  "                 families' lands changed\n"
+                 "  histsim religions [--seed N] [--level L] [--years Y]\n"
+                 "                 religions every 500 years, the largest faiths with their\n"
+                 "                 followers, origins and sects, and the states that hold them\n"
                  "  histsim languages [--seed N] [--level L] [--years Y] [--top N]\n"
                  "                 family trees of the languages alive after Y years, largest\n"
                  "                 families first, with speakers and sample words\n"
@@ -796,6 +802,63 @@ int migrations(const Options& o) {
     return 0;
 }
 
+// Religions: how many, how widely organized faiths are held, the largest.
+int religions(const Options& o) {
+    Simulation sim = Simulation::create(o.params);
+    apply_due_now(sim, o, true);
+    advance(sim, o.years, o, true);
+    const histsim::SimState& s = sim.state();
+    const histsim::World& w = sim.world();
+    std::printf("Every 500 years:\n");
+    std::size_t next = 0, founded = 0, schisms = 0, conversions = 0;
+    for (const histsim::YearRecord& r : s.history) {
+        while (next < s.events.size() && s.events[next].tick <= r.year * histsim::kTicksPerYear) {
+            const histsim::EventType t = s.events[next].type;
+            founded += t == histsim::EventType::ReligionFounded ? 1 : 0;
+            schisms += t == histsim::EventType::Schism ? 1 : 0;
+            conversions += t == histsim::EventType::StateConversion ? 1 : 0;
+            ++next;
+        }
+        if (r.year % 500 != 0) continue;
+        std::printf("  year %5lld  religions %4u  in organized faiths %5.1f%%  founded %3zu  schisms %3zu  "
+                    "states converted %3zu\n",
+                    static_cast<long long>(r.year), r.religions,
+                    r.population > 0 ? 100.0 * static_cast<double>(r.organized_faithful) / static_cast<double>(r.population)
+                                     : 0.0,
+                    founded, schisms, conversions);
+        founded = schisms = conversions = 0;
+    }
+    // Followers and lands of each religion now.
+    std::vector<std::int64_t> people(s.religions.size(), 0);
+    std::vector<std::size_t> cells(s.religions.size(), 0), states(s.religions.size(), 0);
+    for (histsim::CellId c = 0; c < s.faith_of.size(); ++c) {
+        people[s.faith_of[c]] += s.cell_population[c];
+        ++cells[s.faith_of[c]];
+    }
+    for (std::uint32_t p = 1; p < s.polities.size(); ++p) {
+        if (s.polities[p].ended == histsim::kNever && s.polities[p].religion < states.size()) ++states[s.polities[p].religion];
+    }
+    std::vector<std::uint32_t> order;
+    for (std::uint32_t r = 1; r < s.religions.size(); ++r) {
+        if (people[r] > 0) order.push_back(r);
+    }
+    std::stable_sort(order.begin(), order.end(), [&](auto a, auto b) { return people[a] > people[b]; });
+    // Organized faiths first: folk beliefs are each people's own.
+    std::stable_partition(order.begin(), order.end(), [&](auto r) { return histsim::religion_organized(w, s, r); });
+    std::printf("\nLargest religions, organized first (%zu with followers, %zu ever):\n", order.size(), s.religions.size() - 1);
+    for (std::size_t k = 0; k < order.size() && k < 15; ++k) {
+        const histsim::Religion& r = s.religions[order[k]];
+        const std::uint32_t family = histsim::religion_family(s, r.id);
+        std::printf("  %-40s %-16s %10lld people %4zu lands %3zu states  since year %lld",
+                    r.name.c_str(), histsim::religion_kind_name(w, s, r.id).c_str(),
+                    static_cast<long long>(people[r.id]), cells[r.id], states[r.id],
+                    static_cast<long long>(r.founded / histsim::kTicksPerYear));
+        if (family != r.id && r.parent != 0) std::printf("  (from %s)", s.religions[r.parent].name.c_str());
+        std::printf("\n");
+    }
+    return 0;
+}
+
 int world_info(const Options& o) {
     const histsim::World w = histsim::generate_test_world(o.params);
     std::size_t land = 0;
@@ -878,6 +941,9 @@ int main(int argc, char** argv) {
         }
         if (cmd == "migrations") {
             return migrations(parse(args, 2));
+        }
+        if (cmd == "religions") {
+            return religions(parse(args, 2));
         }
         if (cmd == "wars") {
             return wars(parse(args, 2));

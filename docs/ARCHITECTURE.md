@@ -229,7 +229,7 @@ years; copper and horse riding come late.
 | Formation | Every 5 years, a stateless cell with farming ≥ 50%, at least 0.4 people per km² and hierarchy ≥ 0.3 founds a polity with chance 1% × hierarchy × (0.5 + circumscription) × density factor, where circumscription is the share of neighbours that are sea or much poorer land (Carneiro). |
 | Reach | Control of a cell = 1 / (1 + (distance from the capital / reach)²); reach = 100 km × (1 + administration) × (1 + 0.3 contact). Writing (+1), bureaucracy (+0.7), roads (+0.5) and bronze (+0.1) add administration. A chiefdom holds about one cell; a state with writing a ring around its capital. |
 | Expansion | Each year a polity tries the stateless neighbouring cell it would control best (at least 30%), with chance 3% × control × (0.5 + warfare) × strength ratio. Land changes hands between polities only in war (below). |
-| Stability | Each polity's stability (0–1) moves toward a target each year (10% of the gap when rising, 30% when falling): 0.45 + 0.25 × hierarchy + 0.15 × ritual (people at the capital) + 0.1 with writing + 0.1 with bureaucracy, minus weighted pressures: famine (× 1.0; three times the share of people beyond what the land and food imports feed), war (× 0.8; the toll of land lost, war dead, lost wars and raids, fading 20% a year), overreach (× 0.5; 1 − the people-weighted mean control), epidemic (× 0.6; disease deaths beyond 0.5% a year, × 40), division (× 0.3; share of people of another cultural lineage than the rulers) and poverty (× 0.15; little trade per person). |
+| Stability | Each polity's stability (0–1) moves toward a target each year (10% of the gap when rising, 30% when falling): 0.45 + 0.25 × hierarchy + 0.15 × ritual (people at the capital) + 0.1 with writing + 0.1 with bureaucracy + 0.1 × the share of people holding the rulers' organized faith (or a sect of it), minus weighted pressures: famine (× 1.0; three times the share of people beyond what the land and food imports feed), war (× 0.8; the toll of land lost, war dead, lost wars and raids, fading 20% a year), overreach (× 0.5; 1 − the people-weighted mean control), epidemic (× 0.6; disease deaths beyond 0.5% a year, × 40), division (× 0.3; share of people of another cultural lineage than the rulers, plus half the share holding another organized faith) and poverty (× 0.15; little trade per person). |
 | Rulers' people | Each year the capital's speakers of the polity's language send 0.1% × control of each province's people (held at least 30%) to it: officials, garrisons and merchants who carry the rulers' language there. A capital moves to a town of the realm (for nomads, any cell) with twice as many townspeople (people) as the old seat. |
 | Breakdown | Provinces under 20% control secede (1% a year) and polities of 6 or more cells split in civil war (0.4% × (1 − mean control)), the far half breaking away and fighting a war of independence; both are multiplied by 2 × (1 − stability). Below 30% stability a polity breaks up with chance 0.3 × ((0.3 − stability) ÷ 0.3)² a year, its heaviest pressure recorded as the cause. A chiefdom dissolves into its villages. A state leaves a core (cells it controls at least half) under its old capital, successor polities seated at the most populous dense, farming, hierarchical towns at least 250 km apart, each taking the cells within 250 km, and unruled land beyond. Until rulers are simulated (part 6), succession disputes break up chiefdoms at 0.05% and states at 0.02% a year whatever their state. A polity that loses its last cell was conquered (if the toll of war on it was heavy) or dwindled away. |
 | Culture | Being ruled pushes hierarchy, warfare and ritual up. |
@@ -381,6 +381,32 @@ must always use `area_km2()`. A true equal-area layout (Snyder's ISEA
 projection) is a possible later upgrade; because `Grid` is plain data, any
 generator can fill it without changing systems.
 
+### Religion (M3)
+
+`ReligionSystem` runs each year after technology. Every inhabited cell holds
+one faith (`SimState::faith_of`); kinds of religion are content
+(data/religions.json).
+
+| Process | Model |
+| --- | --- |
+| Folk beliefs | Each founding culture lineage has its own folk religion, made the first time its people are seen. It belongs to that people: it converts no one, and where another people's culture has become the main one, the land takes up theirs (2% a year). |
+| Temple cults | At the capital of a living polity whose people still hold folk beliefs, with at least 5,000 townspeople and ritual of at least 0.5: chance 1% per five-year check. The cult of the city's gods grows out of its people's beliefs (its parent) and is the rulers' faith. |
+| Universal faiths | In a town of at least 20,000 people that knows writing and holds no missionary faith already: chance 0.3% per five-year check. |
+| Conversion | Each year each land weighs its own faith (people × appeal × 2) against each rival: neighbouring lands holding a non-folk faith (their people × appeal × (0.05 + missionary zeal)), trade routes carrying it (route value × 5 × appeal × zeal), and the rulers' faith (3 × control × people × appeal). Preachers and traders win over farmers and townspeople; foragers are only a fifth as open to them (rulers' pull is not scaled). The strongest rival wins the land with chance 3% × (its pull − own) ÷ (its pull + own). Appeal: folk 1, temple 1.5, universal 3; zeal: universal 0.5. All lands update from last year's faiths at once. |
+| Rulers | A polity holds the faith of its capital, so a capital's conversion converts the state (an event), and its provinces follow by the rulers' pull. A people sharing the rulers' organized faith steadies a polity; one holding another organized faith divides it (see Stability). |
+| Schisms | Every 20 years, a polity whose organized faith began over 1,000 km from its capital and which holds it in at least four lands forms its own sect (5%): "<faith> (<polity> rite)", a child of it. |
+| Doctrine | Followers' culture traits close 0.2% of the gap to their faith's doctrine a year: temple cults toward ritual and hierarchy, universal faiths toward ritual, sharing, openness and less warfare. |
+
+Over 9,000 years at level 5, temple cults appear from about year 2,500 in
+the first city-states, and spread only as their cities conquer. Universal
+faiths arise from about year 6,000 in the great literate cities and spread
+along trade routes and through realms whose rulers convert, so organized
+faiths hold about a fifth of the world by year 6,000 and half by year 9,000,
+with a few universal faiths in the lead and sects where they are ruled far
+from home. `histsim religions` prints the timeline and the largest faiths;
+the religion map colors organized faiths by family (sects in shades of their
+parent) and folk beliefs in muted tints.
+
 ## Roadmap
 
 | Milestone | Simulation | Front end | Gate |
@@ -388,7 +414,7 @@ generator can fill it without changing systems.
 | M0 Foundations (done) | Grid, test-world generator, scheduler, RNG, snapshots, headless runner | Sim API, map viewer | Identical replays on Windows, Linux and macOS |
 | M1 Living planet (done) | Climate and environment systems, cohort demography, migration, foragers | Globe, climate and population map modes, pyramid, charts | Forager populations settle near carrying capacity (`m1_gate_populations_settle_near_capacity`) |
 | M2 Neolithic (done) | Agriculture, herding, disease, culture and language drift, early tech | Culture and language map modes, language tree | Farming arises in several plausible regions |
-| **M3 States and trade** (in progress: towns, cities and early states; goods, markets and trade routes; war, diplomacy and nomads done) | Goods, markets, transport, polities, war, religion, notable agents, forced labor and the slave trade | Trade flows, inspectors, explain view, timeline | Polity sizes track Seshat ranges by era |
+| **M3 States and trade** (in progress: towns, cities and early states; goods, markets and trade routes; war, diplomacy and nomads; religion done) | Goods, markets, transport, polities, war, religion, notable agents, forced labor and the slave trade | Trade flows, inspectors, explain view, timeline | Polity sizes track Seshat ranges by era |
 | M4 Modern era | Energy, carbon cycle, demographic transition, Earth importer, procedural generator | God mode, branch comparison, modding tools | Full runs to the near future on Earth and generated worlds |
 
 M0 to M3 run on the generated test world, so the foundation is solid before any

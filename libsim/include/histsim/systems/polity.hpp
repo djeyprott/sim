@@ -92,12 +92,15 @@ public:
     //   target = kStabilityBase + resilience - sum of weight x pressure
     //   resilience = kHierarchyWeight x hierarchy + kRitualWeight x ritual
     //                (of the people at the capital) + kWritingWeight with
-    //                writing + kBureaucracyWeight with bureaucracy
+    //                writing + kBureaucracyWeight with bureaucracy +
+    //                kFaithWeight x share of people holding the rulers'
+    //                organized faith (or a sect of it)
     // Pressures (0-1): famine = kFamineScale x share of people beyond
     // capacity; war = shock; overreach = 1 - people-weighted mean control;
     // poverty = 1 - (trade value per person / kTradePerPerson); epidemic =
     // kEpidemicScale x (disease deaths per person - kUsualDiseaseDeaths);
-    // division = share of people whose culture is of another lineage.
+    // division = share of people whose culture is of another lineage +
+    // kFaithDivision x share holding an organized faith not the rulers'.
     static constexpr double kStabilityBase = 0.45;
     static constexpr double kStabilityRise = 0.1;
     static constexpr double kStabilityFall = 0.3;
@@ -105,6 +108,8 @@ public:
     static constexpr double kRitualWeight = 0.15;
     static constexpr double kWritingWeight = 0.1;
     static constexpr double kBureaucracyWeight = 0.1;
+    static constexpr double kFaithWeight = 0.1;
+    static constexpr double kFaithDivision = 0.5;
     static constexpr std::array<double, kPressureCount> kPressureWeight = {1.0, 0.8, 0.5, 0.15, 0.6, 0.3};
     static constexpr double kFamineScale = 3.0;
     static constexpr double kTradePerPerson = 0.05;

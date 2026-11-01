@@ -265,6 +265,27 @@ struct GoodDef {
 
 inline constexpr std::size_t kMaxGoods = 32;  // availability is a 32-bit mask per cell
 
+// ---------------------------------------------------------------- religions
+
+struct ReligionKind {
+    std::string id;
+    std::string name;
+    double appeal = 1.0;
+    double missionary = 0.0;
+    bool ethnic = false;
+    // Founding (chance 0 = never founded, e.g. folk religions).
+    double found_chance = 0.0;
+    double found_min_town = 0.0;
+    double found_min_ritual = 0.0;
+    bool found_polity = false;
+    int found_technique = -1;
+    // Traits followers are drawn toward; `pulls` marks which.
+    std::array<double, kMaxTraits> doctrine{};
+    std::uint32_t pulls = 0;
+};
+
+inline constexpr std::size_t kMaxReligionKinds = 8;
+
 // ---------------------------------------------------------------- pack
 
 struct Content {
@@ -285,6 +306,8 @@ struct Content {
     std::vector<TechniqueDef> techniques;
     std::vector<GoodDef> goods;
     std::size_t food_good = SIZE_MAX;  // index of the food good, if any
+    std::vector<ReligionKind> religion_kinds;
+    std::size_t folk_religion = SIZE_MAX;  // index of the ethnic kind every people starts with
 
     std::uint64_t hash = 0;  // of all source texts
 };
@@ -297,6 +320,7 @@ struct ContentSources {
     std::string_view diseases;
     std::string_view techniques;
     std::string_view goods;
+    std::string_view religions;
 };
 
 // The packs compiled into this build.

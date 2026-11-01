@@ -21,6 +21,8 @@ extern const unsigned char kTechniquesJson[];
 extern const std::size_t kTechniquesJsonSize;
 extern const unsigned char kGoodsJson[];
 extern const std::size_t kGoodsJsonSize;
+extern const unsigned char kReligionsJson[];
+extern const std::size_t kReligionsJsonSize;
 
 namespace {
 
@@ -557,6 +559,53 @@ void load_techniques(Content& c, std::string_view text) {
     if (c.techniques.size() > kMaxTechniques) fail(doc.at("techniques"), "has more than 64 techniques");
 }
 
+// ---- religions (after culture and techniques: doctrines and founding refer to them)
+
+void load_religions(Content& c, std::string_view text) {
+    const json::Value doc = json::parse(text, "data/religions.json");
+    if (doc.at("version").as_int() != 1) fail(doc.at("version"), "is not a supported religion pack version");
+    for (const json::Value& v : doc.at("kinds").as_array()) {
+        ReligionKind k;
+        k.id = v.at("id").as_string();
+        k.name = v.at("name").as_string();
+        k.appeal = v.number_or("appeal", 1.0);
+        if (k.appeal <= 0.0 || k.appeal > 100.0) fail(v.at("appeal"), "must be between 0 and 100");
+        k.missionary = v.number_or("missionary", 0.0);
+        if (k.missionary < 0.0 || k.missionary > 10.0) fail(v.at("missionary"), "must be between 0 and 10");
+        k.ethnic = v.has("ethnic") && v.at("ethnic").as_bool();
+        if (v.has("found")) {
+            const json::Value& f = v.at("found");
+            k.found_chance = unit(f, "chance", 0.0);
+            k.found_min_town = f.number_or("min_town", 0.0);
+            k.found_min_ritual = unit(f, "min_ritual", 0.0);
+            k.found_polity = f.has("polity") && f.at("polity").as_bool();
+            if (f.has("technique")) {
+                std::size_t t = 0;
+                while (t < c.techniques.size() && c.techniques[t].id != f.at("technique").as_string()) ++t;
+                if (t == c.techniques.size()) fail(f.at("technique"), "is not a technique id");
+                k.found_technique = static_cast<int>(t);
+            }
+        }
+        if (v.has("doctrine")) {
+            for (const auto& [key, val] : v.at("doctrine").members()) {
+                std::size_t t = 0;
+                while (t < c.traits.size() && c.traits[t].id != key) ++t;
+                if (t == c.traits.size()) fail(val, "is not a culture trait id");
+                const double x = val.as_number();
+                if (x < 0.0 || x > 1.0) fail(val, "must be between 0 and 1");
+                k.doctrine[t] = x;
+                k.pulls |= 1u << t;
+            }
+        }
+        if (k.ethnic && c.folk_religion == SIZE_MAX) c.folk_religion = c.religion_kinds.size();
+        for (const ReligionKind& o : c.religion_kinds) {
+            if (o.id == k.id) fail(v.at("id"), "duplicates religion kind \"" + k.id + "\"");
+        }
+        c.religion_kinds.push_back(std::move(k));
+    }
+    if (c.religion_kinds.size() > kMaxReligionKinds) fail(doc.at("kinds"), "has more than 8 kinds");
+}
+
 }  // namespace
 
 ContentSources default_sources() {
@@ -565,7 +614,8 @@ ContentSources default_sources() {
     };
     return {view(kSpeciesJson, kSpeciesJsonSize), view(kPhonologyJson, kPhonologyJsonSize),
             view(kCultureJson, kCultureJsonSize), view(kDiseasesJson, kDiseasesJsonSize),
-            view(kTechniquesJson, kTechniquesJsonSize), view(kGoodsJson, kGoodsJsonSize)};
+            view(kTechniquesJson, kTechniquesJsonSize), view(kGoodsJson, kGoodsJsonSize),
+            view(kReligionsJson, kReligionsJsonSize)};
 }
 
 Content load_content(const ContentSources& src) {
@@ -580,8 +630,10 @@ Content load_content(const ContentSources& src) {
     load_goods(c, src.goods, good_techniques, good_technique_at, goods_doc);
     load_techniques(c, src.techniques);
     resolve_good_techniques(c, good_techniques, good_technique_at);
+    load_religions(c, src.religions);
     Hasher h;
-    for (std::string_view text : {src.species, src.phonology, src.culture, src.diseases, src.techniques, src.goods}) {
+    for (std::string_view text :
+         {src.species, src.phonology, src.culture, src.diseases, src.techniques, src.goods, src.religions}) {
         h.u64(text.size());
         h.bytes(text.data(), text.size());
     }

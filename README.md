@@ -26,8 +26,11 @@ and polities go to war, make vassals and tributaries, form alliances and
 fight wars of independence, while mounted nomad confederations raid their
 settled neighbours. Farmers colonize new land and carry their languages, and
 peoples flee famine, war and raids in folk migrations that push others on.
+Each people has its own folk beliefs; temple cults rise in city-states and
+universal faiths in great literate cities, spreading by trade and by rulers'
+conversion, and splitting into sects far from home.
 A Godot viewer shows it as a map or globe with
-twenty-nine map modes (plus one per culture trait), polity borders, trade routes, world charts, a cell
+thirty map modes (plus one per culture trait), polity borders, trade routes, world charts, a cell
 inspector and a god mode.
 
 ## Download
@@ -85,6 +88,9 @@ ctest --test-dir build --output-on-failure
 # Colonists, folk migrations and their chain reactions, and how language
 # families spread, over 9,000 years
 ./build/cli/histsim migrations --years 9000
+
+# Religions: when faiths arose, how they spread, the largest after 9,000 years
+./build/cli/histsim religions --years 9000
 
 # Goods, prices and the busiest trade routes after 6,000 years
 ./build/cli/histsim trade --years 6000

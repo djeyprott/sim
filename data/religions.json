@@ -1,0 +1,33 @@
+// Religions: kinds of belief, how they arise and how they spread.
+//
+// Every people starts with its own folk religion (kind "folk"): the beliefs
+// of its culture, which spread only with that people and follow it when
+// newcomers' culture takes over a land.
+//
+// Organized religions are founded:
+//   found.chance        per five-year check, where the conditions below hold
+//   found.min_town      people in towns at the place (a temple needs a city)
+//   found.min_ritual    the people's ritual trait (0-1)
+//   found.polity        it must be a polity's capital (a state cult)
+//   found.technique     a technique the place must know (scripture needs writing)
+//
+// and spread by conversion (religion.hpp): a land's faith is weighed against
+// the faiths of its neighbours and trade partners and its rulers' faith.
+//   appeal      how strongly it draws converts, against the old faith
+//   missionary  how much it is carried by neighbours and along trade routes
+//               (0: spreads only through rulers)
+//   ethnic      true: belongs to one people and does not spread beyond it
+//
+// doctrine: culture traits its followers are drawn toward (0-1), slowly.
+{
+  "version": 1,
+  "kinds": [
+    {"id": "folk", "name": "Folk religion", "appeal": 1.0, "missionary": 0.0, "ethnic": true},
+    {"id": "temple", "name": "Temple cult", "appeal": 1.5, "missionary": 0.0,
+     "found": {"chance": 0.01, "min_town": 5000, "min_ritual": 0.5, "polity": true},
+     "doctrine": {"ritual": 0.8, "hierarchy": 0.7}},
+    {"id": "universal", "name": "Universal faith", "appeal": 3.0, "missionary": 0.5,
+     "found": {"chance": 0.003, "min_town": 20000, "technique": "writing"},
+     "doctrine": {"ritual": 0.6, "sharing": 0.65, "openness": 0.6, "warfare": 0.35}}
+  ]
+}
