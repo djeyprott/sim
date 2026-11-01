@@ -31,6 +31,7 @@ struct MapModeInfo {
     std::string id;           // stable identifier, e.g. "population"
     std::string name;         // button label, e.g. "Population"
     std::string description;  // one line for tooltips
+    std::string group;        // "Land", "People", "Culture", "Economy" or "Power"
 };
 
 // All modes, in the order the viewer lists them.
@@ -62,6 +63,7 @@ double median_age(const Pyramid& p);
 struct CellField {
     std::string label;
     std::string value;
+    std::string section;  // "Place", "People", "Language", ...: rows group under it
 };
 std::vector<CellField> describe_cell(const Simulation& sim, CellId cell);
 

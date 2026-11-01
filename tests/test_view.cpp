@@ -104,7 +104,18 @@ TEST(view_describe_cell_lists_land_details) {
         return f.label == "Population";
     });
     CHECK(has_population);
+    // Every row belongs to a section; the population is under "People".
+    for (const CellField& f : fields) {
+        CHECK(!f.section.empty());
+        if (f.label == "Population") CHECK_EQ(f.section, std::string("People"));
+        if (f.label == "Cell") CHECK_EQ(f.section, std::string("Place"));
+    }
     CHECK(describe_cell(sim, kInvalidCell).empty());
+    // Every map mode is in one of the viewer's groups.
+    for (const auto& mode : map_modes()) {
+        CHECK(mode.group == "Land" || mode.group == "People" || mode.group == "Culture" || mode.group == "Economy" ||
+              mode.group == "Power");
+    }
 }
 
 TEST(view_png_has_valid_structure) {

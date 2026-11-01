@@ -44,6 +44,11 @@ func _process(_delta: float) -> bool:
 		main._set_mode("trait:kinship")
 		if main.mode_id != "trait:kinship":
 			failures.append("a culture trait mode could not be chosen")
+		if main.current_group != "Culture" or not main.trait_row.visible:
+			failures.append("choosing a trait mode does not show the Culture group")
+		main._set_mode("realms")
+		if main.current_group != "Power" or not main.mode_buttons["realms"].visible or main.mode_buttons["terrain"].visible:
+			failures.append("choosing a mode does not show only its group's buttons")
 	if frames == 10:
 		main._set_mode("population")
 	if frames == 20:
@@ -107,7 +112,7 @@ func _check_selection_and_zoom() -> void:
 	main._on_cell_hovered(other)
 	if main.selected_cell != kept or main._inspected_cell() != kept:
 		failures.append("a clicked cell is not kept in the inspector")
-	if main.cell_grid.get_child_count() < 2 or main.cell_grid.get_child(1).text != main._commas(kept):
+	if main.inspector_values.get("Cell", "") != main._commas(kept):
 		failures.append("the inspector does not show the kept cell")
 	main._on_cell_clicked(kept)
 	if main.selected_cell != -1 or main._inspected_cell() != other:

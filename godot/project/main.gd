@@ -67,11 +67,19 @@ var migration_check: CheckBox
 var trait_option: OptionButton
 var species_label: Label
 var mode_buttons := {}
+var mode_group := {}  # mode id -> its group ("Land", "People", ...)
+var group_tabs: TabBar
+var group_names: Array[String] = []
+var trait_row: HBoxContainer
+var current_group := ""
+# Inspector sections the user has folded; culture traits start folded.
+var folded_sections := {"Culture traits": true}
+var inspector_values := {}  # label -> value of the cell shown, for tests
 var legend_title: Label
 var legend_bar: TextureRect
 var legend_ticks: HBoxContainer
 var legend_swatches: VBoxContainer
-var cell_grid: GridContainer
+var cell_sections: VBoxContainer
 var cell_hint: Label
 var status_label: Label
 var globe: GlobeView
@@ -238,6 +246,8 @@ func _set_playing(value: bool) -> void:
 
 func _set_mode(id: String) -> void:
 	mode_id = id
+	if mode_group.has(id) and mode_group[id] != current_group:
+		_show_group(mode_group[id])
 	if mode_buttons.has(id):
 		mode_buttons[id].button_pressed = true
 		if trait_option != null:
@@ -260,10 +270,20 @@ func _unhandled_input(event: InputEvent) -> void:
 	if key == KEY_SPACE:
 		_set_playing(not playing)
 	elif (key >= KEY_1 and key <= KEY_9) or key == KEY_0:
-		var modes: Array = world.get_modes()
+		# Number keys pick among the modes of the group shown.
+		var shown := _group_modes(current_group)
 		var index := 9 if key == KEY_0 else key - KEY_1
-		if index < modes.size():
-			_set_mode(modes[index]["id"])
+		if index < shown.size():
+			_set_mode(shown[index])
+	elif key == KEY_TAB and group_names.size() > 0:
+		# Tab / Shift+Tab step through the groups.
+		var at := group_names.find(current_group)
+		var step := -1 if event.shift_pressed else 1
+		var next: String = group_names[(at + step + group_names.size()) % group_names.size()]
+		_show_group(next)
+		var first := _group_modes(next)
+		if first.size() > 0:
+			_set_mode(first[0])
 	elif key == KEY_PERIOD and not playing:
 		world.step_years(1)
 		map_dirty = true
@@ -573,18 +593,18 @@ func _update_legend() -> void:
 func _show_cell(cell: int) -> void:
 	_clear_cell_info()
 	cell_hint.visible = false
-	for pair in world.describe_cell(cell):
-		var key := Label.new()
-		key.text = pair[0]
-		key.add_theme_color_override("font_color", Color(0.76, 0.76, 0.72))
-		key.custom_minimum_size.x = CELL_KEY_WIDTH
-		key.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-		cell_grid.add_child(key)
-		var value := Label.new()
-		value.text = pair[1]
-		value.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		cell_grid.add_child(value)
+	# Rows grouped under their sections, in the order the sections first come.
+	var order: Array[String] = []
+	var rows := {}
+	for row in world.describe_cell(cell):
+		var section: String = row[2] if row.size() > 2 and row[2] != "" else "Cell"
+		if not rows.has(section):
+			rows[section] = []
+			order.append(section)
+		rows[section].append(row)
+		inspector_values[row[0]] = row[1]
+	for section in order:
+		cell_sections.add_child(_inspector_section(section, rows[section]))
 	var native: PackedStringArray = world.get_native_species(cell)
 	species_label.visible = native.size() > 0
 	species_label.text = "Wild species: " + ", ".join(native)
@@ -599,9 +619,49 @@ func _show_cell(cell: int) -> void:
 		pyramid.set_pyramid(p)
 
 
+# A section of the inspector: a header that folds it, and its rows.
+func _inspector_section(section: String, rows: Array) -> Control:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 2)
+	var folded: bool = folded_sections.get(section, false)
+	var header := Button.new()
+	header.flat = true
+	header.focus_mode = Control.FOCUS_NONE
+	header.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	header.text = ("+  " if folded else "–  ") + section + ("  (%d)" % rows.size() if folded else "")
+	header.add_theme_font_size_override("font_size", 15)
+	header.add_theme_color_override("font_color", Color(0.93, 0.85, 0.62))
+	header.tooltip_text = "Click to fold or unfold"
+	box.add_child(header)
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 12)
+	grid.visible = not folded
+	for row in rows:
+		var key := Label.new()
+		key.text = row[0]
+		key.add_theme_color_override("font_color", Color(0.76, 0.76, 0.72))
+		key.custom_minimum_size.x = CELL_KEY_WIDTH
+		key.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		grid.add_child(key)
+		var value := Label.new()
+		value.text = row[1]
+		value.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		grid.add_child(value)
+	box.add_child(grid)
+	header.pressed.connect(func() -> void:
+		var now_folded := grid.visible
+		folded_sections[section] = now_folded
+		grid.visible = not now_folded
+		header.text = ("+  " if now_folded else "–  ") + section + ("  (%d)" % rows.size() if now_folded else ""))
+	return box
+
+
 func _clear_cell_info() -> void:
-	for child in cell_grid.get_children():
-		cell_grid.remove_child(child)
+	inspector_values.clear()
+	for child in cell_sections.get_children():
+		cell_sections.remove_child(child)
 		child.queue_free()
 	cell_hint.visible = true
 	if species_label != null:
@@ -840,6 +900,12 @@ func _build_side_panel() -> Control:
 	scroll.add_child(panel)
 
 	panel.add_child(_heading("Map mode"))
+	# Modes in groups: a tab per group, the group's modes as buttons below.
+	group_tabs = TabBar.new()
+	group_tabs.focus_mode = Control.FOCUS_NONE
+	group_tabs.clip_tabs = false
+	group_tabs.add_theme_font_size_override("font_size", 12)
+	panel.add_child(group_tabs)
 	var mode_grid := GridContainer.new()
 	mode_grid.columns = 2
 	mode_grid.add_theme_constant_override("h_separation", 4)
@@ -847,17 +913,25 @@ func _build_side_panel() -> Control:
 	panel.add_child(mode_grid)
 	var group := ButtonGroup.new()
 	var modes: Array = world.get_modes() if world != null else _fallback_modes()
-	var number := 1
 	var trait_modes: Array = []
+	var numbers := {}
 	for mode in modes:
+		var g: String = mode.get("group", "Other")
+		mode_group[mode["id"]] = g
+		if not group_names.has(g):
+			group_names.append(g)
+			group_tabs.add_tab(g)
 		if String(mode["id"]).begins_with("trait:"):
-			trait_modes.append(mode)  # in the picker below the grid
+			trait_modes.append(mode)  # in the picker below the buttons
 			continue
+		var number: int = numbers.get(g, 0) + 1
+		numbers[g] = number
 		var button := Button.new()
 		button.text = ("%d  %s" % [number % 10, mode["name"]]) if number <= 10 else ("    " + mode["name"])
 		button.tooltip_text = mode["description"]
 		button.toggle_mode = true
 		button.button_group = group
+		button.focus_mode = Control.FOCUS_NONE
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.button_pressed = mode["id"] == mode_id
 		button.pressed.connect(_set_mode.bind(mode["id"]))
@@ -866,15 +940,17 @@ func _build_side_panel() -> Control:
 		button.add_theme_font_size_override("font_size", 12)
 		mode_grid.add_child(button)
 		mode_buttons[mode["id"]] = button
-		number += 1
+	group_tabs.tab_clicked.connect(func(index: int) -> void:
+		_show_group(group_names[index]))
 	if not trait_modes.is_empty():
-		var trait_row := HBoxContainer.new()
+		trait_row = HBoxContainer.new()
 		var trait_label := Label.new()
 		trait_label.text = "Culture trait"
 		trait_label.add_theme_font_size_override("font_size", 12)
 		trait_row.add_child(trait_label)
 		trait_option = OptionButton.new()
 		trait_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		trait_option.focus_mode = Control.FOCUS_NONE
 		trait_option.add_theme_font_size_override("font_size", 12)
 		trait_option.add_item("(pick one to map)")
 		for mode in trait_modes:
@@ -886,6 +962,7 @@ func _build_side_panel() -> Control:
 				_set_mode(trait_option.get_item_metadata(index)))
 		trait_row.add_child(trait_option)
 		panel.add_child(trait_row)
+	_show_group(mode_group.get(mode_id, group_names[0] if group_names.size() > 0 else ""))
 
 	coastline_check = CheckBox.new()
 	coastline_check.text = "Coastlines"
@@ -946,10 +1023,9 @@ func _build_side_panel() -> Control:
 	cell_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART  # never widen the panel
 	cell_hint.add_theme_color_override("font_color", Color(0.54, 0.53, 0.51))
 	panel.add_child(cell_hint)
-	cell_grid = GridContainer.new()
-	cell_grid.columns = 2
-	cell_grid.add_theme_constant_override("h_separation", 12)
-	panel.add_child(cell_grid)
+	cell_sections = VBoxContainer.new()
+	cell_sections.add_theme_constant_override("separation", 4)
+	panel.add_child(cell_sections)
 	species_label = Label.new()
 	species_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	species_label.add_theme_font_size_override("font_size", 12)
@@ -958,12 +1034,33 @@ func _build_side_panel() -> Control:
 	panel.add_child(species_label)
 
 	panel.add_child(HSeparator.new())
-	var keys := _label("Space play/pause  ·  1-9, 0 map modes  ·  . step a year  ·  G globe  ·  F2 god mode  ·  F5/F9 quicksave/load")
+	var keys := _label("Space play/pause  ·  Tab map groups  ·  1-9, 0 map modes  ·  . step a year  ·  G globe  ·  F2 god mode  ·  F5/F9 quicksave/load")
 	keys.add_theme_font_size_override("font_size", 11)
 	keys.add_theme_color_override("font_color", Color(0.54, 0.53, 0.51))
 	keys.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	panel.add_child(keys)
 	return scroll
+
+
+# Show one group's mode buttons (and the trait picker with Culture).
+func _show_group(g: String) -> void:
+	current_group = g
+	for id in mode_buttons:
+		mode_buttons[id].visible = mode_group.get(id, "") == g
+	if trait_row != null:
+		trait_row.visible = g == "Culture"
+	var index := group_names.find(g)
+	if group_tabs != null and index >= 0 and group_tabs.current_tab != index:
+		group_tabs.current_tab = index
+
+
+# The ids of a group's mode buttons, in order.
+func _group_modes(g: String) -> Array[String]:
+	var out: Array[String] = []
+	for id in mode_buttons:
+		if mode_group.get(id, "") == g:
+			out.append(id)
+	return out
 
 
 # Mode buttons are built before the world exists; this mirrors the C++ list

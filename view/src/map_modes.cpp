@@ -263,36 +263,36 @@ const ColorScale& age_scale() {  // magenta, light to dark
 
 // Order matters: keys 1-9 and 0 select the first ten.
 const std::vector<MapModeInfo> kModes = {
-    {"terrain", "Terrain", "Elevation above and below sea level"},
-    {"biome", "Biome", "Vegetation zone from the climate of each month"},
-    {"population", "Population", "People per square km"},
-    {"crowding", "Crowding", "Population relative to what the land can feed"},
-    {"temperature", "Temperature", "This year's mean temperature"},
-    {"rainfall", "Rainfall", "This year's precipitation on land"},
-    {"rain_season", "Rain season", "Whether rain falls in summer, in winter or all year"},
-    {"growing", "Growing season", "Months warm and wet enough for plants to grow"},
-    {"soil", "Soil", "Soil fertility"},
-    {"species", "Wild species", "Number of native wild species that could later be domesticated"},
-    {"capacity", "Forager capacity", "People per square km the land can feed by foraging this year"},
-    {"game", "Game", "Wild food abundance relative to undisturbed land"},
-    {"temp_anomaly", "Temp. anomaly", "This year's temperature minus the long-run baseline"},
-    {"median_age", "Median age", "Median age of the people living in each cell"},
-    {"language", "Language", "Main language spoken; related languages share a hue"},
-    {"language_family", "Language family", "Family of the main language"},
-    {"culture", "Culture", "Main culture; related cultures share a hue"},
-    {"farming", "Farming", "Share of people's food from crops and herds"},
-    {"domesticates", "Domesticates", "Domesticated crops and animals the people know"},
-    {"disease", "Disease", "Deaths from disease this year, per 1,000 people"},
-    {"technology", "Technology", "Number of techniques the people know"},
-    {"polity", "Polities", "Chiefdoms, states and empires; each its own color"},
-    {"towns", "Towns", "Share of people living in towns and cities"},
-    {"religion", "Religion", "Faith of each land: organized religions in strong colors (sects in shades of their parent), folk beliefs muted"},
-    {"subsistence", "Way of life", "How people get their food: foraging, fishing, farming, herding, towns"},
-    {"realms", "Realms", "Polities with their vassals and tributaries (lighter), each realm its own color"},
-    {"war", "War", "Wars, battles, conquests and nomad raids this year"},
-    {"stability", "Stability", "How steady each polity is against famine, war, overreach and other pressures"},
-    {"trade", "Trade", "Value of goods sent and received this year"},
-    {"resources", "Resources", "Deposits of salt, stone, ores, gold and shell; the most valuable shown"},
+    {"terrain", "Terrain", "Elevation above and below sea level", "Land"},
+    {"biome", "Biome", "Vegetation zone from the climate of each month", "Land"},
+    {"temperature", "Temperature", "This year's mean temperature", "Land"},
+    {"temp_anomaly", "Temp. anomaly", "This year's temperature minus the long-run baseline", "Land"},
+    {"rainfall", "Rainfall", "This year's precipitation on land", "Land"},
+    {"rain_season", "Rain season", "Whether rain falls in summer, in winter or all year", "Land"},
+    {"growing", "Growing season", "Months warm and wet enough for plants to grow", "Land"},
+    {"soil", "Soil", "Soil fertility", "Land"},
+    {"species", "Wild species", "Number of native wild species that could later be domesticated", "Land"},
+    {"capacity", "Forager capacity", "People per square km the land can feed by foraging this year", "Land"},
+    {"game", "Game", "Wild food abundance relative to undisturbed land", "Land"},
+    {"resources", "Resources", "Deposits of salt, stone, ores, gold and shell; the most valuable shown", "Land"},
+    {"population", "Population", "People per square km", "People"},
+    {"crowding", "Crowding", "Population relative to what the land can feed", "People"},
+    {"median_age", "Median age", "Median age of the people living in each cell", "People"},
+    {"disease", "Disease", "Deaths from disease this year, per 1,000 people", "People"},
+    {"language", "Language", "Main language spoken; related languages share a hue", "Culture"},
+    {"language_family", "Language family", "Family of the main language", "Culture"},
+    {"culture", "Culture", "Main culture; related cultures share a hue", "Culture"},
+    {"religion", "Religion", "Faith of each land: organized religions in strong colors (sects in shades of their parent), folk beliefs muted", "Culture"},
+    {"technology", "Technology", "Number of techniques the people know", "Culture"},
+    {"subsistence", "Way of life", "How people get their food: foraging, fishing, farming, herding, towns", "Economy"},
+    {"farming", "Farming", "Share of people's food from crops and herds", "Economy"},
+    {"domesticates", "Domesticates", "Domesticated crops and animals the people know", "Economy"},
+    {"towns", "Towns", "Share of people living in towns and cities", "Economy"},
+    {"trade", "Trade", "Value of goods sent and received this year", "Economy"},
+    {"polity", "Polities", "Chiefdoms, states and empires; each its own color", "Power"},
+    {"realms", "Realms", "Polities with their vassals and tributaries (lighter), each realm its own color", "Power"},
+    {"war", "War", "Wars, battles, conquests and nomad raids this year", "Power"},
+    {"stability", "Stability", "How steady each polity is against famine, war, overreach and other pressures", "Power"},
 };
 
 // ---- Colors for languages and cultures.
@@ -503,7 +503,7 @@ const std::vector<MapModeInfo>& map_modes() {
     static const std::vector<MapModeInfo> modes = [] {
         std::vector<MapModeInfo> all = kModes;
         for (const CultureTrait& t : default_content().traits) {
-            all.push_back({"trait:" + t.id, t.name, "Culture trait: from " + t.low + " to " + t.high});
+            all.push_back({"trait:" + t.id, t.name, "Culture trait: from " + t.low + " to " + t.high, "Culture"});
         }
         return all;
     }();
@@ -1000,7 +1000,13 @@ Legend legend(const Simulation& sim, std::string_view mode_id) {
     return l;
 }
 
-std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
+namespace {
+struct Row {
+    std::string label, value;
+};
+// The rows of describe_cell; `mark(name)` starts a section at the next row.
+std::vector<Row> describe_cell_rows(const Simulation& sim, CellId c,
+                                          std::vector<std::pair<std::size_t, std::string>>& marks) {
     const World& w = sim.world();
     const SimState& s = sim.state();
     if (c >= w.cell_count()) {
@@ -1008,7 +1014,9 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
     }
     const double lat = w.grid.latitude_deg_display(c);
     const double lon = w.grid.longitude_deg_display(c);
-    std::vector<CellField> f;
+    std::vector<Row> f;
+    auto mark = [&](const char* name) { marks.emplace_back(f.size(), name); };
+    mark("Place");
     f.push_back({"Cell", with_commas(static_cast<long long>(c))});
     f.push_back({"Location", fmt("%.1f°", std::fabs(lat)) + (lat >= 0 ? " N, " : " S, ") +
                                  fmt("%.1f°", std::fabs(lon)) + (lon >= 0 ? " E" : " W")});
@@ -1035,6 +1043,7 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
                                  fmt(" (%+.0f%%)", 100.0 * (s.env.precipitation_mm[c] / std::max(1.0, w.precipitation_mm[c]) - 1.0))});
     f.push_back({"Game", fmt("%.0f%%", 100.0 * s.env.game[c])});
     f.push_back({"Capacity", with_commas(std::llround(s.env.capacity[c])) + " people"});
+    mark("People");
     f.push_back({"Population", with_commas(static_cast<long long>(s.cell_population[c])) + " people"});
     if (s.cell_population[c] == 0) return f;
 
@@ -1062,6 +1071,7 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
     const MainPeople m = main_people(s, c);
     const double cell_pop = static_cast<double>(s.cell_population[c]);
     const Language& lang = s.languages[m.language];
+    mark("Language");
     f.push_back({"Language", lang.name + " (" + family_name(s, m.language) + " family)" +
                                  (m.language_pop < s.cell_population[c]
                                       ? fmt(", %.0f%%", 100.0 * static_cast<double>(m.language_pop) / cell_pop)
@@ -1091,9 +1101,11 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
     f.push_back({"Words", sample_words(sim, m.language, 6)});
 
     const Culture& cul = s.cultures[m.culture];
+    mark("Culture");
     f.push_back({"Culture", cul.name + (m.culture_pop < s.cell_population[c]
                                             ? fmt(", %.0f%%", 100.0 * static_cast<double>(m.culture_pop) / cell_pop)
                                             : "")});
+    mark("Culture traits");
     // The culture's ways here, every trait.
     for (const Cohort& co : s.cohorts_in(c)) {
         if (co.culture != m.culture) continue;
@@ -1106,6 +1118,7 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
         break;
     }
 
+    mark("Religion");
     // Faith.
     if (s.faith_of.size() == w.cell_count() && s.faith_of[c] != 0) {
         const Religion& r = s.religions[s.faith_of[c]];
@@ -1120,6 +1133,7 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
         }
     }
 
+    mark("Food");
     // Farming.
     const double farming = s.env.farming.empty() ? 0.0 : s.env.farming[c];
     f.push_back({"Farming", farming < 0.005 ? "none: foragers" : fmt("%.0f%% of food", 100.0 * farming)});
@@ -1135,6 +1149,7 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
     if (!s.env.farm_capacity.empty() && s.env.farm_capacity[c] > 0.0) {
         f.push_back({"Farmland", fmt("%.2f people per km² if all farmed", s.env.farm_capacity[c] / w.grid.area_km2(c))});
     }
+    mark("Rule");
     // Rule and towns.
     if (!s.polity_of.empty() && s.polity_of[c] != 0) {
         const std::uint32_t ruler = s.polity_of[c];
@@ -1195,6 +1210,7 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
     } else {
         f.push_back({"Polity", "none: bands, tribes and villages"});
     }
+    mark("Economy");
     if (!s.urban.empty() && s.urban[c] > 0.001) {
         const double town = s.urban[c] * static_cast<double>(s.cell_population[c]);
         const std::uint32_t city = s.city_of.empty() ? 0 : s.city_of[c];
@@ -1202,6 +1218,7 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
                                   with_commas(std::llround(town)) + fmt(" people (%.0f%%)", 100.0 * s.urban[c])});
     }
 
+    mark("People");
     if (s.last_arrival.size() == w.cell_count() && s.last_arrival[c] != 0 && s.last_arrival[c] <= s.migrations.size()) {
         const FolkMovement& move = s.migrations[s.last_arrival[c] - 1];
         static const char* const why[] = {"fleeing famine", "fleeing war", "fleeing raids", "pushed out by others"};
@@ -1210,6 +1227,7 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
                                       why[static_cast<std::size_t>(move.cause)] +
                                       fmt(", from %.0f km away", w.grid.distance_km(move.from, move.to))});
     }
+    mark("Rule");
     if (s.last_raid.size() == w.cell_count() && s.last_raid[c] != kNever) {
         f.push_back({"Last raided", "by nomads in year " + with_commas(static_cast<long long>(s.last_raid[c] / kTicksPerYear))});
     }
@@ -1220,6 +1238,7 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
         f.push_back({"This year", std::string(what) + ", " + with_commas(dead) + " killed"});
     }
 
+    mark("Economy");
     // Resources and trade.
     const std::size_t ng = content.goods.size();
     std::string deposits;
@@ -1251,6 +1270,7 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
         }
     }
 
+    mark("Technology");
     // Techniques.
     if (!s.techniques.empty() && s.techniques[c] != 0) {
         std::string known_techs;
@@ -1266,6 +1286,7 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
                                      s.cultures[v.culture].name});
     }
 
+    mark("Health");
     // Disease.
     const std::size_t nd = content.diseases.size();
     if (s.disease_present.size() == w.cell_count() * nd) {
@@ -1286,6 +1307,7 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
         }
     }
 
+    mark("Food");
     // Domestication under way here, and origins.
     std::string underway;
     for (std::size_t k = 0; k < w.wild_stands.size() && k < s.domestication.size(); ++k) {
@@ -1299,6 +1321,20 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
         f.push_back({"Origin", content.species[d.species].domesticated + " first domesticated here in year " +
                                    with_commas(static_cast<long long>(d.tick / kTicksPerYear)) + " by the " +
                                    s.cultures[d.culture].name});
+    }
+    return f;
+}
+}  // namespace
+
+std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
+    std::vector<std::pair<std::size_t, std::string>> marks;
+    const std::vector<Row> rows = describe_cell_rows(sim, c, marks);
+    std::vector<CellField> f;
+    std::size_t m = 0;
+    std::string section;
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        while (m < marks.size() && marks[m].first <= i) section = marks[m++].second;
+        f.push_back({rows[i].label, rows[i].value, section});
     }
     return f;
 }

@@ -49,7 +49,8 @@ godot --headless --path godot/project --script res://tests/smoke.gd
 | Input | Action |
 | --- | --- |
 | Space | Play / pause |
-| 1-9, 0 | Switch map mode (the rest are in the list) |
+| Tab / Shift+Tab | Next / previous group of map modes (Land, People, Culture, Economy, Power) |
+| 1-9, 0 | Switch among the map modes of the group shown |
 | Rivers checkbox | Show / hide rivers (line width grows with flow) |
 | Borders checkbox | Show / hide the borders of chiefdoms and states |
 | Trade routes checkbox | Show / hide the busiest trade routes |
@@ -64,6 +65,7 @@ godot --headless --path godot/project --script res://tests/smoke.gd
 | F5 / F9 | Quicksave / quickload |
 | Hover | Show a cell in the inspector |
 | Click | Keep that cell in the inspector (outlined) so the panel can be scrolled; click it again to let go |
+| Click a section header | Fold or unfold that part of the inspector (Place, People, Language, Culture, Culture traits, Religion, Food, Rule, Economy, Technology, Health); folds are kept as you move between cells, and culture traits start folded |
 | New world / Random seed | Generate a new planet |
 
 ## God mode

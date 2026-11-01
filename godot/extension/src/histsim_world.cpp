@@ -212,6 +212,7 @@ Array HistSimWorld::get_modes() const {
         d["id"] = to_godot(m.id);
         d["name"] = to_godot(m.name);
         d["description"] = to_godot(m.description);
+        d["group"] = to_godot(m.group);
         out.push_back(d);
     }
     return out;
@@ -294,6 +295,7 @@ Array HistSimWorld::describe_cell(int64_t cell) const {
         PackedStringArray pair;
         pair.push_back(to_godot(f.label));
         pair.push_back(to_godot(f.value));
+        pair.push_back(to_godot(f.section));
         out.push_back(pair);
     }
     return out;
