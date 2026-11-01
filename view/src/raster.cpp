@@ -245,6 +245,28 @@ void render(const MapRaster& raster, const World& world, const std::vector<Rgba>
     if (options.migrations != nullptr) {
         draw_routes(world, *options.migrations, w, h, rgba);
     }
+    if (options.markers != nullptr) {
+        const double scale = static_cast<double>(w) / 2048.0;
+        for (const MapMarker& m : *options.markers) {
+            if (m.cell >= world.cell_count()) continue;
+            double cx = 0.0, cy = 0.0;
+            cell_pixel(world, m.cell, w, h, cx, cy);
+            const double r = std::max(1.5, m.radius * scale);
+            const double ring = r + std::max(1.0, scale);
+            const double inner = 0.45 * r;
+            const int span = static_cast<int>(std::ceil(ring)) + 1;
+            for (int dy = -span; dy <= span; ++dy) {
+                for (int dx = -span; dx <= span; ++dx) {
+                    const double px = std::floor(cx) + dx + 0.5 - cx, py = std::floor(cy) + dy + 0.5 - cy;
+                    const double d = std::sqrt(px * px + py * py);
+                    const int x = static_cast<int>(std::floor(cx)) + dx, y = static_cast<int>(std::floor(cy)) + dy;
+                    if (d <= inner && m.center.a != 0) plot(rgba, w, h, x, y, m.center);
+                    else if (d <= r) plot(rgba, w, h, x, y, m.fill);
+                    else if (d <= ring) plot(rgba, w, h, x, y, m.ring);
+                }
+            }
+        }
+    }
 }
 
 }  // namespace histsim::view

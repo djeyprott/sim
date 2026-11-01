@@ -275,6 +275,8 @@ Ref<Image> HistSimWorld::render_map(const String& mode, bool coastlines, bool ri
             moves = histsim::view::migration_lines(*sim_);
             options.migrations = &moves;
         }
+        const std::vector<histsim::view::MapMarker> capitals = histsim::view::capital_markers(*sim_, to_std(mode));
+        if (!capitals.empty()) options.markers = &capitals;
         histsim::view::render(*raster_, sim_->world(), colors_, rgba_, options);
         PackedByteArray bytes;
         bytes.resize(static_cast<int64_t>(rgba_.size()));
@@ -414,6 +416,8 @@ Array HistSimWorld::get_polity_labels() const {
         d["u"] = l.u;
         d["v"] = l.v;
         d["area_km2"] = l.area_km2;
+        d["capital_u"] = l.capital_u;
+        d["capital_v"] = l.capital_v;
         d["level"] = to_godot(l.level);
         out.push_back(d);
     }

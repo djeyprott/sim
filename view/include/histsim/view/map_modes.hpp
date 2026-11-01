@@ -96,6 +96,7 @@ struct MapLabel {
     std::string name;
     double u = 0.0, v = 0.0;
     double area_km2 = 0.0;
+    double capital_u = 0.0, capital_v = 0.0;  // where its capital is
     std::string level;  // "chiefdom", "state", "empire", "confederation"
     std::uint32_t polity = 0;
 };
@@ -104,6 +105,13 @@ struct MapLabel {
 inline constexpr double kLabelMinAreaKm2 = 400000.0;
 inline constexpr std::size_t kMaxLabels = 60;
 std::vector<MapLabel> polity_labels(const Simulation& sim);
+
+// Capitals to mark in the polity, stability and realm modes (empty for
+// other modes): in polity and stability, every living polity's capital,
+// larger for states; in realms, the seats of states, empires and nomad
+// confederations that answer to no one large and gold, other independent
+// chiefdoms' as in polity mode, subjects' small.
+std::vector<MapMarker> capital_markers(const Simulation& sim, std::string_view mode_id);
 
 // For modes that group cells (language, language family, culture,
 // religion, polity, realm, stability): marks the cells in the same group as

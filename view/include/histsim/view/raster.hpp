@@ -44,6 +44,16 @@ struct RouteLine {
 
 inline constexpr std::uint8_t kFocusMain = 255;
 
+// A dot drawn on a cell's center, e.g. a capital: `radius` in pixels on a
+// 2048-pixel-wide map (scaled with the map), filled and ringed.
+struct MapMarker {
+    CellId cell = kInvalidCell;
+    double radius = 3.0;
+    Rgba fill{255, 255, 255, 255};
+    Rgba ring{30, 26, 24, 255};
+    Rgba center{0, 0, 0, 0};  // an inner dot, if opaque
+};
+
 struct RenderOptions {
     bool coastlines = true;  // dark line where land meets ocean
     bool rivers = false;     // rivers drawn as blue lines, wider for more flow
@@ -60,6 +70,8 @@ struct RenderOptions {
     // each cell: a line is drawn where land cells of different regions meet
     // (and around a region where it meets unclaimed land).
     const std::vector<std::uint32_t>* borders = nullptr;
+    // Optional markers (capitals), drawn on top of everything.
+    const std::vector<MapMarker>* markers = nullptr;
     // Optional trade routes, drawn over everything else.
     const std::vector<RouteLine>* routes = nullptr;
     // Optional folk migrations (RouteLine::migration), drawn on top.

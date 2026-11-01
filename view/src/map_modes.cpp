@@ -1368,6 +1368,9 @@ std::vector<MapLabel> polity_labels(const Simulation& sim) {
             at = w.grid.center(nearest);
         }
         MapLabel l;
+        const Vec3& seat = w.grid.center(s.polities[p].capital);
+        l.capital_u = (std::atan2(seat.y, seat.x) * 180.0 / kPi + 180.0) / 360.0;
+        l.capital_v = (90.0 - std::asin(std::clamp(seat.z, -1.0, 1.0)) * 180.0 / kPi) / 180.0;
         l.name = s.polities[p].name;
         l.u = (std::atan2(at.y, at.x) * 180.0 / kPi + 180.0) / 360.0;
         l.v = (90.0 - std::asin(std::clamp(at.z, -1.0, 1.0)) * 180.0 / kPi) / 180.0;
@@ -1376,6 +1379,38 @@ std::vector<MapLabel> polity_labels(const Simulation& sim) {
         l.polity = p;
         out.push_back(std::move(l));
     }
+    return out;
+}
+
+std::vector<MapMarker> capital_markers(const Simulation& sim, std::string_view mode_id) {
+    std::vector<MapMarker> out;
+    const std::string id(mode_id);
+    const bool realms = id == "realms";
+    if (!realms && id != "polity" && id != "stability") return out;
+    const World& w = sim.world();
+    const SimState& s = sim.state();
+    for (std::uint32_t p = 1; p < s.polities.size(); ++p) {
+        const Polity& pol = s.polities[p];
+        if (pol.ended != kNever || pol.capital >= w.cell_count() || s.polity_of.size() != w.cell_count() ||
+            s.polity_of[pol.capital] != p) {
+            continue;
+        }
+        MapMarker m;
+        m.cell = pol.capital;
+        const bool state = polity_has_writing(w, s, p);
+        if (realms && top_overlord(s, p) == p && (state || pol.nomadic)) {
+            m.radius = 4.5;  // the seat of a state, empire or confederation answering to no one: gold
+            m.fill = hex("#f2c14e");
+            m.center = hex("#ffffff");
+        } else if (realms && top_overlord(s, p) != p) {
+            m.radius = 2.0;  // a subject's seat
+        } else {
+            m.radius = state ? 4.0 : 2.5;
+        }
+        out.push_back(m);
+    }
+    // Larger dots last, so they sit on top.
+    std::stable_sort(out.begin(), out.end(), [](const MapMarker& a, const MapMarker& b) { return a.radius < b.radius; });
     return out;
 }
 

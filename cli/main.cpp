@@ -392,6 +392,8 @@ int map_images(const Options& o) {
         ro.routes = id == "trade" || id == "resources" ? &routes : nullptr;
         const bool peoples = id == "language" || id == "language_family" || id == "culture" || id == "population";
         ro.migrations = peoples ? &moves : nullptr;
+        const std::vector<histsim::view::MapMarker> capitals = histsim::view::capital_markers(sim, id);
+        ro.markers = capitals.empty() ? nullptr : &capitals;
         histsim::view::render(raster, sim.world(), colors, rgba, ro);
         const std::string path = o.out + "-" + id + ".png";
         histsim::view::write_png(path, o.width, height, rgba);

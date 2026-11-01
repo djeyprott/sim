@@ -55,6 +55,7 @@ godot --headless --path godot/project --script res://tests/smoke.gd
 | Borders checkbox | Show / hide the borders of chiefdoms and states |
 | Trade routes checkbox | Show / hide the busiest trade routes |
 | Migrations checkbox | Show / hide the last 50 years' folk migrations as arrows |
+| Capitals | In the polity and stability modes every polity's capital is marked with a dot (larger for states); in the realm mode the seats of independent states, empires and nomad confederations are large gold dots and subjects' capitals small ones |
 | Names checkbox | Show / hide the names of states, empires and other large realms (over 400,000 km²), sized to their land, on the map and the globe |
 | Scroll, drag (map) | Zoom in and out around the cursor, pan when zoomed in |
 | Home | Zoom the map back out to the whole world |

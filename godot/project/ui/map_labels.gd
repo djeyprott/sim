@@ -55,6 +55,11 @@ func _draw() -> void:
 		var font_size := clampi(int(1.6 * extent / maxf(4.0, text.length())), MIN_FONT, MAX_FONT)
 		var width := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
 		var box := Rect2(at - Vector2(width * 0.5, font_size * 0.6), Vector2(width, font_size * 1.2))
+		# Keep the capital's dot in view: a name over it moves just below.
+		var seat := _place(Vector2(label.get("capital_u", -1.0), label.get("capital_v", -1.0)))
+		if seat.z > 0.0 and box.grow(4.0).has_point(Vector2(seat.x, seat.y)):
+			at.y = seat.y + font_size * 0.6 + 6.0
+			box.position.y = at.y - font_size * 0.6
 		var clash := false
 		for other in taken:
 			if other.intersects(box):
@@ -66,3 +71,13 @@ func _draw() -> void:
 		var baseline := Vector2(box.position.x, at.y + font_size * 0.35)
 		draw_string_outline(font, baseline, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, maxi(3, font_size / 4), OUTLINE)
 		draw_string(font, baseline, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, INK)
+
+
+# Where a map point (u, v) shows in this control: (x, y, facing), facing <= 0
+# when it does not show.
+func _place(uv: Vector2) -> Vector3:
+	if uv.x < 0.0:
+		return Vector3(0, 0, -1)
+	if globe != null:
+		return globe.screen_of(uv)
+	return Vector3(uv.x * size.x, uv.y * size.y, 1.0)

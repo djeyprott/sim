@@ -164,7 +164,9 @@ TEST(view_a_kept_cell_brings_out_its_group) {
     CellId ocean = 0;
     while (sim.world().is_land[ocean]) ++ocean;
     CHECK(!same_group_cells(sim, "language", ocean, group));
-    // No polities yet: no names, and no group for a ruler.
+    // No polities yet: no names, no capitals, and no group for a ruler.
     CHECK(polity_labels(sim).empty());
+    CHECK(capital_markers(sim, "polity").empty());
+    CHECK(capital_markers(sim, "terrain").empty());
     CHECK(!same_group_cells(sim, "polity", c, group));
 }
