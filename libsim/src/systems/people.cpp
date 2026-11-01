@@ -30,6 +30,7 @@ std::int64_t power_of_ten_floor(std::int64_t n) {
 
 constexpr std::uint32_t kColonizeEntity = 0x40000000u;
 constexpr std::uint32_t kExodusEntity = 0x50000000u;
+constexpr std::uint32_t kWanderEntity = 0x60000000u;
 
 double crowding_of(const SimState& s, CellId c) {
     const double k = s.env.capacity[c];
@@ -490,6 +491,135 @@ void MigrationSystem::step(StepContext& ctx) {
             band = pushed;
             from = at;
             at = onward;
+        }
+    }
+
+    // ---- Wandering peoples: tribes and confederations on the move.
+    if (s.polity_of.size() == n && s.polities.size() > 1) {
+        const std::size_t np = s.polities.size();
+        std::vector<std::vector<CellId>> held(np);
+        std::vector<double> people(np, 0.0);
+        for (CellId c = 0; c < n; ++c) {
+            const std::uint32_t p = s.polity_of[c];
+            if (p == 0) continue;
+            held[p].push_back(c);
+            people[p] += static_cast<double>(s.cell_population[c]);
+        }
+        std::vector<std::uint8_t> at_war(np, 0);
+        for (const War& war : s.wars) {
+            if (war.ended != kNever) continue;
+            for (std::uint32_t p : war.attackers) at_war[p] = 1;
+            for (std::uint32_t p : war.defenders) at_war[p] = 1;
+        }
+        std::vector<CellId> lands, frontier;
+        std::vector<std::uint8_t> claimed(n, 0);
+        for (std::uint32_t p = 1; p < np; ++p) {
+            Polity& pol = s.polities[p];
+            if (pol.ended != kNever || held[p].empty() || at_war[p] || pol.bond == Bond::Vassal) continue;
+            if (people[p] < static_cast<double>(kWanderMinPeople) || polity_has_writing(w, s, p)) continue;
+            if (pol.wandered != kNever && ctx.tick - pol.wandered < kWanderYears * kTicksPerYear) continue;
+            // Its people: how mobile, how fed, how crowded.
+            double mobility = 0.0, counted = 0.0, recent = 0.0, usual = 0.0, capacity = 0.0;
+            for (CellId c : held[p]) {
+                for (const Cohort& co : s.cohorts_in(c)) {
+                    const double q = static_cast<double>(co.total());
+                    if (i_mobility < kMaxTraits) mobility += q * co.traits[i_mobility];
+                    counted += q;
+                }
+                recent += s.recent_capacity[c];
+                usual += s.usual_capacity[c];
+                capacity += s.env.capacity[c];
+            }
+            mobility = counted > 0.0 ? mobility / counted : 0.5;
+            double pressure = std::min(1.0, pol.shock);
+            pressure = std::max(pressure, pol.pressure[static_cast<std::size_t>(Pressure::Famine)]);
+            if (usual > 0.0) pressure = std::max(pressure, std::clamp((kDearth - recent / usual) / kDearthSpan, 0.0, 1.0));
+            if (capacity > 0.0) pressure = std::max(pressure, std::clamp((people[p] / capacity - 1.05) / 0.3, 0.0, 1.0));
+            if (pressure < kWanderPressure) continue;
+            RngStream rng = ctx.rng(Stream::Migration, kWanderEntity | p);
+            const double chance = kWander * pressure * mobility_factor(mobility, kWanderMobility);
+            if (rng.uniform() >= chance) continue;
+            // Where to: the most open land within reach, not held by the strong.
+            const bool herders = pol.nomadic || (!s.env.pastoral.empty() && s.env.pastoral[pol.capital] >= 0.5);
+            const double range_km = kWanderKm + kWanderKmMobile * mobility;
+            auto weak_enough = [&](CellId c) {
+                const std::uint32_t q = s.polity_of[c];
+                return q == 0 || (q != p && !claimed[c] && people[q] < kWanderStronger * people[p]);
+            };
+            CellId target = kInvalidCell;
+            double best = 0.0;
+            cells_within(w, pol.capital, range_km, in_reach);
+            for (CellId d : in_reach) {
+                if (!w.is_land[d] || s.polity_of[d] == p || claimed[d] || s.env.capacity[d] <= 0.0 || !weak_enough(d)) continue;
+                const double k = s.env.capacity[d];
+                double appeal = (k - static_cast<double>(s.cell_population[d]) + 0.05 * k) /
+                                (1.0 + w.grid.distance_km(pol.capital, d) / kExodusDistanceKm);
+                if (herders) appeal *= pasture_quality(static_cast<Biome>(w.biome[d]));
+                if (s.polity_of[d] != 0) appeal *= 0.7;  // someone to fight
+                if (appeal > best || (appeal == best && d < target)) best = appeal, target = d;
+            }
+            if (target == kInvalidCell) continue;
+            // As much land around it as it held.
+            lands.assign(1, target);
+            claimed[target] = 1;
+            for (std::size_t i = 0; i < lands.size() && lands.size() < held[p].size(); ++i) {
+                for (CellId nb : w.grid.neighbors(lands[i])) {
+                    if (lands.size() >= held[p].size()) break;
+                    if (claimed[nb] || !w.is_land[nb] || s.env.capacity[nb] <= 0.0 || s.polity_of[nb] == p ||
+                        !weak_enough(nb)) {
+                        continue;
+                    }
+                    claimed[nb] = 1;
+                    lands.push_back(nb);
+                }
+            }
+            // The rulers' people set out with their crops and herds.
+            const std::uint32_t root = s.cultures[pol.culture].root;
+            const CellId from = pol.capital;
+            std::int64_t gone = 0;
+            std::size_t next = 0;
+            for (CellId c : held[p]) {
+                const std::uint32_t known = s.domesticates.empty() ? 0 : s.domesticates[c];
+                for (auto i = s.cohort_begin[c]; i < s.cohort_begin[c + 1]; ++i) {
+                    Cohort& co = s.cohorts[i];
+                    if (s.cultures[co.culture].root != root) continue;
+                    const CellId to = lands[next++ % lands.size()];
+                    Cohort band = split_off(co, to, kWanderShare, rng);
+                    if (band.total() <= 0) continue;
+                    gone += band.total();
+                    arrivals.push_back(band);
+                    if (known != 0) carried.emplace_back(to, known);
+                }
+                s.polity_of[c] = 0;  // the land left behind is free
+            }
+            if (gone == 0) continue;
+            moved += gone;
+            s.folk_movers += gone;
+            s.migrations.push_back({ctx.tick, from, target, gone, pol.language, pol.culture, MigrationCause::Wandering, 0, p});
+            const auto id = static_cast<std::uint32_t>(s.migrations.size());
+            s.events.push_back({ctx.tick, EventType::FolkMigration, from, static_cast<std::int64_t>(id - 1)});
+            s.events.push_back({ctx.tick, EventType::PolityWandered, target, static_cast<std::int64_t>(p)});
+            // They take the new land; its rulers are shaken, and its people
+            // pushed on.
+            for (CellId c : lands) {
+                const std::uint32_t q = s.polity_of[c];
+                if (q != 0 && q != p) s.polities[q].shock += kWanderShock;
+                s.polity_of[c] = p;
+                s.last_arrival[c] = id;
+                s.last_arrival_tick[c] = ctx.tick;
+                Cohort* locals = largest_cohort(c, false);
+                if (locals == nullptr || s.cultures[locals->culture].root == root) continue;
+                const CellId onward = refuge(c, from, p);
+                if (onward == kInvalidCell) continue;
+                Cohort pushed = split_off(*locals, onward, kDisplace, rng);
+                if (pushed.total() <= 0) continue;
+                arrivals.push_back(pushed);
+                moved += pushed.total();
+                record(c, pushed, MigrationCause::Displaced, id);
+            }
+            pol.capital = target;
+            pol.wandered = ctx.tick;
+            people[p] = 0.0;  // it has used its turn this year
         }
     }
 

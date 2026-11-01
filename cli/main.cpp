@@ -715,7 +715,7 @@ int migrations(const Options& o) {
     std::printf("Every 500 years:\n");
     std::int64_t colonists = 0, movers = 0;
     std::size_t next = 0;
-    std::array<std::size_t, 4> by_cause{};
+    std::array<std::size_t, 5> by_cause{};
     for (const histsim::YearRecord& r : s.history) {
         colonists += r.colonists;
         movers += r.folk_movers;
@@ -726,9 +726,9 @@ int migrations(const Options& o) {
             ++next;
         }
         std::printf("  year %5lld  colonists %9lld  folk movers %9lld  folk migrations: famine %3zu, war %3zu, raids %3zu, "
-                    "pushed on %3zu\n",
+                    "pushed on %3zu, wandering peoples %2zu\n",
                     static_cast<long long>(r.year), static_cast<long long>(colonists), static_cast<long long>(movers),
-                    by_cause[0], by_cause[1], by_cause[2], by_cause[3]);
+                    by_cause[0], by_cause[1], by_cause[2], by_cause[3], by_cause[4]);
         colonists = movers = 0;
     }
     // The longest chains: movements that pushed others on.
@@ -741,7 +741,7 @@ int migrations(const Options& o) {
     for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
     std::stable_sort(order.begin(), order.end(),
                      [&](auto a, auto b) { return s.migrations[a].people > s.migrations[b].people; });
-    static const char* const causes[] = {"famine", "war", "raids", "pushed on"};
+    static const char* const causes[] = {"famine", "war", "raids", "pushed on", "wandering"};
     std::printf("\nLargest folk migrations (%zu in all):\n", s.migrations.size());
     for (std::size_t k = 0; k < order.size() && k < 12; ++k) {
         const histsim::FolkMovement& m = s.migrations[order[k]];
@@ -757,6 +757,23 @@ int migrations(const Options& o) {
         longest = std::max(longest, d);
     }
     std::printf("  %zu were pushed on by others; the longest chain had %zu links.\n", chains, longest + 1);
+    // Tribes and confederations that moved as a whole.
+    std::size_t wanderings = 0;
+    for (const histsim::FolkMovement& m : s.migrations) wanderings += m.cause == histsim::MigrationCause::Wandering ? 1 : 0;
+    std::printf("\nWandering peoples (%zu tribes and confederations moved as a whole):\n", wanderings);
+    std::size_t shown = 0;
+    for (std::size_t k = 0; k < order.size() && shown < 12; ++k) {
+        const histsim::FolkMovement& m = s.migrations[order[k]];
+        if (m.cause != histsim::MigrationCause::Wandering || m.polity >= s.polities.size()) continue;
+        const histsim::Polity& pol = s.polities[m.polity];
+        std::size_t pushed = 0;
+        for (const histsim::FolkMovement& o : s.migrations) pushed += o.pushed_by == order[k] + 1 ? 1 : 0;
+        std::printf("  year %5lld  the %-14s %-13s %8lld people %5.0f km  (%s speakers%s; pushed on %zu peoples)\n",
+                    static_cast<long long>(m.tick / histsim::kTicksPerYear), pol.name.c_str(),
+                    pol.nomadic ? "(nomads)" : "(tribe)", static_cast<long long>(m.people), w.grid.distance_km(m.from, m.to),
+                    s.languages[m.language].name.c_str(), pol.ended != histsim::kNever ? ", since gone" : "", pushed);
+        ++shown;
+    }
     // Famine migrations in Bond events (cold, dry centuries) against the rest.
     std::int64_t bond_years = 0;
     for (const histsim::BondEvent& b : s.climate.bond_history) bond_years += b.years;

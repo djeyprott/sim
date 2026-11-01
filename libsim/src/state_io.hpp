@@ -307,6 +307,7 @@ void serialize(Ar& ar, SimState& s) {
         ar.u8(p.fate_cause);
         ar.i64(p.settling_since);
         ar.u32(p.religion);
+        ar.i64(p.wandered);
     });
     doubles(ar, s.stocks);
     doubles(ar, s.prices);
@@ -364,6 +365,7 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(m.culture);
         u8(ar, m.cause);
         ar.u32(m.pushed_by);
+        ar.u32(m.polity);
     });
     vec(ar, s.last_arrival, [&](std::uint32_t& v) { ar.u32(v); });
     vec(ar, s.last_arrival_tick, [&](Tick& t) { ar.i64(t); });

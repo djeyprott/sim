@@ -133,6 +133,30 @@ public:
     // newcomers' arrival is counted as pushed out by them.
     static constexpr int kMaxChainLinks = 5;
     static constexpr std::int64_t kChainYears = 30;
+    // Wandering peoples: a tribe or confederation (a polity without writing;
+    // literate states stay put) of at least kWanderMinPeople moves as a whole
+    // when hard pressed: pressure = the largest of its war shock, its famine,
+    // a lasting dearth on its land, and land hunger (people beyond what the
+    // land feeds); at kWanderPressure or more it sets out with chance kWander
+    // x pressure x how readily its people move (mobility_factor, strength
+    // kWanderMobility: x0.3 for settled farmers to x1.15 for nomads) a year,
+    // at most once every kWanderYears. It goes as far as kWanderKm +
+    // kWanderKmMobile x mobility to the most open land (pasture for herders)
+    // not held by anyone at least kWanderStronger times its people, takes as
+    // many cells around it as it held, and kWanderShare of its people (the
+    // rulers' lineage) move there with their crops, rulers, name and faith.
+    // The land left behind is free; the locals where they arrive are pushed
+    // on (kDisplace) and their rulers shaken.
+    static constexpr double kWander = 0.03;
+    static constexpr double kWanderPressure = 0.3;
+    static constexpr std::int64_t kWanderMinPeople = 5000;
+    static constexpr double kWanderMobility = 0.75;
+    static constexpr double kWanderKm = 600.0;
+    static constexpr double kWanderKmMobile = 1400.0;
+    static constexpr double kWanderShare = 0.6;
+    static constexpr std::int64_t kWanderYears = 50;
+    static constexpr double kWanderStronger = 0.5;
+    static constexpr double kWanderShock = 0.3;  // to the rulers of land the newcomers take
     // Folk migrations of at least this many people are recorded.
     static constexpr std::int64_t kFolkRecordPeople = 1000;
 };
