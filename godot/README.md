@@ -56,6 +56,7 @@ godot --headless --path godot/project --script res://tests/smoke.gd
 | Trade routes checkbox | Show / hide the busiest trade routes |
 | Migrations checkbox | Show / hide the last 50 years' folk migrations as arrows |
 | Capitals | In the polity and stability modes every polity's capital is marked with a dot (larger for states); in the realm mode the seats of independent states, empires and nomad confederations are large gold dots and subjects' capitals small ones |
+| Timeline button, T | What happened in the run, in words, newest first: filter by kind (realms, war, peoples, faith, nature, discoveries) or to the kept cell's realm; click an entry to keep its cell and bring it to the middle of the map |
 | Names checkbox | Show / hide the names of states, empires and other large realms (over 400,000 km²), sized to their land, on the map and the globe |
 | Scroll, drag (map) | Zoom in and out around the cursor; pan up and down when zoomed in, and east-west at any zoom: the flat map wraps around, like the globe |
 | Home | Zoom the map back out to the whole world |
@@ -67,7 +68,7 @@ godot --headless --path godot/project --script res://tests/smoke.gd
 | F5 / F9 | Quicksave / quickload |
 | Hover | Show a cell in the inspector |
 | Click | Keep that cell in the inspector (outlined) so the panel can be scrolled; click it again to let go. In the language, language family, culture, religion, polity, realm and stability modes the map also brings out every cell that shares its language, culture, faith or ruler, fading the rest; cells where its language, family or culture is only a minority are tinted faintly with its color (more strongly the larger the minority) |
-| Click a section header | Fold or unfold that part of the inspector (Place, People, Language, Culture, Culture traits, Religion, Food, Rule, Economy, Technology, Health); folds are kept as you move between cells, and culture traits start folded |
+| Click a section header | Fold or unfold that part of the inspector (Place, People, Language, Culture, Culture traits, Religion, Food, Rule, Economy, Technology, Health); folds are kept as you move between cells, and culture traits start folded. The last two sections explain the cell: what happened there lately, and to the realm that rules it |
 | New world / Random seed | Generate a new planet |
 
 ## God mode

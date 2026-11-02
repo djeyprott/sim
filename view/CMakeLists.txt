@@ -4,6 +4,7 @@
 add_library(histsim_view
     src/color.cpp
     src/map_modes.cpp
+    src/timeline.cpp
     src/png.cpp
     src/raster.cpp
 )

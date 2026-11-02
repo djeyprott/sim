@@ -100,6 +100,8 @@ var climate_chart: LineChart
 var pyramid: PyramidChart
 var god_panel: GodPanel
 var god_button: Button
+var timeline_button: Button
+var timeline_panel: TimelinePanel
 
 
 func _ready() -> void:
@@ -194,6 +196,8 @@ func _render_map() -> void:
 		map_texture.update(image)
 	map_dirty = false
 	render_cooldown = RENDER_INTERVAL
+	if timeline_panel.visible:
+		timeline_panel.refresh(world, selected_cell)
 	var labels: Array = world.get_polity_labels() if names_check.button_pressed else []
 	flat_labels.set_labels(labels)
 	_labels_now = labels
@@ -311,6 +315,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		map_dirty = true
 		charts_dirty = true
 		_update_summary()
+	elif key == KEY_T:
+		_set_timeline(not timeline_panel.visible)
 	elif key == KEY_G:
 		_set_view(not showing_globe)
 	elif key == KEY_F2:
@@ -493,6 +499,25 @@ func _reset_map_view() -> void:
 
 
 # ---------------------------------------------------------------- god mode
+
+func _set_timeline(on: bool) -> void:
+	timeline_panel.visible = on
+	timeline_button.button_pressed = on
+	if on:
+		timeline_panel.refresh(world, selected_cell)
+
+
+# Keep a cell in the inspector and bring it to the middle of the flat map.
+func _go_to_cell(cell: int) -> void:
+	_select(cell)
+	var uv: Vector2 = world.get_cell_uv(cell)
+	if uv.x < 0.0 or showing_globe:
+		return
+	if map_zoom < 2.0:
+		_zoom_map(2.0 / map_zoom, map_view.size * 0.5)
+	map_offset = map_view.size * 0.5 - uv * map_rect.size
+	_layout_map()
+
 
 func _god_tool_active() -> bool:
 	return god_panel.visible and god_panel.current_tool() != "inspect"
@@ -783,6 +808,13 @@ func _build_ui() -> void:
 	god_button.toggle_mode = true
 	god_button.toggled.connect(_set_god_mode)
 	view_bar.add_child(god_button)
+	timeline_button = Button.new()
+	timeline_button.text = "Timeline"
+	timeline_button.tooltip_text = "T. What happened, in words; click an entry to go there."
+	timeline_button.toggle_mode = true
+	timeline_button.focus_mode = Control.FOCUS_NONE
+	timeline_button.toggled.connect(_set_timeline)
+	view_bar.add_child(timeline_button)
 	view_bar.add_child(VSeparator.new())
 	population_label = Label.new()
 	population_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -827,6 +859,14 @@ func _build_ui() -> void:
 	globe_labels.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	globe_labels.visible = false
 	stack.add_child(globe_labels)
+
+	timeline_panel = TimelinePanel.new()
+	timeline_panel.visible = false
+	timeline_panel.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	timeline_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	timeline_panel.position = Vector2(8, -8)
+	timeline_panel.entry_chosen.connect(_go_to_cell)
+	stack.add_child(timeline_panel)
 
 	god_panel = GodPanel.new()
 	god_panel.visible = false
@@ -1109,7 +1149,7 @@ func _build_side_panel() -> Control:
 	panel.add_child(species_label)
 
 	panel.add_child(HSeparator.new())
-	var keys := _label("Space play/pause  ·  Tab map groups  ·  1-9, 0 map modes  ·  . step a year  ·  G globe  ·  F2 god mode  ·  F5/F9 quicksave/load")
+	var keys := _label("Space play/pause  ·  T timeline  ·  Tab map groups  ·  1-9, 0 map modes  ·  . step a year  ·  G globe  ·  F2 god mode  ·  F5/F9 quicksave/load")
 	keys.add_theme_font_size_override("font_size", 11)
 	keys.add_theme_color_override("font_color", Color(0.54, 0.53, 0.51))
 	keys.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

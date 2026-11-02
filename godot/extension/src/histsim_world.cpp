@@ -427,6 +427,35 @@ Array HistSimWorld::get_polity_labels() const {
     return out;
 }
 
+Array HistSimWorld::get_timeline(const String& kind, int64_t polity, int64_t cell, int64_t max_entries) const {
+    Array out;
+    if (!sim_ || max_entries <= 0) return out;
+    const histsim::CellId at = cell < 0 ? histsim::kInvalidCell : static_cast<histsim::CellId>(cell);
+    for (const auto& e : histsim::view::timeline(*sim_, to_std(kind), static_cast<std::uint32_t>(std::max<int64_t>(0, polity)), at,
+                                                 static_cast<std::size_t>(max_entries))) {
+        Dictionary d;
+        d["year"] = static_cast<int64_t>(e.year);
+        d["kind"] = to_godot(e.kind);
+        d["text"] = to_godot(e.text);
+        d["cell"] = e.cell == histsim::kInvalidCell ? int64_t{-1} : static_cast<int64_t>(e.cell);
+        out.push_back(d);
+    }
+    return out;
+}
+
+int64_t HistSimWorld::get_cell_polity(int64_t cell) const {
+    if (!sim_ || cell < 0 || static_cast<std::size_t>(cell) >= sim_->world().cell_count()) return 0;
+    const auto& of = sim_->state().polity_of;
+    return of.empty() ? 0 : static_cast<int64_t>(of[static_cast<std::size_t>(cell)]);
+}
+
+Vector2 HistSimWorld::get_cell_uv(int64_t cell) const {
+    if (!sim_ || cell < 0) return Vector2(-1, -1);
+    double u = 0.0, v = 0.0;
+    histsim::view::cell_uv(sim_->world(), static_cast<histsim::CellId>(cell), u, v);
+    return Vector2(static_cast<real_t>(u), static_cast<real_t>(v));
+}
+
 void HistSimWorld::set_highlight(int64_t cell, double radius_km) {
     highlight_on_ = false;
     if (!sim_ || cell < 0 || static_cast<std::size_t>(cell) >= sim_->world().cell_count()) return;
@@ -468,6 +497,9 @@ void HistSimWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_highlight", "cell", "radius_km"), &HistSimWorld::set_highlight);
     ClassDB::bind_method(D_METHOD("set_focus", "mode", "cell"), &HistSimWorld::set_focus);
     ClassDB::bind_method(D_METHOD("get_polity_labels"), &HistSimWorld::get_polity_labels);
+    ClassDB::bind_method(D_METHOD("get_timeline", "kind", "polity", "cell", "max_entries"), &HistSimWorld::get_timeline);
+    ClassDB::bind_method(D_METHOD("get_cell_polity", "cell"), &HistSimWorld::get_cell_polity);
+    ClassDB::bind_method(D_METHOD("get_cell_uv", "cell"), &HistSimWorld::get_cell_uv);
     ClassDB::bind_method(D_METHOD("get_modes"), &HistSimWorld::get_modes);
     ClassDB::bind_method(D_METHOD("get_legend", "mode"), &HistSimWorld::get_legend);
     ClassDB::bind_method(D_METHOD("set_map_size", "width", "height"), &HistSimWorld::set_map_size);

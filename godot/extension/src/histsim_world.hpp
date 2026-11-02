@@ -19,6 +19,7 @@
 #include "histsim/systems/culture.hpp"
 #include "histsim/view/map_modes.hpp"
 #include "histsim/view/raster.hpp"
+#include "histsim/view/timeline.hpp"
 
 class HistSimWorld : public godot::RefCounted {
     GDCLASS(HistSimWorld, godot::RefCounted)
@@ -91,6 +92,13 @@ public:
     bool set_focus(const godot::String& mode, int64_t cell);
     // Names to write over the map: [{name, u, v, area_km2, level}, ...].
     godot::Array get_polity_labels() const;
+    // Timeline entries, newest first: [{year, kind, text, cell}, ...] of a
+    // kind ("" all), about a polity (0 any), at a cell (-1 anywhere).
+    godot::Array get_timeline(const godot::String& kind, int64_t polity, int64_t cell, int64_t max_entries) const;
+    // The polity ruling a cell (0 none).
+    int64_t get_cell_polity(int64_t cell) const;
+    // Where a cell is on the flat map, 0-1 across and down.
+    godot::Vector2 get_cell_uv(int64_t cell) const;
 
 protected:
     static void _bind_methods();

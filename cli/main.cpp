@@ -12,6 +12,7 @@
 //   histsim migrations [--seed N] [--level L] [--years Y]
 //   histsim religions [--seed N] [--level L] [--years Y]
 //   histsim slavery [--seed N] [--level L] [--years Y]
+//   histsim timeline [--seed N] [--level L] [--years Y]
 //
 // With no arguments (for example, double-clicked in Explorer) it runs a short
 // demo and waits for Enter so the window stays open.
@@ -46,6 +47,7 @@
 #include "histsim/systems/technology.hpp"
 #include "histsim/systems/war.hpp"
 #include "histsim/view/map_modes.hpp"
+#include "histsim/view/timeline.hpp"
 #include "histsim/view/png.hpp"
 #include "histsim/view/raster.hpp"
 
@@ -108,6 +110,8 @@ struct Options {
                  "                 colonists and folk migrations every 500 years, the largest\n"
                  "                 movements with the chains they set off, and how the language\n"
                  "                 families' lands changed\n"
+                 "  histsim timeline [--seed N] [--level L] [--years Y]\n"
+                 "                 the last 60 events of the run, in words\n"
                  "  histsim slavery [--seed N] [--level L] [--years Y]\n"
                  "                 captives and the enslaved every 500 years, where they live,\n"
                  "                 who they are, and the busiest slave routes\n"
@@ -967,6 +971,18 @@ int slavery(const Options& o) {
     return 0;
 }
 
+// The latest entries of the timeline.
+int timeline(const Options& o) {
+    Simulation sim = Simulation::create(o.params);
+    apply_due_now(sim, o, true);
+    advance(sim, o.years, o, true);
+    const auto entries = histsim::view::timeline(sim, "", 0, histsim::kInvalidCell, 60);
+    for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
+        std::printf("  year %5lld  %-9s %s\n", static_cast<long long>(it->year), it->kind.c_str(), it->text.c_str());
+    }
+    return 0;
+}
+
 int world_info(const Options& o) {
     const histsim::World w = histsim::generate_test_world(o.params);
     std::size_t land = 0;
@@ -1049,6 +1065,9 @@ int main(int argc, char** argv) {
         }
         if (cmd == "migrations") {
             return migrations(parse(args, 2));
+        }
+        if (cmd == "timeline") {
+            return timeline(parse(args, 2));
         }
         if (cmd == "slavery") {
             return slavery(parse(args, 2));

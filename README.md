@@ -94,6 +94,9 @@ ctest --test-dir build --output-on-failure
 # Religions: when faiths arose, how they spread, the largest after 9,000 years
 ./build/cli/histsim religions --years 9000
 
+# The last 60 events of a 7,000-year run, in words
+./build/cli/histsim timeline --years 7000
+
 # Captives, the enslaved and the busiest slave routes after 9,000 years
 ./build/cli/histsim slavery --years 9000
 

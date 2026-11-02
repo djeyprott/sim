@@ -8,6 +8,7 @@
 #include <stdexcept>
 
 #include "histsim/language.hpp"
+#include "histsim/view/timeline.hpp"
 #include "histsim/systems/bondage.hpp"
 #include "histsim/systems/economy.hpp"
 #include "histsim/systems/people.hpp"
@@ -1037,6 +1038,7 @@ Legend legend(const Simulation& sim, std::string_view mode_id) {
 }
 
 namespace {
+constexpr std::size_t kHistoryRows = 6;  // lines of history in the inspector
 struct Row {
     std::string label, value;
 };
@@ -1379,6 +1381,18 @@ std::vector<Row> describe_cell_rows(const Simulation& sim, CellId c,
         f.push_back({"Origin", content.species[d.species].domesticated + " first domesticated here in year " +
                                    with_commas(static_cast<long long>(d.tick / kTicksPerYear)) + " by the " +
                                    s.cultures[d.culture].name});
+    }
+
+    // Why it is as it is: what happened here, and to its rulers, lately.
+    mark("History here");
+    for (const TimelineEntry& e : timeline(sim, "", 0, c, kHistoryRows)) {
+        f.push_back({"Year " + with_commas(static_cast<long long>(e.year)), e.text});
+    }
+    if (!s.polity_of.empty() && s.polity_of[c] != 0) {
+        mark("Realm's history");
+        for (const TimelineEntry& e : timeline(sim, "", s.polity_of[c], kInvalidCell, kHistoryRows)) {
+            f.push_back({"Year " + with_commas(static_cast<long long>(e.year)), e.text});
+        }
     }
     return f;
 }

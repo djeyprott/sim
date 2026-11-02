@@ -115,6 +115,15 @@ func _check_selection_and_zoom() -> void:
 		failures.append("set_focus does not pick out a language's cells (and only in grouping modes)")
 	if typeof(main.world.get_polity_labels()) != TYPE_ARRAY:
 		failures.append("get_polity_labels did not return an array")
+	# The timeline lists what happened and takes you there.
+	main._set_timeline(true)
+	if main.timeline_panel.list.item_count == 0:
+		failures.append("the timeline is empty")
+	main._go_to_cell(kept)
+	if main.selected_cell != kept:
+		failures.append("choosing a timeline entry does not keep its cell")
+	main._set_timeline(false)
+	main._reset_map_view()
 	if main.selected_cell != kept or main._inspected_cell() != kept:
 		failures.append("a clicked cell is not kept in the inspector")
 	if main.inspector_values.get("Cell", "") != main._commas(kept):
