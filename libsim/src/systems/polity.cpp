@@ -651,6 +651,22 @@ void PolitySystem::step(StepContext& ctx) {
             const std::uint32_t known = s.domesticates.empty() ? 0 : s.domesticates[c];
             return (known & camels) != 0 && (biome == Biome::Desert || biome == Biome::DryShrubland);
         };
+        // The shadow empire (Barfield): steppe confederations arise beside
+        // agrarian states, living off their tribute and trade, and do not
+        // form until there is a state within raiding range.
+        std::vector<char> state_polity(s.polities.size(), 0);
+        for (std::size_t id = 1; id < s.polities.size(); ++id) {
+            state_polity[id] = s.polities[id].ended == kNever && !s.polities[id].nomadic &&
+                               polity_has_writing(w, s, static_cast<std::uint32_t>(id));
+        }
+        std::vector<CellId> near_state;
+        auto beside_a_state = [&](CellId c) {
+            cells_within(w, c, WarSystem::kRaidKm, near_state);
+            for (CellId nb : near_state) {
+                if (state_polity[s.polity_of[nb]] != 0) return true;
+            }
+            return false;
+        };
         auto herders_at = [&](CellId c) {
             return !s.env.pastoral.empty() && s.env.pastoral[c] >= kNomadPastoral && !s.env.farming.empty() &&
                    s.env.farming[c] >= kMinFarming;
@@ -660,7 +676,7 @@ void PolitySystem::step(StepContext& ctx) {
             Polity& pol = s.polities[id];
             if (pol.ended != kNever || pol.nomadic || polity_has_writing(w, s, static_cast<std::uint32_t>(id))) continue;
             if (herders_at(pol.capital) && cell_trait(s, pol.capital, i_warfare) >= kNomadWarfare &&
-                mounted_country(pol.capital)) {
+                mounted_country(pol.capital) && beside_a_state(pol.capital)) {
                 pol.nomadic = true;
             }
         }
@@ -675,7 +691,7 @@ void PolitySystem::step(StepContext& ctx) {
                 // richer their farming neighbours the likelier (the shadow
                 // empire).
                 const double warfare = cell_trait(s, c, i_warfare);
-                if (warfare >= kNomadWarfare && mounted_country(c)) {
+                if (warfare >= kNomadWarfare && mounted_country(c) && beside_a_state(c)) {
                     double wealth = 0.0;
                     cells_within(w, c, WarSystem::kRaidKm, in_reach);
                     for (CellId nb : in_reach) wealth += raid_wealth(s, nb);
@@ -687,7 +703,8 @@ void PolitySystem::step(StepContext& ctx) {
                     }
                     continue;
                 }
-                // Herders without mounts form tribal chiefdoms, from the
+                // Herders without mounts, or with no state to raid and trade
+                // with, form tribal chiefdoms, from the
                 // thinner numbers herds can feed.
                 const double enough = kHerderDensity * kMinDensity;
                 if (hierarchy < kMinHierarchy || density < enough) continue;

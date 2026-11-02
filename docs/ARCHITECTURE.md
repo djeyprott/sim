@@ -249,7 +249,7 @@ years; copper and horse riding come late.
 | --- | --- |
 | Towns | Each cell's share of people in towns moves 1% a year toward 0.08 × (people fed by farmland per km² − 0.4), up to 35%, plus 4 points at a capital. A cell whose towns hold 5,000 people has a city, named in its people's language; below a third of that it is abandoned. Towns raise mortality (× 1 + 0.3 × town share) and disease contact (density × 1 + 20 × town share); crowd diseases (pox, measles) emerge only where towns hold 20,000–40,000 people. |
 | Formation | Every 5 years, a stateless cell with farming ≥ 50%, at least 0.4 people per km² and hierarchy ≥ 0.3 founds a polity with chance 1% × hierarchy × (0.5 + circumscription) × density factor, where circumscription is the share of neighbours that are sea or much poorer land (Carneiro). |
-| Reach | Control of a cell = 1 / (1 + (distance from the capital / reach)²); reach = 100 km × (1 + administration) × (1 + 0.3 contact). Writing (+1), bureaucracy (+0.7), roads (+0.5) and bronze (+0.1) add administration. A chiefdom holds about one cell; a state with writing a ring around its capital. |
+| Reach | Control of a cell = 1 / (1 + (distance from the capital / reach)²); reach = 85 km × (1 + administration) × (1 + 0.3 contact). Writing (+0.5), bureaucracy (+0.8), roads (+0.8), provincial government (+2) and bronze (+0.1) add administration, so realms grow as these come in turn: a chiefdom holds a cell or a few, a state with writing a ring around its capital, an empire with provinces and roads millions of km². |
 | Expansion | Each year a polity tries the stateless neighbouring cell it would control best (at least 30%), with chance 3% × control × (0.5 + warfare) × strength ratio. Land changes hands between polities only in war (below). |
 | Stability | Each polity's stability (0–1) moves toward a target each year (10% of the gap when rising, 30% when falling): 0.45 + 0.25 × hierarchy + 0.15 × ritual (people at the capital) + 0.1 with writing + 0.1 with bureaucracy + 0.1 × the share of people holding the rulers' organized faith (or a sect of it), minus weighted pressures: famine (× 1.0; three times the share of people beyond what the land and food imports feed), war (× 0.8; the toll of land lost, war dead, lost wars and raids, fading 20% a year), overreach (× 0.5; 1 − the people-weighted mean control, each cell's control less by half its people's mobility), epidemic (× 0.6; disease deaths beyond 0.5% a year, × 40), division (× 0.3; share of people of another cultural lineage than the rulers, plus half the share holding another organized faith) and poverty (× 0.15; little trade per person). |
 | Rulers' people | Each year the capital's speakers of the polity's language send 0.1% × control of each province's people (held at least 30%) to it: officials, garrisons and merchants who carry the rulers' language there. A capital moves to a town of the realm (for nomads, any cell) with twice as many townspeople (people) as the old seat. |
@@ -259,15 +259,37 @@ years; copper and horse riding come late.
 | Culture | Being ruled pushes hierarchy, warfare and ritual up. |
 
 Writing needs granaries, a calendar and a town of 20,000 people to be
-invented (not to be kept). At level 5 a polity lasts about 120 years at the
+invented (not to be kept); bureaucracy and roads follow it (roads need no
+wheel: the Inca built them without), and provincial government needs both. At level 5 a polity lasts about 120 years at the
 median (a quarter outlast 350). Of those that end, over half are conquered,
 about one in six collapses in famine, about one in ten in epidemics or from
 overreach, and about one in six breaks up in a succession dispute; break-ups
 cluster in Bond events and epidemics. Chiefdoms appear a few centuries after
 farming, thousands rise and fall, and the first states (with writing) appear
-around 3,500–7,000 years after the first crops; the largest early states hold
-0.2–0.8 million km², the range of archaic states in Seshat. `histsim
-polities` prints the timeline and the largest polities.
+around 3,000–6,500 years after the first crops (in some worlds, without
+large enough towns, never); the largest early states hold 0.3–0.8 million
+km², the range of archaic states in Seshat, and empires reach 2–3 million
+km² some 2,500 years after the first state. `histsim polities` prints the
+timeline and the largest polities; `histsim gate` checks all this against
+history (the M3 gate, below).
+
+**The M3 gate** (`histsim gate --seeds 5`, about half an hour) runs several
+worlds for 11,000 years and checks three things. The first state (a polity
+with writing) arises within 1,000 years of 6,300 years after the first crop
+(farming in the Fertile Crescent about 9500 BCE, Uruk about 3200 BCE), at the
+median. Before 5,000 years of farming no polity exceeds 0.3 million km². And
+the largest polity, era by era counted from each world's first state, is
+within a factor of 3 of the largest empire of the same era counted from 3200
+BCE (Taagepera's figures as listed in Wikipedia's "List of largest empires":
+0.1 million km² in 3000 BCE, 0.65 under Akkad, 1.0 in 1450 BCE, 1.4 under
+Assyria, 5.5 under Persia in 500 BCE), sizes below five cells (0.25 million
+km² at level 5) being compared as five cells, the finest the grid shows.
+Timing the eras from the first state keeps the growth of states apart from
+the date of their rise, which varies far more from world to world. With seeds
+1–5 at level 5 all nine eras pass: the median world has states of 0.4 million
+km² 200 years after the first, 0.8 at Akkad's time, 1.6 by 1450 BCE and 2.1 by
+500 BCE (Persia's 5.5 is at the edge of the factor of 3); of the five worlds
+one never invents writing and one never builds roads.
 
 ### Goods, markets and trade (M3)
 
@@ -304,15 +326,15 @@ resources map modes and the trade-route overlay show them.
 | --- | --- |
 | Armies | A polity's levy is 4% × (0.5 + warfare) of the people in each cell it rules, times its control there; nomads raise four times as many (every herder rides). Strength = levy × (1 + military), where bows (+0.15), horses (+0.6), chariots and carts (+0.2), copper (+0.1) and bronze (+0.4) add military. Vassals add half their strength to their overlord's. |
 | Declaring war | A polity that is no one's subject, not at war, and not under truce may attack a neighbouring polity when its strength is at least 1.2 times the defender's plus half its overlord's and allies': chance 8% × (0.5 + warfare) × min(2, ratio − 1) a year. Nomads attacking farmers fight for tribute; others for conquest. The defender's overlord, allies and vassals join it; the attacker's vassals join the attacker. |
-| Fighting | Each year each side may take the enemy cell along the front it controls best (chance 30% × min(2, ratio − 1), up to three tries for a side three times stronger). A taken cell is sacked (3% of its people killed), 10% flee to their own side, and 3% of the people of the cell it was taken from move in as settlers and garrisons (a conquest dynasty brings 10% of its homeland). Battles kill men of fighting age in the front cells: 10% of 30% of the smaller army, split by the other side's share of strength. |
+| Fighting | Each year each side may take the enemy cell along the front it controls best, if it would control it at least 15% (distance counted less by the cell spacing − 112.5 km, so a capital's neighbours are always in reach): armies do not outrun their rulers' grip (chance 30% × min(2, ratio − 1), up to three tries for a side three times stronger). A taken cell is sacked (3% of its people killed), 10% flee to their own side, and 3% of the people of the cell it was taken from move in as settlers and garrisons (a conquest dynasty brings 10% of its homeland). Battles kill men of fighting age in the front cells: 10% of 30% of the smaller army, split by the other side's share of strength. |
 | Peace | A war ends when a leader's capital falls, when a leader is gone, or by exhaustion (5% × (1 + years at war ÷ 10) a year). The winner keeps what it took; a defender whose capital fell becomes a vassal (or is annexed if one cell is left), and one beaten in a war for tribute a tributary. A 20-year truce follows. |
 | Subjects | Tributaries and vassals send their overlord 10% of their stocks of goods each year; vassals fight for it. A subject at least 0.7 times as strong as its overlord rebels (3% a year), starting a war of independence; a vassal whose capital its overlord controls at least half is absorbed (1% a year). |
 | Alliances | A free polity with a neighbour 1.5 times stronger seeks a defensive ally among its own and the threat's neighbours (strongest first, related cultures counting double): chance 5% a year, doubled for related cultures, up to three allies each. Alliances lapse at 1% a year, or when the allies fight each other. |
-| Nomads | Pastoralists are cells whose farm food comes mostly from herds; they move as freely as foragers. Herders without mounts form ordinary tribal chiefdoms (needing only a quarter of farmers' density). On open pasture (grassland, shrubland, savanna), or in desert and dry scrub where camels are kept, where herders ride (horses or camels) and warfare is at least 0.4, confederations form, and herder chiefdoms that take to riding there become confederations: 1% × warfare × (0.5 + 0.67 × mobility) per five-year check, times 1 + the wealth of the settled farmers within 600 km ÷ 20,000 (up to 5): the "shadow empires" that rose opposite rich agrarian states (Barfield 1989). Their rule reaches three times as far. Each year a confederation may raid (30%) the richest settled farmers within 600 km of its land (wealth = people in towns + a twentieth of the rest), succeeding with chance attack ÷ (attack + defence), its strength weighed by its control at that distance: it carries off 30% of the cell's goods and kills 1% of its people, and the victim's ruler, if the nomads are at least half as strong, may agree to pay tribute (20%); tributaries are not raided. Nomads who take the capital of a state, or of a polity seated in a city, in a war for tribute while 1.5 times as strong found a conquest dynasty: they annex it, rule from its capital, and settle down after 60 years. |
+| Nomads | Pastoralists are cells whose farm food comes mostly from herds; they move as freely as foragers. Herders without mounts form ordinary tribal chiefdoms (needing only a quarter of farmers' density). On open pasture (grassland, shrubland, savanna), or in desert and dry scrub where camels are kept, where herders ride (horses or camels) and warfare is at least 0.4, confederations form, and herder chiefdoms that take to riding there become confederations: 1% × warfare × (0.5 + 0.67 × mobility) per five-year check, times 1 + the wealth of the settled farmers within 600 km ÷ 20,000 (up to 5), but only with a state (a polity with writing) within 600 km: the "shadow empires" that rose opposite rich agrarian states (Barfield 1989). Before then mounted herders form tribal chiefdoms. Their rule reaches twice as far. Each year a confederation may raid (30%) the richest settled farmers within 600 km of its land (wealth = people in towns + a twentieth of the rest), succeeding with chance attack ÷ (attack + defence), its strength weighed by its control at that distance: it carries off 30% of the cell's goods and kills 1% of its people, and the victim's ruler, if the nomads are at least half as strong, may agree to pay tribute (20%); tributaries are not raided. Nomads who take the capital of a state, or of a polity seated in a city, in a war for tribute while 1.5 times as strong found a conquest dynasty: they annex it, rule from its capital, and settle down after 60 years. |
 
 Over 9,000 years at level 5, about 1,200 wars are fought, most between
 neighbouring chiefdoms and lasting a few years. From about year 4,500 five to
-ten nomad confederations hold the dry grasslands at a time, raid one or two
+ten nomad confederations (once there are states to shadow) hold the dry grasslands at a time, raid one or two
 settled cells a year, take tribute from several neighbours (the largest realm
 of a run is often a confederation with its tributaries), and found a dozen or
 so conquest dynasties in 9,000 years. A few alliances and subjects stand at
@@ -460,7 +482,7 @@ routes used in the last 50 years.
 | M0 Foundations (done) | Grid, test-world generator, scheduler, RNG, snapshots, headless runner | Sim API, map viewer | Identical replays on Windows, Linux and macOS |
 | M1 Living planet (done) | Climate and environment systems, cohort demography, migration, foragers | Globe, climate and population map modes, pyramid, charts | Forager populations settle near carrying capacity (`m1_gate_populations_settle_near_capacity`) |
 | M2 Neolithic (done) | Agriculture, herding, disease, culture and language drift, early tech | Culture and language map modes, language tree | Farming arises in several plausible regions |
-| **M3 States and trade** (in progress: towns, cities and early states; goods, markets and trade routes; war, diplomacy and nomads; religion; forced labour and the slave trade; rulers, institutions, timeline and explain view done) | Goods, markets, transport, polities, war, religion, notable agents, forced labor and the slave trade | Trade flows, inspectors, explain view, timeline | Polity sizes track Seshat ranges by era |
+| M3 States and trade (done) | Goods, markets, transport, polities, war, religion, notable agents, forced labor and the slave trade | Trade flows, inspectors, explain view, timeline | Polity sizes track Seshat ranges by era (`histsim gate`) |
 | M4 Modern era | Energy, carbon cycle, demographic transition, Earth importer, procedural generator | God mode, branch comparison, modding tools | Full runs to the near future on Earth and generated worlds |
 
 M0 to M3 run on the generated test world, so the foundation is solid before any

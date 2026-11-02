@@ -34,7 +34,7 @@ TEST(polity_reach_grows_with_administration) {
     }
     s.techniques[c] = writing;
     const double with_writing = polity_reach_km(w, s, c);
-    CHECK_NEAR(with_writing, 2.0 * PolitySystem::kBaseReachKm * 1.03, 1e-6);  // writing: +1 administration, +0.1 contact
+    CHECK_NEAR(with_writing, 1.5 * PolitySystem::kBaseReachKm * 1.03, 1e-6);  // writing: +0.5 administration, +0.1 contact
     s.techniques[c] = writing | bureaucracy;
     CHECK(polity_reach_km(w, s, c) > with_writing);
 }

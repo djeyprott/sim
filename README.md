@@ -17,7 +17,7 @@ simulation core on a geodesic world grid has:
 - endemic diseases and epidemics;
 - early techniques, invented, borrowed and forgotten.
 
-M3 (states and trade) is under way: towns grow into named cities;
+M3 (states and trade) is done: towns grow into named cities;
 chiefdoms and states form, expand, split and collapse; and goods (salt, stone,
 ores, metals, cloth, gold) are made from deposits, herds and crafts, priced by
 scarcity in every market and carried overland, down rivers and by sea along
@@ -30,7 +30,11 @@ Each people has its own folk beliefs; temple cults rise in city-states and
 universal faiths in great literate cities, spreading by trade and by rulers'
 conversion, and splitting into sects far from home. Wars and raids carry off
 captives, who are sold along slave routes to the towns, mines and estates
-that want bound labour.
+that want bound labour. Realms have rulers and dynasties, temples,
+councils, law codes and standing armies, and their sizes era by era track
+the historical record (`histsim gate`): city-states, then Akkad-sized
+kingdoms, then empires of millions of km² as bureaucracy, roads and
+provincial government come in.
 A Godot viewer shows it as a map or globe with
 thirty-one map modes (plus one per culture trait), polity borders, trade routes, world charts, a cell
 inspector and a god mode.
