@@ -10,6 +10,7 @@
 #include "histsim/systems/religion.hpp"
 #include "histsim/systems/technology.hpp"
 #include "histsim/systems/war.hpp"
+#include "vital_rates.inc"
 
 namespace histsim {
 
@@ -398,6 +399,12 @@ void PolitySystem::step(StepContext& ctx) {
                         (writing < 64 && ((known >> writing) & 1u) ? kWritingWeight : 0.0) +
                         (bureaucracy < 64 && ((known >> bureaucracy) & 1u) ? kBureaucracyWeight : 0.0) +
                         (people > 0.0 ? kFaithWeight * faithful / people : 0.0);
+        // An able ruler steadies the realm, a poor one or a regency shakes it.
+        if (pol.ruler != 0 && pol.ruler < s.rulers.size()) {
+            const Ruler& r = s.rulers[pol.ruler];
+            target += RulerSystem::kAbilityWeight * (r.ability - 0.5) * 2.0;
+            if (ruler_age(r, ctx.tick) < RulerSystem::kAdultAge) target -= RulerSystem::kRegencyPenalty;
+        }
         for (std::size_t k = 0; k < kPressureCount; ++k) target -= kPressureWeight[k] * pr[k];
         target = std::clamp(target, 0.0, 1.0);
         pol.stability += (target < pol.stability ? kStabilityFall : kStabilityRise) * (target - pol.stability);
@@ -410,7 +417,9 @@ void PolitySystem::step(StepContext& ctx) {
         const double stability = s.polities[id].stability;
         const double fragile = stability < kFragile ? (kFragile - stability) / kFragile : 0.0;
         const double crisis = kCollapse * fragile * fragile;
-        const double succession = state ? kStateSuccession : kChiefdomSuccession;
+        // A disputed succession (RulerSystem) that tore the realm apart.
+        const double succession = s.polities[id].contested ? 1.0 : 0.0;
+        s.polities[id].contested = false;
         RngStream rng = ctx.rng(Stream::Polity, kCollapseEntity | static_cast<std::uint32_t>(id));
         const double roll = rng.uniform();
         if (roll >= crisis + succession) continue;
@@ -631,6 +640,133 @@ void PolitySystem::step(StepContext& ctx) {
             RngStream rng = ctx.rng(Stream::Polity, kFormationEntity | c);
             if (rng.uniform() < p) s.polity_of[c] = found(c, 0, false);
         }
+    }
+}
+
+// ------------------------------------------------------------------ rulers
+
+std::string ruler_name(const Ruler& r) {
+    static const char* const kNumerals[] = {"", "", " II", " III", " IV", " V", " VI", " VII", " VIII", " IX", " X"};
+    return r.name + (r.number < 11 ? kNumerals[r.number] : " " + std::to_string(r.number));
+}
+
+int ruler_age(const Ruler& r, Tick now) { return static_cast<int>((now - r.born) / kTicksPerYear); }
+
+void RulerSystem::step(StepContext& ctx) {
+    const World& w = ctx.world;
+    const Content& content = *w.content;
+    SimState& s = ctx.state;
+    if (s.polities.size() < 2) return;
+    if (s.rulers.empty()) s.rulers.emplace_back();
+    if (s.dynasties.empty()) s.dynasties.emplace_back();
+    const Tick tick = ctx.tick;
+    const std::size_t i_warfare = trait_index(content, "warfare");
+
+    auto language_of = [&](const Polity& p) -> const Language& {
+        return s.languages[p.language < s.languages.size() ? p.language : 0];
+    };
+    // A new ruler of a house, adult (founders and usurpers) or the given age.
+    auto crown = [&](std::uint32_t polity, std::uint32_t dynasty, int age, RngStream& rng) {
+        const Polity& p = s.polities[polity];
+        Ruler r;
+        r.id = static_cast<std::uint32_t>(s.rulers.size());
+        r.polity = polity;
+        r.dynasty = dynasty;
+        // Heirs often bear the names of their forebears.
+        std::vector<std::uint32_t> house;
+        for (std::size_t i = s.rulers.size(); i-- > 1 && house.size() < 6;) {
+            if (s.rulers[i].dynasty == dynasty) house.push_back(static_cast<std::uint32_t>(i));
+        }
+        if (!house.empty() && rng.uniform() < 0.4) {
+            r.name = s.rulers[house[static_cast<std::size_t>(rng.uniform() * static_cast<double>(house.size())) % house.size()]].name;
+        } else {
+            r.name = coin_name(content, language_of(p), rng, [](const std::string&) { return false; });
+        }
+        for (std::uint32_t h : house) {
+            if (s.rulers[h].name == r.name) r.number = std::max(r.number, s.rulers[h].number + 1);
+        }
+        if (r.number == 1) {
+            for (std::uint32_t h : house) {
+                if (s.rulers[h].name == r.name) r.number = 2;
+            }
+        }
+        r.born = tick - static_cast<Tick>(age) * kTicksPerYear;
+        r.reign_start = tick;
+        r.ability = rng.uniform();
+        // Warlike peoples breed warlike rulers, mostly.
+        const double warfare = cell_trait(s, p.capital, i_warfare);
+        r.martial = std::clamp(0.5 * warfare + 0.5 * rng.uniform(), 0.0, 1.0);
+        s.rulers.push_back(std::move(r));
+        return s.rulers.back().id;
+    };
+    auto found_house = [&](std::uint32_t polity, std::uint32_t founder) {
+        Dynasty d;
+        d.id = static_cast<std::uint32_t>(s.dynasties.size());
+        d.name = "House of " + s.rulers[founder].name;
+        d.polity = polity;
+        d.founder = founder;
+        d.founded = tick;
+        s.rulers[founder].dynasty = d.id;
+        s.dynasties.push_back(std::move(d));
+    };
+    auto end_house_if_gone = [&](std::uint32_t dynasty) {
+        if (dynasty == 0 || dynasty >= s.dynasties.size() || s.dynasties[dynasty].ended != kNever) return;
+        for (const Polity& q : s.polities) {
+            if (q.ended == kNever && q.ruler != 0 && q.ruler < s.rulers.size() && s.rulers[q.ruler].dynasty == dynasty) return;
+        }
+        s.dynasties[dynasty].ended = tick;
+    };
+
+    for (std::uint32_t id = 1; id < s.polities.size(); ++id) {
+        Polity& pol = s.polities[id];
+        RngStream rng = ctx.rng(Stream::Rulers, id);
+        if (pol.ended != kNever) {
+            // The realm has fallen: so has its ruler.
+            if (pol.ruler != 0 && pol.ruler < s.rulers.size() && s.rulers[pol.ruler].end == ReignEnd::Reigning) {
+                Ruler& r = s.rulers[pol.ruler];
+                r.end = ReignEnd::RealmFell;
+                r.reign_end = tick;
+                end_house_if_gone(r.dynasty);
+            }
+            continue;
+        }
+        if (pol.ruler == 0) {
+            // A new realm: its first ruler founds a house.
+            const std::uint32_t r = crown(id, 0, 25 + static_cast<int>(rng.uniform() * 20.0), rng);
+            found_house(id, r);
+            pol.ruler = r;
+            continue;
+        }
+        Ruler& old = s.rulers[pol.ruler];
+        const int age = ruler_age(old, tick);
+        const int bin = std::clamp(age / 5, 0, 20);
+        if (rng.uniform() >= vital::kForagerDeathProb[bin] * kRulerMortality) continue;
+        // The ruler dies; an heir of the house succeeds, a child if the
+        // ruler died young.
+        old.end = ReignEnd::Died;
+        old.reign_end = tick;
+        const int heir_age = std::max(0, age - 20 - static_cast<int>(rng.uniform() * 15.0));
+        const bool child = heir_age < kAdultAge;
+        const double disputed = std::min(1.0, kDispute * (1.5 - pol.stability) * (child ? 2.0 : 1.0));
+        if (rng.uniform() < disputed) {
+            // Disputed: the realm may break apart; else another house wins.
+            const double breakup = polity_has_writing(w, s, id) ? kBreakupState : kBreakupChiefdom;
+            if (rng.uniform() < breakup) {
+                pol.contested = true;
+                const std::uint32_t heir = crown(id, old.dynasty, heir_age, rng);
+                pol.ruler = heir;
+                continue;
+            }
+            const std::uint32_t usurper = crown(id, 0, 25 + static_cast<int>(rng.uniform() * 25.0), rng);
+            found_house(id, usurper);
+            pol.ruler = usurper;
+            end_house_if_gone(old.dynasty);
+            s.events.push_back({tick, EventType::Usurpation, pol.capital, static_cast<std::int64_t>(usurper)});
+            continue;
+        }
+        const std::uint32_t heir = crown(id, old.dynasty, heir_age, rng);
+        pol.ruler = heir;
+        s.events.push_back({tick, EventType::Succession, pol.capital, static_cast<std::int64_t>(heir)});
     }
 }
 

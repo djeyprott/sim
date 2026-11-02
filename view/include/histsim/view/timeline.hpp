@@ -32,9 +32,10 @@ struct TimelineEntry {
 };
 
 // Up to `max_entries` entries, newest first: of the given kind ("" for all
-// but the most frequent kinds: raids and newly settled land), about the
-// given polity (0 for any), at the given cell (kInvalidCell for anywhere;
-// at a cell, raids and settling are included).
+// but the most frequent: raids, newly settled land and ordinary
+// successions), about the given polity (0 for any; then successions are
+// included), at the given cell (kInvalidCell for anywhere; at a cell, raids
+// and settling are included).
 std::vector<TimelineEntry> timeline(const Simulation& sim, std::string_view kind, std::uint32_t polity, CellId cell,
                                     std::size_t max_entries);
 

@@ -47,6 +47,7 @@ void Simulation::install_systems() {
     scheduler_.add(std::make_unique<CultureSystem>());
     scheduler_.add(std::make_unique<TechnologySystem>());
     scheduler_.add(std::make_unique<ReligionSystem>());
+    scheduler_.add(std::make_unique<RulerSystem>());
     scheduler_.add(std::make_unique<PolitySystem>());
     scheduler_.add(std::make_unique<WarSystem>());
     scheduler_.add(std::make_unique<BondageSystem>());

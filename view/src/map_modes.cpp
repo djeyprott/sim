@@ -1215,6 +1215,28 @@ std::vector<Row> describe_cell_rows(const Simulation& sim, CellId c,
                                           (pol.stability < PolitySystem::kFragile ? " (fragile)" : "") +
                                           (why.empty() ? "" : "; strained by " + why)});
         }
+        if (pol.ruler != 0 && pol.ruler < s.rulers.size()) {
+            const Ruler& r = s.rulers[pol.ruler];
+            const int age = ruler_age(r, s.tick);
+            std::string ways;
+            auto add = [&](const char* word) { ways += (ways.empty() ? "" : ", ") + std::string(word); };
+            if (r.ability > 0.7) add("able");
+            if (r.ability < 0.3) add("feeble");
+            if (r.martial > 0.7) add("warlike");
+            if (r.martial < 0.3) add("peaceable");
+            std::string house = r.dynasty < s.dynasties.size() ? s.dynasties[r.dynasty].name : "";
+            f.push_back({"Ruler", ruler_name(r) + (house.empty() ? "" : " of the " + house) + ", aged " + std::to_string(age) +
+                                      (ways.empty() ? "" : " (" + ways + ")") + ", since year " +
+                                      with_commas(static_cast<long long>(r.reign_start / kTicksPerYear)) +
+                                      (age < RulerSystem::kAdultAge ? "; a regent rules" : "")});
+            if (r.dynasty < s.dynasties.size()) {
+                std::size_t reigns = 0;
+                for (const Ruler& o : s.rulers) reigns += o.dynasty == r.dynasty ? 1 : 0;
+                const Dynasty& d = s.dynasties[r.dynasty];
+                f.push_back({"House", d.name + ": " + std::to_string(reigns) + (reigns == 1 ? " ruler" : " rulers") +
+                                          " since year " + with_commas(static_cast<long long>(d.founded / kTicksPerYear))});
+            }
+        }
         if (pol.religion != 0 && pol.religion < s.religions.size()) {
             f.push_back({"Rulers' faith", s.religions[pol.religion].name});
         }

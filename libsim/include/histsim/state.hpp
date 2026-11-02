@@ -226,8 +226,39 @@ struct Polity {
     Tick settling_since = kNever;
     std::uint32_t religion = 0;  // the rulers' faith (that of the capital)
     Tick wandered = kNever;      // when it last set out for new land as a whole people
+    std::uint32_t ruler = 0;        // current ruler (0 = none yet)
+    bool contested = false;         // a disputed succession this year threatens to break it up
     CellId trek_to = kInvalidCell;  // where it is going, while on the move
     std::uint32_t trek_record = 0;  // its movement in SimState::migrations (index + 1)
+};
+
+// A ruler of a polity, and the house he or she belongs to.
+enum class ReignEnd : std::uint8_t {
+    Reigning = 0,
+    Died = 1,       // died on the throne
+    Usurped = 2,    // the throne was seized by another house
+    RealmFell = 3,  // the realm ended
+};
+struct Ruler {
+    std::uint32_t id = 0;
+    std::uint32_t polity = 0;
+    std::uint32_t dynasty = 0;
+    std::string name;
+    std::uint32_t number = 1;  // regnal number among same-named rulers of the house (II, III...)
+    Tick born = 0;
+    Tick reign_start = 0;
+    Tick reign_end = kNever;
+    ReignEnd end = ReignEnd::Reigning;
+    double ability = 0.5;  // 0-1: how well the realm is governed
+    double martial = 0.5;  // 0-1: how readily it goes to war
+};
+struct Dynasty {
+    std::uint32_t id = 0;
+    std::string name;
+    std::uint32_t polity = 0;   // where it first ruled
+    std::uint32_t founder = 0;  // ruler id
+    Tick founded = 0;
+    Tick ended = kNever;
 };
 
 // A defensive alliance: each joins a war against the other.
@@ -345,6 +376,8 @@ enum class EventType : std::uint32_t {
     Schism = 25,          // a sect split from its parent; value = the new religion's id
     StateConversion = 26, // a polity's rulers took up another faith; cell = capital; value = polity id
     PolityWandered = 27,  // a tribe or confederation moved to new land; cell = its new capital; value = polity id
+    Succession = 28,      // a ruler came to the throne by inheritance; cell = capital; value = ruler id
+    Usurpation = 29,      // another house seized the throne; cell = capital; value = ruler id (the usurper)
 };
 
 struct Event {
@@ -518,6 +551,10 @@ struct SimState {
     std::int64_t war_deaths_total = 0;
     std::uint32_t raids = 0;  // this year
     std::vector<Tick> last_raid;  // per cell: when nomads last raided it (kNever = never)
+
+    // Rulers and their houses (entry 0 of each a placeholder).
+    std::vector<Ruler> rulers;
+    std::vector<Dynasty> dynasties;
 
     // Religions (entry 0 a placeholder) and each cell's faith (0 = none yet).
     std::vector<Religion> religions;

@@ -649,7 +649,10 @@ void WarSystem::step(StepContext& ctx) {
             }
             const double ratio = defence > 0.0 ? power[id] / defence : 0.0;
             if (ratio < kDeclareRatio) continue;
-            if (rng.uniform() < kDeclare * (0.5 + warfare) * std::min(2.0, ratio - 1.0)) {
+            // A martial ruler is readier for war, a peaceable one less so.
+            const std::uint32_t king = s.polities[id].ruler;
+            const double martial = king != 0 && king < s.rulers.size() ? s.rulers[king].martial : 0.5;
+            if (rng.uniform() < kDeclare * (0.5 + warfare) * (0.5 + martial) * std::min(2.0, ratio - 1.0)) {
                 start_war(w, s, tick, id, b, p.nomadic && !q.nomadic ? WarGoal::Tribute : WarGoal::Conquest);
                 busy[id] = busy[b] = 1;
                 break;

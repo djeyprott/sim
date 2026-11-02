@@ -60,7 +60,9 @@ const char* event_kind(EventType type) {
         case EventType::Absorbed:
         case EventType::ConquestDynasty:
         case EventType::CityFounded:
-        case EventType::PolityWandered: return "realms";
+        case EventType::PolityWandered:
+        case EventType::Succession:
+        case EventType::Usurpation: return "realms";
         case EventType::WarBegan:
         case EventType::WarEnded:
         case EventType::AllianceFormed:
@@ -205,6 +207,20 @@ std::string describe_event(const Simulation& sim, const Event& e) {
             }
             return "";
         case EventType::PolityWandered: return "The " + polity_name(s, v) + " settle in new land" + place(sim, e.cell);
+        case EventType::Succession:
+        case EventType::Usurpation:
+            if (index < s.rulers.size()) {
+                const Ruler& r = s.rulers[index];
+                const int age = static_cast<int>((r.reign_start - r.born) / kTicksPerYear);
+                const std::string realm = polity_name(s, r.polity);
+                if (e.type == EventType::Usurpation) {
+                    return ruler_name(r) + " seizes the throne of " + realm + ", founding the " +
+                           (r.dynasty < s.dynasties.size() ? s.dynasties[r.dynasty].name : std::string("new house"));
+                }
+                return ruler_name(r) + " succeeds to the throne of " + realm + " at " + std::to_string(age) +
+                       (age < RulerSystem::kAdultAge ? ", ruled for by a regent" : "");
+            }
+            return "";
     }
     return "";
 }
@@ -234,6 +250,8 @@ bool event_involves(const SimState& s, const Event& e, std::uint32_t p) {
             return index < s.alliances.size() && (s.alliances[index].a == p || s.alliances[index].b == p);
         case EventType::FolkMigration: return index < s.migrations.size() && s.migrations[index].polity == p;
         case EventType::ReligionFounded: return index < s.religions.size() && s.religions[index].polity == p;
+        case EventType::Succession:
+        case EventType::Usurpation: return index < s.rulers.size() && s.rulers[index].polity == p;
         default: return false;
     }
 }
@@ -246,8 +264,8 @@ std::vector<TimelineEntry> timeline(const Simulation& sim, std::string_view kind
         const Event& e = *it;
         const char* k = event_kind(e.type);
         if (!kind.empty() && kind != k) continue;
-        const bool frequent = e.type == EventType::Raid || e.type == EventType::CellSettled;
-        if (kind.empty() && cell == kInvalidCell && frequent) continue;
+        const bool frequent = e.type == EventType::Raid || e.type == EventType::CellSettled || e.type == EventType::Succession;
+        if (kind.empty() && cell == kInvalidCell && polity == 0 && frequent) continue;
         if (cell != kInvalidCell && e.cell != cell) continue;
         if (polity != 0 && !event_involves(s, e, polity)) continue;
         std::string text = describe_event(sim, e);

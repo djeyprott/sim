@@ -566,11 +566,37 @@ int polities(const Options& o) {
     for (std::size_t i = 0; i < living.size() && i < 15; ++i) {
         const histsim::Polity& p = s.polities[living[i]];
         const std::uint32_t city = s.city_of[p.capital];
-        std::printf("  %-14s %-8s stability %3.0f%% %3zu cells %9.0f km^2 %9lld people  capital %s  since year %lld  (%s)\n",
+        std::string ruler = "no ruler yet";
+        if (p.ruler != 0 && p.ruler < s.rulers.size()) {
+            const histsim::Ruler& r = s.rulers[p.ruler];
+            ruler = histsim::ruler_name(r) + " of the " + s.dynasties[r.dynasty].name;
+        }
+        std::printf("  %-14s %-8s stability %3.0f%% %3zu cells %9.0f km^2 %9lld people  capital %s  since year %lld  (%s)  %s\n",
                     p.name.c_str(), histsim::polity_level(w, s, living[i]), 100.0 * p.stability, size[living[i]].cells,
                     size[living[i]].area_km2, static_cast<long long>(size[living[i]].people),
                     city != 0 ? s.cities[city].name.c_str() : "(no city)",
-                    static_cast<long long>(p.founded / histsim::kTicksPerYear), s.cultures[p.culture].name.c_str());
+                    static_cast<long long>(p.founded / histsim::kTicksPerYear), s.cultures[p.culture].name.c_str(),
+                    ruler.c_str());
+    }
+    // The longest-ruling houses.
+    std::vector<std::pair<std::int64_t, std::uint32_t>> houses;
+    std::vector<std::size_t> reigns(s.dynasties.size(), 0);
+    for (const histsim::Ruler& r : s.rulers) {
+        if (r.dynasty < reigns.size()) ++reigns[r.dynasty];
+    }
+    for (std::uint32_t d = 1; d < s.dynasties.size(); ++d) {
+        const histsim::Dynasty& h = s.dynasties[d];
+        const histsim::Tick end = h.ended == histsim::kNever ? s.tick : h.ended;
+        houses.emplace_back((end - h.founded) / histsim::kTicksPerYear, d);
+    }
+    std::stable_sort(houses.begin(), houses.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+    std::size_t usurped = 0;
+    for (const histsim::Event& e : s.events) usurped += e.type == histsim::EventType::Usurpation ? 1 : 0;
+    std::printf("\nLongest-ruling houses (%zu houses, %zu thrones seized):\n", s.dynasties.size() - 1, usurped);
+    for (std::size_t k = 0; k < houses.size() && k < 8; ++k) {
+        const histsim::Dynasty& h = s.dynasties[houses[k].second];
+        std::printf("  %-26s %5lld years  %3zu rulers  in %-14s %s\n", h.name.c_str(), static_cast<long long>(houses[k].first),
+                    reigns[h.id], s.polities[h.polity].name.c_str(), h.ended == histsim::kNever ? "(reigning)" : "");
     }
     return 0;
 }

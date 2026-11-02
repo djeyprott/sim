@@ -53,6 +53,40 @@ public:
     static constexpr double kCityPeople = 5000.0;
 };
 
+// Rulers and dynasties. Each polity has a ruler, of a house (dynasty). A
+// new polity's first ruler founds a house; each year a ruler may die (the
+// forager life table x kRulerMortality, by age), and an heir of the house
+// succeeds: a child (under kAdultAge, ruled for by a regent) if the ruler
+// died young. A succession is disputed with chance kDispute x (1.5 -
+// stability) x 2 for a child heir: then the realm may break up
+// (kBreakupChiefdom, or kBreakupState with writing, out of the disputed),
+// or another house seizes the throne (a usurpation). Rulers are more or
+// less able (stability target + kAbilityWeight x (ability - 0.5) x 2;
+// kRegencyPenalty under a regent) and martial (war declared x (0.5 +
+// martial)).
+class RulerSystem final : public System {
+public:
+    [[nodiscard]] std::string_view name() const noexcept override { return "rulers"; }
+    [[nodiscard]] Phase phase() const noexcept override { return Phase::Polities; }
+    [[nodiscard]] Tick period() const noexcept override { return kTicksPerYear; }
+    void step(StepContext& ctx) override;
+
+    static constexpr double kRulerMortality = 0.8;
+    static constexpr int kAdultAge = 16;
+    static constexpr double kDispute = 0.15;
+    // Tuned so that, with reigns of about 20-25 years, break-ups come about
+    // as often as the old yearly succession-crisis chances (0.05% a year for
+    // chiefdoms, 0.02% for states).
+    static constexpr double kBreakupChiefdom = 0.065;
+    static constexpr double kBreakupState = 0.026;
+    static constexpr double kAbilityWeight = 0.1;
+    static constexpr double kRegencyPenalty = 0.1;
+};
+
+// A ruler's name with regnal number ("Kimo II"), and his or her age now.
+std::string ruler_name(const Ruler& ruler);
+int ruler_age(const Ruler& ruler, Tick now);
+
 class PolitySystem final : public System {
 public:
     [[nodiscard]] std::string_view name() const noexcept override { return "polities"; }

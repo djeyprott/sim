@@ -39,6 +39,7 @@ enum class Stream : std::uint32_t {
     War = 13,
     Religion = 14,
     Bondage = 15,
+    Rulers = 16,
 };
 
 // A sequence of draws for one (seed, tick, stream, entity) tuple.

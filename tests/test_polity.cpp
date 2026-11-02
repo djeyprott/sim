@@ -227,3 +227,42 @@ TEST(polity_a_broken_state_leaves_a_core_under_its_capital) {
     CHECK_EQ(s.polities[heir].capital, x.capital);
     CHECK_EQ(s.polities[heir].ended, kNever);
 }
+
+TEST(polity_rulers_reign_die_and_are_succeeded) {
+    WorldParams p;
+    p.grid_level = 4;
+    Simulation sim = Simulation::create(p);
+    sim.step_years(3000);
+    const SimState& s = sim.state();
+    // Every living polity (founded before this year) has a reigning ruler of
+    // its own, of a house.
+    std::size_t ruled = 0;
+    for (std::uint32_t id = 1; id < s.polities.size(); ++id) {
+        const Polity& pol = s.polities[id];
+        if (pol.ended != kNever || pol.founded + kTicksPerYear >= s.tick) continue;
+        CHECK(pol.ruler != 0 && pol.ruler < s.rulers.size());
+        const Ruler& r = s.rulers[pol.ruler];
+        CHECK_EQ(r.polity, id);
+        CHECK(r.end == ReignEnd::Reigning);
+        CHECK(r.dynasty != 0 && r.dynasty < s.dynasties.size());
+        CHECK(r.born <= r.reign_start);
+        ++ruled;
+    }
+    CHECK(ruled > 3);
+    // Rulers die and heirs succeed: some reigns are over, with heirs of the
+    // same house and, now and then, usurpers founding new ones.
+    std::size_t over = 0, successions = 0, usurpations = 0;
+    for (std::size_t i = 1; i < s.rulers.size(); ++i) {
+        if (s.rulers[i].end != ReignEnd::Reigning) {
+            ++over;
+            CHECK(s.rulers[i].reign_end >= s.rulers[i].reign_start);
+        }
+    }
+    for (const Event& e : s.events) {
+        successions += e.type == EventType::Succession ? 1 : 0;
+        usurpations += e.type == EventType::Usurpation ? 1 : 0;
+    }
+    CHECK(over > 10);
+    CHECK(successions > usurpations);
+    CHECK(usurpations > 0);
+}

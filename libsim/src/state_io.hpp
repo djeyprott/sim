@@ -309,6 +309,8 @@ void serialize(Ar& ar, SimState& s) {
         ar.i64(p.settling_since);
         ar.u32(p.religion);
         ar.i64(p.wandered);
+        ar.u32(p.ruler);
+        flag(ar, p.contested);
         ar.u32(p.trek_to);
         ar.u32(p.trek_record);
     });
@@ -359,6 +361,27 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(r.polity);
     });
     vec(ar, s.faith_of, [&](std::uint32_t& v) { ar.u32(v); });
+    vec(ar, s.rulers, [&](Ruler& r) {
+        ar.u32(r.id);
+        ar.u32(r.polity);
+        ar.u32(r.dynasty);
+        str(ar, r.name);
+        ar.u32(r.number);
+        ar.i64(r.born);
+        ar.i64(r.reign_start);
+        ar.i64(r.reign_end);
+        u8(ar, r.end);
+        ar.f64(r.ability);
+        ar.f64(r.martial);
+    });
+    vec(ar, s.dynasties, [&](Dynasty& d) {
+        ar.u32(d.id);
+        str(ar, d.name);
+        ar.u32(d.polity);
+        ar.u32(d.founder);
+        ar.i64(d.founded);
+        ar.i64(d.ended);
+    });
     vec(ar, s.migrations, [&](FolkMovement& m) {
         ar.i64(m.tick);
         ar.u32(m.from);
