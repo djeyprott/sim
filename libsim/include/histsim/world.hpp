@@ -54,10 +54,18 @@ enum class Biome : std::uint8_t {
 };
 const char* biome_name(Biome b);
 
-// Forager carrying capacity per km^2 for a given climate. Warm, wet land
-// supports up to ~0.2 people/km^2; ice and desert support none. Used for the
-// baseline at world generation and every year by the environment system.
-double forager_density(double temperature_c, double precipitation_mm);
+// Forager carrying capacity per km^2 of land foods (plants and game) for a
+// given climate and biome: 0.2 x warmth x wetness x forage_quality(biome).
+// Warm, wet land supports up to ~0.2 people/km^2 before the biome; ice and
+// desert support none. Used for the baseline at world generation and every
+// year by the environment system.
+double forager_density(double temperature_c, double precipitation_mm, Biome biome);
+
+// How rich a biome's land foods are for foragers, relative to its climate:
+// the big-game grasslands and savannas and the nut- and acorn-rich
+// temperate woods above 1, the rainforest (food scattered high in the
+// canopy, little game, few starchy plants: Bailey et al. 1989) well below.
+double forage_quality(Biome biome);
 
 struct World {
     WorldParams params;
@@ -278,6 +286,13 @@ inline constexpr int kClimateGridLevel = 2;  // 162 coarse cells, ~3.1 million k
 // wet a single cell is, so the river network looks alike at every grid level.
 inline constexpr double kRiverMinBasinKm2 = 150000.0;
 inline constexpr double kRiverMinDischarge = 300.0;  // m^3/s
+// Fish and shellfish for foragers on a coast: kCoastFood, plus kColdCoastFood
+// on cool, nutrient-rich mid- and high-latitude seas (salmon, seals: the
+// densest foragers known, on the Pacific Northwest coast), times the cell's
+// coastal share; with rivers' fish, at most kMaxAquatic.
+inline constexpr double kCoastFood = 0.3;
+inline constexpr double kColdCoastFood = 0.5;
+inline constexpr double kMaxAquatic = 1.2;
 // Floodplain width per square root of flow (m^3/s), km, and its bounds.
 inline constexpr double kFloodplainKmPerRootFlow = 0.5;
 inline constexpr double kFloodplainMinKm = 2.0;
