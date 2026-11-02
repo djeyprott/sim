@@ -111,3 +111,23 @@ TEST(technology_follows_farming_and_its_prerequisites) {
     CHECK(with_sickles > 10);
     CHECK(s.history.back().techniques >= 8);
 }
+
+TEST(technology_riding_needs_horses_or_camels) {
+    WorldParams p;
+    p.grid_level = 4;
+    const World w = generate_test_world(p);
+    const Content& c = *w.content;
+    const TechniqueDef& riding = c.techniques[tech(c, "horse_riding")];
+    auto species = [&](const char* id) {
+        for (std::size_t s = 0; s < c.species.size(); ++s) {
+            if (c.species[s].id == id) return std::uint32_t{1} << s;
+        }
+        return std::uint32_t{0};
+    };
+    CellId land = 0;
+    while (!w.is_land[land]) ++land;
+    CHECK(!technique_usable(w, riding, land, 0, 0));
+    CHECK(technique_usable(w, riding, land, 0, species("wild_horses")));
+    CHECK(technique_usable(w, riding, land, 0, species("wild_camels")));
+    CHECK(!technique_usable(w, riding, land, 0, species("aurochs")));
+}

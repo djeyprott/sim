@@ -554,9 +554,35 @@ void PolitySystem::step(StepContext& ctx) {
     // circumscription come together.
     const std::int64_t year = ctx.tick / kTicksPerYear;
     if (year % kFormationYears == 0) {
-        std::size_t horse_riding = content.techniques.size();
+        std::size_t riding = content.techniques.size();
         for (std::size_t k = 0; k < content.techniques.size(); ++k) {
-            if (content.techniques[k].id == "horse_riding") horse_riding = k;
+            if (content.techniques[k].id == "horse_riding") riding = k;
+        }
+        std::uint32_t camels = 0;
+        for (std::size_t sp = 0; sp < content.species.size(); ++sp) {
+            if (content.species[sp].id == "wild_camels") camels = 1u << sp;
+        }
+        // Country for mounted nomads: open pasture where people ride, or
+        // desert and dry scrub where they keep and ride camels.
+        auto mounted_country = [&](CellId c) {
+            if (riding >= content.techniques.size() || !((techniques_in(s, c) >> riding) & 1u)) return false;
+            const auto biome = static_cast<Biome>(w.biome[c]);
+            if (pasture_quality(biome) >= kNomadPasture) return true;
+            const std::uint32_t known = s.domesticates.empty() ? 0 : s.domesticates[c];
+            return (known & camels) != 0 && (biome == Biome::Desert || biome == Biome::DryShrubland);
+        };
+        auto herders_at = [&](CellId c) {
+            return !s.env.pastoral.empty() && s.env.pastoral[c] >= kNomadPastoral && !s.env.farming.empty() &&
+                   s.env.farming[c] >= kMinFarming;
+        };
+        // Herder chiefdoms that have taken to riding become confederations.
+        for (std::size_t id = 1; id < s.polities.size(); ++id) {
+            Polity& pol = s.polities[id];
+            if (pol.ended != kNever || pol.nomadic || polity_has_writing(w, s, static_cast<std::uint32_t>(id))) continue;
+            if (herders_at(pol.capital) && cell_trait(s, pol.capital, i_warfare) >= kNomadWarfare &&
+                mounted_country(pol.capital)) {
+                pol.nomadic = true;
+            }
         }
         std::vector<CellId> in_reach;
         for (CellId c = 0; c < n; ++c) {
@@ -564,14 +590,12 @@ void PolitySystem::step(StepContext& ctx) {
             const double farming = s.env.farming.empty() ? 0.0 : s.env.farming[c];
             const double density = static_cast<double>(s.cell_population[c]) / w.grid.area_km2(c);
             const double hierarchy = cell_trait(s, c, i_hierarchy);
-            // Mounted herders band together in confederations.
-            const double pastoral = s.env.pastoral.empty() ? 0.0 : s.env.pastoral[c];
-            if (pastoral >= kNomadPastoral && farming >= kMinFarming) {
-                // Mounted herders on open pasture, the richer their farming
-                // neighbours the likelier (the shadow empire).
+            if (herders_at(c)) {
+                // Mounted herders band together in confederations, the
+                // richer their farming neighbours the likelier (the shadow
+                // empire).
                 const double warfare = cell_trait(s, c, i_warfare);
-                if (pasture_quality(static_cast<Biome>(w.biome[c])) >= kNomadPasture && warfare >= kNomadWarfare &&
-                    horse_riding < content.techniques.size() && ((techniques_in(s, c) >> horse_riding) & 1u)) {
+                if (warfare >= kNomadWarfare && mounted_country(c)) {
                     double wealth = 0.0;
                     cells_within(w, c, WarSystem::kRaidKm, in_reach);
                     for (CellId nb : in_reach) wealth += raid_wealth(s, nb);
@@ -581,6 +605,15 @@ void PolitySystem::step(StepContext& ctx) {
                     if (rng.uniform() < w.per_area(kNomadFormation * warfare * lure * roaming)) {
                         s.polity_of[c] = found(c, 0, true);
                     }
+                    continue;
+                }
+                // Herders without mounts form tribal chiefdoms, from the
+                // thinner numbers herds can feed.
+                const double enough = kHerderDensity * kMinDensity;
+                if (hierarchy < kMinHierarchy || density < enough) continue;
+                RngStream rng = ctx.rng(Stream::Polity, kFormationEntity | c);
+                if (rng.uniform() < w.per_area(kFormation * hierarchy * 0.5 * std::min(2.0, density / enough))) {
+                    s.polity_of[c] = found(c, 0, false);
                 }
                 continue;
             }
