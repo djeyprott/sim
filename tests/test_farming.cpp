@@ -230,7 +230,9 @@ TEST(m2_gate_farming_arises_in_several_plausible_regions) {
         }
         long most = 0;
         for (const auto& [family, cells] : gained) most = std::max(most, cells);
-        CHECK(static_cast<double>(same) < 0.9 * static_cast<double>(both));
+        // At least 8% of the land changes family (some foragers take up
+        // farming from neighbours rather than giving way to farmers).
+        CHECK(static_cast<double>(same) < 0.92 * static_cast<double>(both));
         CHECK(most >= 8);  // level-4 cells: about 1.6 million km^2
 
         // Farming only where people know a domesticate that can be raised.

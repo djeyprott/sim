@@ -72,6 +72,13 @@ void SimState::refresh(std::size_t cell_count) {
     for (std::size_t i = 0; i < cell_count; ++i) {
         cohort_begin[i + 1] += cohort_begin[i];
     }
+    // A market dies with its people: a cell emptied since the markets ran
+    // has no goods on offer.
+    if (goods_available.size() == cell_count) {
+        for (std::size_t i = 0; i < cell_count; ++i) {
+            if (cell_population[i] == 0) goods_available[i] = 0;
+        }
+    }
 }
 
 std::int64_t SimState::total_population() const noexcept {

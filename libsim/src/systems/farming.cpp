@@ -54,8 +54,15 @@ FarmParts farm_parts(const World& w, CellId c, std::uint32_t known, std::uint64_
     const double rain = along * 1.0 + (1.0 - along) * std::clamp((w.precipitation_mm[c] - FarmingSystem::kDryFarmingMm) /
                                                                      FarmingSystem::kDryFarmingSpanMm,
                                                                  FarmingSystem::kDryFloor, 1.0);
+    const auto biome = static_cast<Biome>(w.biome[c]);
+    const double fallow_rate = biome == Biome::TropicalRainforest ? FarmingSystem::kRainforestFallow
+                               : biome == Biome::TropicalSavanna  ? FarmingSystem::kSavannaFallow
+                                                                  : 1.0;
+    const double floodplain = along * std::min(1.0, flow / 5000.0);  // big rivers' floodplains only
+    const double fallow = floodplain + (1.0 - floodplain) * fallow_rate;
     const TechEffects tech = technique_effects(w, c, techniques);
-    const double crops = FarmingSystem::kCropDensity * crop * soil * flood * season * rain * (1.0 + tech.crop_yield);
+    const double crops =
+        FarmingSystem::kCropDensity * crop * soil * flood * season * rain * fallow * (1.0 + tech.crop_yield);
     const double herds = FarmingSystem::kHerdDensity * herd * pasture_quality(static_cast<Biome>(w.biome[c])) *
                          (1.0 + tech.herd_yield);
     return {crops, herds};
