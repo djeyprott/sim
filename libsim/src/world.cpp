@@ -104,6 +104,8 @@ double bump(double x, double center, double half_width) {
 
 // ------------------------------------------------------------------ climate
 
+constexpr double kOceanWarmthC = 6.0;
+
 // Mean annual temperature at sea level by sine of latitude: 27 °C at the
 // equator, about 12 °C at 40°, 3 °C at 50°, -20 °C at the poles.
 double sea_level_temperature(double z) {
@@ -129,12 +131,15 @@ struct Upwind {
 enum class Toward { East, West, Equator };
 
 // March from a cell toward where its air comes from (east, west, or the
-// equator) until the open sea (or 4,000 km of land). Narrow and inland
-// water (under kOpenSeaKm across: the Red Sea, the Caspian, the Black Sea,
-// the Baltic)
-// lends little moisture: it counts as half its width of land.
+// equator) until the open sea (or 4,000 km of land). Water narrower than
+// `open_sea_km` lends little moisture: it counts as half its width of land.
+// The prevailing winds need kOpenSeaKm (so the Red Sea, the Caspian, the
+// Black Sea and the Baltic do not water the lands beyond); the summer
+// monsoon only kMonsoonSeaKm (warm marginal seas such as the Yellow Sea and
+// the Bay of Bengal feed it).
 constexpr double kOpenSeaKm = 1200.0;
-Upwind trace_from(const World& w, CellId c, double step_km, Toward toward) {
+constexpr double kMonsoonSeaKm = 400.0;
+Upwind trace_from(const World& w, CellId c, double step_km, Toward toward, double open_sea_km = kOpenSeaKm) {
     Upwind u;
     Vec3 p = w.grid.center(c);
     const double hemisphere = p.z >= 0.0 ? 1.0 : -1.0;
@@ -160,7 +165,7 @@ Upwind trace_from(const World& w, CellId c, double step_km, Toward toward) {
         cell = nearest_from(w.grid, cell, p);
         if (!w.is_land[cell]) {
             water_km += step_km;
-            if (water_km >= kOpenSeaKm) return u;
+            if (water_km >= open_sea_km) return u;
             continue;
         }
         u.land_km += step_km + 0.5 * water_km;
@@ -314,7 +319,10 @@ double species_suitability(const World& w, const SpeciesDef& s, CellId c) {
 }
 
 // Suitability once domesticated: the wild niche widened (4 C on each
-// temperature, 30% on rainfall, 500 m on elevation), with river dependence
+// temperature, and 12 C more toward cold winters: hardy varieties such as
+// winter wheat and barley under snow; rainfall from 70% to 160%; 1.0 either
+// way on the rain season: spring-sown and winter crops let winter-rain
+// cereals grow under summer rain and the reverse; 500 m on elevation), with river dependence
 // halved: farmers and herders extend a species' range.
 double cultivated_suitability(const World& w, const SpeciesDef& s, CellId c) {
     if (!w.is_land[c]) return 0.0;
@@ -328,12 +336,16 @@ double cultivated_suitability(const World& w, const SpeciesDef& s, CellId c) {
     auto widen_rain = [](Trapezoid t) {
         t.lo *= 0.7;
         t.best_lo *= 0.7;
-        t.best_hi *= 1.3;
-        t.hi *= 1.3;
+        t.best_hi *= 1.6;
+        t.hi *= 1.6;
         return t;
     };
-    double v = widen(s.coldest_month_c, 4.0)(w.coldest_month_c(c)) * widen(s.warmest_month_c, 4.0)(w.warmest_month_c(c)) *
-               widen_rain(s.annual_precip_mm)(w.precipitation_mm[c]) * s.rain_season(w.rain_season[c]) *
+    Trapezoid winters = widen(s.coldest_month_c, 4.0);
+    winters.lo -= 12.0;
+    winters.best_lo -= 12.0;
+    const Trapezoid season = widen(s.rain_season, 1.0);
+    double v = winters(w.coldest_month_c(c)) * widen(s.warmest_month_c, 4.0)(w.warmest_month_c(c)) *
+               widen_rain(s.annual_precip_mm)(w.precipitation_mm[c]) * season(w.rain_season[c]) *
                widen(s.elevation_m, 500.0)(w.elevation_m[c]);
     if (s.river_affinity > 0.0) {
         const double river = river_effect(w, c, [](double q) { return std::min(1.0, q / 1500.0); });
@@ -863,19 +875,26 @@ World generate_test_world(const WorldParams& params, const Content& content) {
         // Beyond about 27° the summer air comes onshore on the east side of
         // continents too (the western flank of the subtropical highs over
         // the oceans), from whichever sea is nearer.
-        Upwind sea = trace_from(w, c, cell_km, Toward::Equator);
+        Upwind sea = trace_from(w, c, cell_km, Toward::Equator, kMonsoonSeaKm);
         if (abs_z >= 0.45) {
-            const Upwind east = trace_from(w, c, cell_km, Toward::East);
+            const Upwind east = trace_from(w, c, cell_km, Toward::East, kMonsoonSeaKm);
             if (east.land_km < sea.land_km) sea = east;
         }
-        const double reach = sea.land_km / 600.0;
+        const double reach = sea.land_km / 700.0;
         const double p_monsoon = 1300.0 * bump(abs_z, 0.45, 0.37) / (1.0 + reach * reach * reach) * relief(sea);
         const double p = p_wind + p_monsoon;
         w.precipitation_mm[c] = p;
 
         const double cont = std::min(1.0, up.land_km / 2500.0);
         w.continentality[c] = cont;
-        w.temperature_range_c[c] = 2.0 + abs_z * (8.0 + 37.0 * cont);
+        // Seasons: wider toward the poles even by the sea (London 13 C from
+        // coldest to warmest month), far wider inland (Yakutsk 60 C).
+        // The sea's part stops growing past about 53° (Bergen: 12 C).
+        w.temperature_range_c[c] = 2.0 + 18.0 * std::min(abs_z * abs_z, 0.64) + 37.0 * abs_z * cont;
+        // Mid-latitude lands with the sea upwind are warmed by it: winter
+        // westerlies off a warm ocean (and its currents: the North Atlantic
+        // Drift) keep western Europe some 6 C warmer than its latitude.
+        w.temperature_c[c] += kOceanWarmthC * (1.0 - cont) * bump(abs_z, 0.72, 0.2);
 
         // Rain season, signed: + summer rain (monsoons, continental
         // interiors), - winter rain (Mediterranean coasts of the westerlies).

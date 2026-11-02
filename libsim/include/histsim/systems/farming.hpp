@@ -63,6 +63,14 @@ public:
     // per year when farming yields less than foraging would.
     static constexpr double kAdoption = 0.01;
     static constexpr double kAbandonment = 0.03;
+    // Shifting cultivation: away from rivers, rainforest soils give out
+    // after a few harvests and the plot lies fallow for a decade or more, so
+    // only a part of the land bears crops at any time (crops x kRainforestFallow;
+    // savanna x kSavannaFallow). The floodplains of big rivers (rice paddies,
+    // the varzea; the floodplain share as for kFloodplainBonus) are farmed
+    // every year.
+    static constexpr double kRainforestFallow = 0.35;
+    static constexpr double kSavannaFallow = 0.75;
     // A species must do at least this well in a place to be grown there.
     static constexpr double kMinSuitability = 0.05;
 };
