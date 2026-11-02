@@ -99,7 +99,7 @@
     {"id": "writing", "name": "Writing", "requires": ["granaries", "calendar"], "min_town": 20000, "rate": 0.000003,
      "affinity": {"hierarchy": 0.6, "ritual": 0.3},
      "effects": {"administration": 0.5, "contact": 0.1}},
-    {"id": "bureaucracy", "name": "Scribal bureaucracy", "requires": ["writing"], "min_town": 40000, "rate": 0.00002,
+    {"id": "bureaucracy", "name": "Scribal bureaucracy", "requires": ["writing"], "min_town": 20000, "rate": 0.00002,
      "affinity": {"hierarchy": 0.8},
      "effects": {"administration": 0.8, "harvest_buffer": 0.1}},
     {"id": "roads", "name": "Built roads", "requires": ["writing"], "min_town": 20000, "rate": 0.00003,
