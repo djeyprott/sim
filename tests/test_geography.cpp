@@ -231,7 +231,7 @@ TEST(geo_soils_and_aquatic_bonus_are_in_range) {
     int nr = 0, no = 0;
     for (CellId c = 0; c < w.cell_count(); ++c) {
         CHECK(w.soil_fertility[c] >= 0.0 && w.soil_fertility[c] <= 1.0);
-        CHECK(w.aquatic_bonus[c] >= 0.0 && w.aquatic_bonus[c] <= 0.8);
+        CHECK(w.aquatic_bonus[c] >= 0.0 && w.aquatic_bonus[c] <= kMaxAquatic);
         if (!w.is_land[c]) {
             CHECK(w.forager_capacity[c] == 0.0);
             continue;

@@ -658,10 +658,26 @@ const char* biome_name(Biome b) {
     }
 }
 
-double forager_density(double temperature_c, double precipitation_mm) {
+double forage_quality(Biome b) {
+    switch (b) {
+        case Biome::TropicalSavanna: return 1.4;     // the richest game country
+        case Biome::TemperateGrassland: return 1.4;  // bison, horses, antelope
+        case Biome::Mediterranean: return 1.2;       // acorns, seeds, shellfish inland
+        case Biome::WarmTemperateForest: return 1.1;
+        case Biome::TemperateForest: return 1.1;     // nuts, deer
+        case Biome::DryShrubland: return 1.0;
+        case Biome::Tundra: return 1.2;              // reindeer and caribou herds
+        case Biome::BorealForest: return 0.8;
+        case Biome::Desert: return 1.0;
+        case Biome::TropicalRainforest: return 0.45;
+        default: return 0.0;
+    }
+}
+
+double forager_density(double temperature_c, double precipitation_mm, Biome biome) {
     const double warmth = std::clamp((temperature_c + 8.0) / 30.0, 0.0, 1.0);
     const double wetness = std::clamp((precipitation_mm - 100.0) / 1100.0, 0.0, 1.0);
-    return 0.2 * warmth * wetness;
+    return 0.2 * warmth * wetness * forage_quality(biome);
 }
 
 double World::month_temperature_c(CellId c, int m) const noexcept {
@@ -985,9 +1001,10 @@ World generate_test_world(const WorldParams& params, const Content& content) {
 
         // Coasts (shellfish, fish) and big rivers (fish, waterfowl) feed
         // foragers more densely than land alone.
-        const double coast = 0.3 * coast_share(w, c);
-        w.aquatic_bonus[c] = std::min(0.8, coast + river_effect(w, c, [](double q) { return 0.6 * q / (q + 3000.0); }));
-        w.forager_capacity[c] = forager_density(w.temperature_c[c], w.precipitation_mm[c]) *
+        const double coast = (kCoastFood + kColdCoastFood * bump(std::fabs(w.grid.center(c).z), 0.75, 0.3)) * coast_share(w, c);
+        w.aquatic_bonus[c] =
+            std::min(kMaxAquatic, coast + river_effect(w, c, [](double q) { return 0.6 * q / (q + 3000.0); }));
+        w.forager_capacity[c] = forager_density(w.temperature_c[c], w.precipitation_mm[c], static_cast<Biome>(w.biome[c])) *
                                 w.grid.area_km2(c) * (1.0 + w.aquatic_bonus[c]);
     }
 

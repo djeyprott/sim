@@ -164,7 +164,8 @@ double forage_capacity(const World& w, const SimState& s, CellId c) {
     // Land foods (plants and game) for this year's climate, plus fish and
     // shellfish from coasts and rivers, which hunting does not deplete.
     // Techniques (bow, nets, canoes, pottery) add to each.
-    const double land = forager_density(s.env.temperature_c[c], s.env.precipitation_mm[c]) * w.grid.area_km2(c);
+    const double land =
+        forager_density(s.env.temperature_c[c], s.env.precipitation_mm[c], static_cast<Biome>(w.biome[c])) * w.grid.area_km2(c);
     constexpr double kShare = EnvironmentSystem::kGameShareOfCapacity;
     const TechEffects tech = technique_effects(w, c, techniques_in(s, c));
     return land * (((1.0 - kShare) + kShare * s.env.game[c]) * (1.0 + tech.forage) +
@@ -186,7 +187,8 @@ void EnvironmentSystem::step(StepContext& ctx) {
             s.env.capacity[c] = 0.0;
             continue;
         }
-        const double climate_capacity = forager_density(s.env.temperature_c[c], s.env.precipitation_mm[c]) *
+        const double climate_capacity =
+            forager_density(s.env.temperature_c[c], s.env.precipitation_mm[c], static_cast<Biome>(w.biome[c])) *
                                         w.grid.area_km2(c) * (1.0 + w.aquatic_bonus[c]);
         // Hunting pressure comes from the people who still forage.
         const double hunters =

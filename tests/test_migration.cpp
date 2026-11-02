@@ -248,7 +248,8 @@ TEST(migration_a_wandering_tribe_goes_step_by_step) {
     CellId goal = kInvalidCell;
     for (CellId c = 0; c < w.cell_count() && goal == kInvalidCell; ++c) {
         const double km = w.grid.distance_km(x.home, c);
-        if (km > 1200.0 && km < 2000.0 && w.is_land[c] && s.env.capacity[c] > 0.0) goal = c;
+        // Warm land, so the way there does not cross an ice sheet.
+        if (km > 1200.0 && km < 2000.0 && w.is_land[c] && s.env.capacity[c] > 0.0 && w.temperature_c[c] > 5.0) goal = c;
     }
     CHECK(goal != kInvalidCell);
     s.polities[1].trek_to = goal;
