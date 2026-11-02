@@ -1237,6 +1237,15 @@ std::vector<Row> describe_cell_rows(const Simulation& sim, CellId c,
                                           " since year " + with_commas(static_cast<long long>(d.founded / kTicksPerYear))});
             }
         }
+        if (pol.institutions != 0) {
+            std::string list;
+            for (std::size_t k = 0; k < kInstitutionCount; ++k) {
+                if (has_institution(pol.institutions, static_cast<Institution>(k))) {
+                    list += (list.empty() ? "" : ", ") + std::string(institution_name(static_cast<Institution>(k)));
+                }
+            }
+            f.push_back({"Institutions", list});
+        }
         if (pol.religion != 0 && pol.religion < s.religions.size()) {
             f.push_back({"Rulers' faith", s.religions[pol.religion].name});
         }

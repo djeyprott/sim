@@ -266,3 +266,31 @@ TEST(polity_rulers_reign_die_and_are_succeeded) {
     CHECK(successions > usurpations);
     CHECK(usurpations > 0);
 }
+
+TEST(polity_institutions_are_founded_and_inherited) {
+    WorldParams p;
+    p.grid_level = 4;
+    Simulation sim = Simulation::create(p);
+    sim.step_years(4000);
+    const SimState& s = sim.state();
+    const World& w = sim.world();
+    // When writing was first invented, if it was.
+    Tick writing = kNever;
+    for (const Invention& v : s.inventions) {
+        if (w.content->techniques[v.technique].id == "writing") writing = std::min(writing, v.tick);
+    }
+    std::size_t founded = 0;
+    for (const Event& e : s.events) {
+        if (e.type != EventType::InstitutionFounded) continue;
+        ++founded;
+        const auto id = static_cast<std::size_t>(e.value / 16);
+        const auto k = static_cast<std::size_t>(e.value % 16);
+        CHECK(id > 0 && id < s.polities.size());
+        CHECK(k < kInstitutionCount);
+        // Law codes and standing armies need writing.
+        if (k == static_cast<std::size_t>(Institution::LawCode) || k == static_cast<std::size_t>(Institution::Army)) {
+            CHECK(e.tick >= writing);
+        }
+    }
+    CHECK(founded > 0);
+}

@@ -21,6 +21,7 @@ constexpr std::uint32_t kFormationEntity = 0x20000000u;
 constexpr std::uint32_t kNameEntity = 0x60000000u;
 constexpr std::uint32_t kCollapseEntity = 0x10000000u;
 constexpr std::uint32_t kOfficialsEntity = 0x70000000u;
+constexpr std::uint32_t kInstitutionEntity = 0x80000000u;
 
 std::size_t trait_index(const Content& c, const char* id) {
     for (std::size_t t = 0; t < c.traits.size(); ++t) {
@@ -233,6 +234,12 @@ void PolitySystem::step(StepContext& ctx) {
         p.language = lead->language;
         p.parent = parent;
         p.nomadic = nomadic;
+        // A broken state's core and successors keep its temples, councils
+        // and laws; its army does not survive the break.
+        if (parent != 0 && parent < s.polities.size()) {
+            p.institutions = s.polities[parent].institutions &
+                             static_cast<std::uint8_t>(~(1u << static_cast<int>(Institution::Army)));
+        }
         // Named after its capital city if it has one, else coined.
         const std::uint32_t city = s.city_of[capital];
         p.name = city != 0 && !taken(s.cities[city].name) ? s.cities[city].name
@@ -391,6 +398,12 @@ void PolitySystem::step(StepContext& ctx) {
                 std::clamp(kEpidemicScale * (sick / people - kUsualDiseaseDeaths), 0.0, 1.0);
             pr[static_cast<std::size_t>(Pressure::Division)] =
                 std::min(1.0, (others + kFaithDivision * heretics + kBondDivision * enslaved) / people);
+            if (has_institution(pol.institutions, Institution::LawCode)) {
+                pr[static_cast<std::size_t>(Pressure::Division)] *= Institutions::kLawDivision;
+            }
+            if (has_institution(pol.institutions, Institution::Army)) {
+                pr[static_cast<std::size_t>(Pressure::Overreach)] *= Institutions::kArmyOverreach;
+            }
         }
         pr[static_cast<std::size_t>(Pressure::War)] = std::min(1.0, pol.shock);
         const std::uint64_t known = techniques_in(s, pol.capital);
@@ -399,6 +412,8 @@ void PolitySystem::step(StepContext& ctx) {
                         (writing < 64 && ((known >> writing) & 1u) ? kWritingWeight : 0.0) +
                         (bureaucracy < 64 && ((known >> bureaucracy) & 1u) ? kBureaucracyWeight : 0.0) +
                         (people > 0.0 ? kFaithWeight * faithful / people : 0.0);
+        if (has_institution(pol.institutions, Institution::Temple)) target += Institutions::kTempleStability;
+        if (has_institution(pol.institutions, Institution::LawCode)) target += Institutions::kLawStability;
         // An able ruler steadies the realm, a poor one or a regency shakes it.
         if (pol.ruler != 0 && pol.ruler < s.rulers.size()) {
             const Ruler& r = s.rulers[pol.ruler];
@@ -408,6 +423,62 @@ void PolitySystem::step(StepContext& ctx) {
         for (std::size_t k = 0; k < kPressureCount; ++k) target -= kPressureWeight[k] * pr[k];
         target = std::clamp(target, 0.0, 1.0);
         pol.stability += (target < pol.stability ? kStabilityFall : kStabilityRise) * (target - pol.stability);
+    }
+
+    // ---- Institutions founded, and lost in hard times.
+    {
+        std::vector<double> around_people, around_town;
+        hinterland_people(w, s, around_people, around_town);
+        const std::size_t i_ritual_k = trait_index(content, "ritual");
+        std::size_t writing_k = content.techniques.size(), bronze_k = writing_k, riding_k = writing_k;
+        for (std::size_t k = 0; k < content.techniques.size(); ++k) {
+            if (content.techniques[k].id == "writing") writing_k = k;
+            if (content.techniques[k].id == "bronze") bronze_k = k;
+            if (content.techniques[k].id == "horse_riding") riding_k = k;
+        }
+        auto knows = [&](CellId c, std::size_t k) { return k < 64 && ((techniques_in(s, c) >> k) & 1u); };
+        for (std::size_t id = 1; id < np; ++id) {
+            Polity& pol = s.polities[id];
+            if (pol.ended != kNever || cells[id].empty()) continue;
+            RngStream rng = ctx.rng(Stream::Polity, kInstitutionEntity | static_cast<std::uint32_t>(id));
+            double people = 0.0;
+            for (CellId c : cells[id]) people += static_cast<double>(s.cell_population[c]);
+            const bool literate = knows(pol.capital, writing_k);
+            for (std::size_t k = 0; k < kInstitutionCount; ++k) {
+                const auto inst = static_cast<Institution>(k);
+                const std::uint8_t bit = static_cast<std::uint8_t>(1u << k);
+                const std::int64_t tag = static_cast<std::int64_t>(id) * 16 + static_cast<std::int64_t>(k);
+                if (pol.institutions & bit) {
+                    if (pol.stability < kFragile && rng.uniform() < Institutions::kDecay) {
+                        pol.institutions &= static_cast<std::uint8_t>(~bit);
+                        s.events.push_back({ctx.tick, EventType::InstitutionLost, pol.capital, tag});
+                    }
+                    continue;
+                }
+                bool qualifies = false;
+                switch (inst) {
+                    case Institution::Temple:
+                        qualifies = religion_organized(w, s, pol.religion) ||
+                                    (cell_trait(s, pol.capital, i_ritual_k) >= Institutions::kTempleRitual &&
+                                     around_town[pol.capital] >= Institutions::kTempleTown);
+                        break;
+                    case Institution::Council:
+                        qualifies = cells[id].size() >= w.cells_for(Institutions::kCouncilCells) &&
+                                    cell_trait(s, pol.capital, i_hierarchy) >= Institutions::kCouncilHierarchy;
+                        break;
+                    case Institution::LawCode: qualifies = literate; break;
+                    case Institution::Army:
+                        qualifies = literate && people >= Institutions::kArmyPeople &&
+                                    (knows(pol.capital, bronze_k) || knows(pol.capital, riding_k));
+                        break;
+                    case Institution::Count: break;
+                }
+                if (qualifies && rng.uniform() < Institutions::kFound) {
+                    pol.institutions |= bit;
+                    s.events.push_back({ctx.tick, EventType::InstitutionFounded, pol.capital, tag});
+                }
+            }
+        }
     }
 
     // ---- Break-up of fragile polities, and succession disputes.
@@ -645,6 +716,17 @@ void PolitySystem::step(StepContext& ctx) {
 
 // ------------------------------------------------------------------ rulers
 
+const char* institution_name(Institution i) {
+    switch (i) {
+        case Institution::Temple: return "temple priesthood";
+        case Institution::Council: return "council of notables";
+        case Institution::LawCode: return "law code";
+        case Institution::Army: return "standing army";
+        case Institution::Count: break;
+    }
+    return "";
+}
+
 std::string ruler_name(const Ruler& r) {
     static const char* const kNumerals[] = {"", "", " II", " III", " IV", " V", " VI", " VII", " VIII", " IX", " X"};
     return r.name + (r.number < 11 ? kNumerals[r.number] : " " + std::to_string(r.number));
@@ -747,7 +829,11 @@ void RulerSystem::step(StepContext& ctx) {
         old.reign_end = tick;
         const int heir_age = std::max(0, age - 20 - static_cast<int>(rng.uniform() * 15.0));
         const bool child = heir_age < kAdultAge;
-        const double disputed = std::min(1.0, kDispute * (1.5 - pol.stability) * (child ? 2.0 : 1.0));
+        // Priests lend the heir legitimacy; a council sees the throne passed
+        // in good order.
+        const double settled = (has_institution(pol.institutions, Institution::Temple) ? Institutions::kTempleDispute : 1.0) *
+                               (has_institution(pol.institutions, Institution::Council) ? Institutions::kCouncilDispute : 1.0);
+        const double disputed = std::min(1.0, kDispute * (1.5 - pol.stability) * (child ? 2.0 : 1.0) * settled);
         if (rng.uniform() < disputed) {
             // Disputed: the realm may break apart; else another house wins.
             const double breakup = polity_has_writing(w, s, id) ? kBreakupState : kBreakupChiefdom;

@@ -62,7 +62,9 @@ const char* event_kind(EventType type) {
         case EventType::CityFounded:
         case EventType::PolityWandered:
         case EventType::Succession:
-        case EventType::Usurpation: return "realms";
+        case EventType::Usurpation:
+        case EventType::InstitutionFounded:
+        case EventType::InstitutionLost: return "realms";
         case EventType::WarBegan:
         case EventType::WarEnded:
         case EventType::AllianceFormed:
@@ -207,6 +209,15 @@ std::string describe_event(const Simulation& sim, const Event& e) {
             }
             return "";
         case EventType::PolityWandered: return "The " + polity_name(s, v) + " settle in new land" + place(sim, e.cell);
+        case EventType::InstitutionFounded:
+        case EventType::InstitutionLost: {
+            const auto k = static_cast<std::size_t>(v % 16);
+            const std::string realm = polity_name(s, v / 16);
+            if (k >= kInstitutionCount) return "";
+            const char* what = institution_name(static_cast<Institution>(k));
+            return e.type == EventType::InstitutionFounded ? realm + " establishes a " + what
+                                                           : realm + "'s " + what + " falls apart";
+        }
         case EventType::Succession:
         case EventType::Usurpation:
             if (index < s.rulers.size()) {
@@ -252,6 +263,8 @@ bool event_involves(const SimState& s, const Event& e, std::uint32_t p) {
         case EventType::ReligionFounded: return index < s.religions.size() && s.religions[index].polity == p;
         case EventType::Succession:
         case EventType::Usurpation: return index < s.rulers.size() && s.rulers[index].polity == p;
+        case EventType::InstitutionFounded:
+        case EventType::InstitutionLost: return v / 16 == p;
         default: return false;
     }
 }

@@ -561,18 +561,26 @@ int polities(const Options& o) {
     for (const auto& [text, count] : fates) by_count.emplace_back(count, text);
     std::stable_sort(by_count.begin(), by_count.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
     for (const auto& [count, text] : by_count) std::printf("  %6zu  %s\n", count, text.c_str());
-    std::printf("\nLargest polities in year %lld (%zu living, %zu ever):\n", static_cast<long long>(sim.year()),
-                living.size(), s.polities.size() - 1);
+    std::printf("\nLargest polities in year %lld (%zu living, %zu ever; institutions: T temple, C council, L law code, "
+                "A standing army):\n",
+                static_cast<long long>(sim.year()), living.size(), s.polities.size() - 1);
     for (std::size_t i = 0; i < living.size() && i < 15; ++i) {
         const histsim::Polity& p = s.polities[living[i]];
         const std::uint32_t city = s.city_of[p.capital];
         std::string ruler = "no ruler yet";
+        std::string inst;
+        for (std::size_t k = 0; k < histsim::kInstitutionCount; ++k) {
+            if (histsim::has_institution(p.institutions, static_cast<histsim::Institution>(k))) {
+                static const char* const kShort[] = {"T", "C", "L", "A"};
+                inst += kShort[k];
+            }
+        }
         if (p.ruler != 0 && p.ruler < s.rulers.size()) {
             const histsim::Ruler& r = s.rulers[p.ruler];
             ruler = histsim::ruler_name(r) + " of the " + s.dynasties[r.dynasty].name;
         }
-        std::printf("  %-14s %-8s stability %3.0f%% %3zu cells %9.0f km^2 %9lld people  capital %s  since year %lld  (%s)  %s\n",
-                    p.name.c_str(), histsim::polity_level(w, s, living[i]), 100.0 * p.stability, size[living[i]].cells,
+        std::printf("  %-14s %-8s %-4s stability %3.0f%% %3zu cells %9.0f km^2 %9lld people  capital %s  since year %lld  (%s)  %s\n",
+                    p.name.c_str(), histsim::polity_level(w, s, living[i]), inst.c_str(), 100.0 * p.stability, size[living[i]].cells,
                     size[living[i]].area_km2, static_cast<long long>(size[living[i]].people),
                     city != 0 ? s.cities[city].name.c_str() : "(no city)",
                     static_cast<long long>(p.founded / histsim::kTicksPerYear), s.cultures[p.culture].name.c_str(),

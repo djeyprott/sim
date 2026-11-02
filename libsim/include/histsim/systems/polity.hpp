@@ -83,6 +83,39 @@ public:
     static constexpr double kRegencyPenalty = 0.1;
 };
 
+// Institutions (Polity::institutions). Each year a polity without one may
+// found it (kFound a year) when it qualifies:
+//   temple priesthood: its rulers hold an organized faith, or ritual at the
+//     capital is at least kTempleRitual with a town of kTempleTown;
+//   council of notables: at least kCouncilCells cells and hierarchy at
+//     least kCouncilHierarchy;
+//   law code: writing;
+//   standing army: writing, at least kArmyPeople people, and bronze or
+//     riding.
+// Effects: stability target + kTempleStability (temple), + kLawStability
+// (law code); disputed successions x kTempleDispute (temple) x
+// kCouncilDispute (council); division pressure x kLawDivision; overreach x
+// kArmyOverreach and war strength x kArmyStrength (army). Below kFragile
+// stability each may be lost (kDecay a year). A state's core and successors
+// inherit its institutions, but not its army.
+struct Institutions {
+    static constexpr double kFound = 0.01;
+    static constexpr double kDecay = 0.01;
+    static constexpr double kTempleRitual = 0.6;
+    static constexpr double kTempleTown = 5000.0;
+    static constexpr std::size_t kCouncilCells = 3;
+    static constexpr double kCouncilHierarchy = 0.4;
+    static constexpr double kArmyPeople = 300000.0;
+    static constexpr double kTempleStability = 0.05;
+    static constexpr double kLawStability = 0.05;
+    static constexpr double kTempleDispute = 0.8;
+    static constexpr double kCouncilDispute = 0.6;
+    static constexpr double kLawDivision = 0.7;
+    static constexpr double kArmyOverreach = 0.7;
+    static constexpr double kArmyStrength = 1.25;
+};
+const char* institution_name(Institution i);
+
 // A ruler's name with regnal number ("Kimo II"), and his or her age now.
 std::string ruler_name(const Ruler& ruler);
 int ruler_age(const Ruler& ruler, Tick now);

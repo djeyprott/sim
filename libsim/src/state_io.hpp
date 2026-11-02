@@ -310,6 +310,7 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(p.religion);
         ar.i64(p.wandered);
         ar.u32(p.ruler);
+        ar.u8(p.institutions);
         flag(ar, p.contested);
         ar.u32(p.trek_to);
         ar.u32(p.trek_record);

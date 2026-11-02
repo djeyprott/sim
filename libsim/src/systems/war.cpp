@@ -155,7 +155,8 @@ Armies raise_armies(const World& w, const SimState& s) {
     for (std::uint32_t id = 1; id < np; ++id) {
         if (a.levy[id] <= 0.0) continue;
         const TechEffects e = technique_effects(w, s.polities[id].capital, techniques_in(s, s.polities[id].capital));
-        a.strength[id] = a.levy[id] * (1.0 + e.military);
+        a.strength[id] = a.levy[id] * (1.0 + e.military) *
+                         (has_institution(s.polities[id].institutions, Institution::Army) ? Institutions::kArmyStrength : 1.0);
     }
     return a;
 }

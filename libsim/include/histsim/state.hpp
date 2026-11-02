@@ -227,10 +227,25 @@ struct Polity {
     std::uint32_t religion = 0;  // the rulers' faith (that of the capital)
     Tick wandered = kNever;      // when it last set out for new land as a whole people
     std::uint32_t ruler = 0;        // current ruler (0 = none yet)
+    std::uint8_t institutions = 0;  // bits of Institution
     bool contested = false;         // a disputed succession this year threatens to break it up
     CellId trek_to = kInvalidCell;  // where it is going, while on the move
     std::uint32_t trek_record = 0;  // its movement in SimState::migrations (index + 1)
 };
+
+// Institutions a polity can build (bits of Polity::institutions). Append;
+// never renumber.
+enum class Institution : std::uint8_t {
+    Temple = 0,   // a temple priesthood: legitimacy, steadier rule
+    Council = 1,  // a council of notables: orderly successions
+    LawCode = 2,  // written law: steadier rule, peoples less divided
+    Army = 3,     // a standing army: stronger in war, a firmer hold on provinces
+    Count
+};
+inline constexpr std::size_t kInstitutionCount = static_cast<std::size_t>(Institution::Count);
+[[nodiscard]] inline bool has_institution(std::uint8_t set, Institution i) noexcept {
+    return (set >> static_cast<int>(i)) & 1u;
+}
 
 // A ruler of a polity, and the house he or she belongs to.
 enum class ReignEnd : std::uint8_t {
@@ -378,6 +393,8 @@ enum class EventType : std::uint32_t {
     PolityWandered = 27,  // a tribe or confederation moved to new land; cell = its new capital; value = polity id
     Succession = 28,      // a ruler came to the throne by inheritance; cell = capital; value = ruler id
     Usurpation = 29,      // another house seized the throne; cell = capital; value = ruler id (the usurper)
+    InstitutionFounded = 30,  // cell = capital; value = polity id x 16 + Institution
+    InstitutionLost = 31,     // cell = capital; value = polity id x 16 + Institution
 };
 
 struct Event {
