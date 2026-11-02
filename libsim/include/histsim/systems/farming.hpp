@@ -40,7 +40,13 @@ public:
     // km^2 regionally). Later techniques will raise it.
     static constexpr double kCropDensity = 0.6;
     static constexpr double kHerdDensity = 0.15;
-    static constexpr double kFloodplainBonus = 1.0;
+    // A river's floodplain (World::floodplain_share) is watered by the river
+    // whatever the rain, its silt renewed each flood (fertility
+    // kSiltFertility), and yields kFloodplainYield times rain-fed land of
+    // the same crop: so the Nile and the Euphrates feed narrow, crowded
+    // strips through the desert.
+    static constexpr double kSiltFertility = 0.9;
+    static constexpr double kFloodplainYield = 3.0;
     // Rain-fed crops fail often in dry land: away from rivers, crops x
     // clamp((rainfall - kDryFarmingMm) / kDryFarmingSpanMm, kDryFloor, 1).
     // Where the grass is good but the rain is not, herding wins: the steppe.
@@ -67,8 +73,7 @@ public:
     // after a few harvests and the plot lies fallow for a decade or more, so
     // only a part of the land bears crops at any time (crops x kRainforestFallow;
     // savanna x kSavannaFallow). The floodplains of big rivers (rice paddies,
-    // the varzea; the floodplain share as for kFloodplainBonus) are farmed
-    // every year.
+    // the varzea; World::floodplain_share) are farmed every year.
     static constexpr double kRainforestFallow = 0.35;
     static constexpr double kSavannaFallow = 0.75;
     // A species must do at least this well in a place to be grown there.

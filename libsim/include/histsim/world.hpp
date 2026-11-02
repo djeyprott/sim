@@ -78,6 +78,7 @@ struct World {
     std::vector<double> continentality;         // 0 maritime .. 1 deep interior (land upwind)
     std::vector<std::uint8_t> biome;            // Biome
     std::vector<std::uint8_t> growing_months;   // months warm and wet enough for plants to grow
+    std::vector<std::uint8_t> warm_months;      // months warm enough (5 C), water aside: a floodplain's season
 
     // ---- Water and soil
     std::vector<CellId> downstream;             // where this cell drains (kInvalidCell for ocean)
@@ -94,6 +95,14 @@ struct World {
     // cell * species_count + s, 0-255. Crops and herds can be raised far
     // beyond where their wild ancestors grew.
     std::vector<std::uint8_t> cultivated_suitability;
+    // The same where water comes from a river, not the rain (floodplains):
+    // rainfall and its season do not limit (cell * species_count + s, 0-255).
+    std::vector<std::uint8_t> watered_suitability;
+    // Share (0-1) of a cell's land that is a river's floodplain: river cells
+    // only, a strip kFloodplainKmPerRootFlow x sqrt(flow) km wide (2-60 km)
+    // along a path as long as the cell's spacing: the Nile's about 25 km,
+    // a tenth of a level-5 cell.
+    std::vector<double> floodplain_share;
     // Every (cell, species) where a domesticable species grows wild, sorted by
     // cell then species: where domestication can begin.
     struct WildStand {
@@ -207,6 +216,16 @@ struct World {
     [[nodiscard]] double cultivated(CellId c, std::size_t species) const noexcept {
         return cultivated_suitability[c * species_count() + species] / 255.0;
     }
+    [[nodiscard]] double watered(CellId c, std::size_t species) const noexcept {
+        return watered_suitability.empty() ? cultivated(c, species)
+                                           : watered_suitability[c * species_count() + species] / 255.0;
+    }
+    // How well a domesticate can be raised anywhere in the cell: on its
+    // rain-fed land, or on its floodplain where it has one.
+    [[nodiscard]] double raisable(CellId c, std::size_t species) const noexcept {
+        const bool floodplain = !floodplain_share.empty() && floodplain_share[c] > 0.0;
+        return floodplain ? std::max(cultivated(c, species), watered(c, species)) : cultivated(c, species);
+    }
     [[nodiscard]] double deposit(CellId c, std::size_t good) const noexcept {
         const std::size_t ng = content->goods.size();
         return deposits.size() == cell_count() * ng ? deposits[c * ng + good] / 255.0 : 0.0;
@@ -259,6 +278,14 @@ inline constexpr int kClimateGridLevel = 2;  // 162 coarse cells, ~3.1 million k
 // wet a single cell is, so the river network looks alike at every grid level.
 inline constexpr double kRiverMinBasinKm2 = 150000.0;
 inline constexpr double kRiverMinDischarge = 300.0;  // m^3/s
+// Floodplain width per square root of flow (m^3/s), km, and its bounds.
+inline constexpr double kFloodplainKmPerRootFlow = 0.5;
+inline constexpr double kFloodplainMinKm = 2.0;
+inline constexpr double kFloodplainMaxKm = 60.0;
+// A river crossing dry land loses kRiverEvaporation of its flow per 100 km
+// per 1,000 mm of yearly water deficit (evaporation beyond rain): the Nile
+// loses much of its water crossing the Sahara.
+inline constexpr double kRiverEvaporation = 0.03;
 
 [[nodiscard]] inline bool is_river(const World& w, CellId c) noexcept {
     return w.is_land[c] && w.basin_km2[c] >= kRiverMinBasinKm2 && w.discharge_m3s[c] >= kRiverMinDischarge;

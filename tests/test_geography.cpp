@@ -197,10 +197,11 @@ TEST(geo_drainage_reaches_the_sea_without_cycles) {
             ++steps;
         }
         CHECK(!w.is_land[at]);
-        // Downstream carries at least everything from upstream.
+        // Downstream carries everything from upstream, less what a dry
+        // cell evaporates (at most half).
         const CellId d = w.downstream[c];
         if (d != kInvalidCell && w.is_land[d]) {
-            CHECK(w.discharge_m3s[d] >= w.discharge_m3s[c]);
+            CHECK(w.discharge_m3s[d] >= 0.5 * w.discharge_m3s[c]);
             CHECK(w.basin_km2[d] > w.basin_km2[c]);
         }
         CHECK(w.basin_km2[c] >= w.grid.area_km2(c) * (1.0 - 1e-9));

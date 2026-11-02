@@ -745,7 +745,7 @@ void MigrationSystem::step(StepContext& ctx) {
     for (const auto& [to, known] : carried) {
         std::uint32_t usable = 0;
         for (std::size_t sp = 0; sp < w.content->species.size(); ++sp) {
-            if (((known >> sp) & 1u) && w.cultivated(to, sp) >= FarmingSystem::kMinSuitability) {
+            if (((known >> sp) & 1u) && w.raisable(to, sp) >= FarmingSystem::kMinSuitability) {
                 usable |= 1u << sp;
             }
         }
