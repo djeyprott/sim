@@ -225,7 +225,9 @@ struct Polity {
     // down over a few generations (kNever = not settling).
     Tick settling_since = kNever;
     std::uint32_t religion = 0;  // the rulers' faith (that of the capital)
-    Tick wandered = kNever;      // when it last moved to new land as a whole people
+    Tick wandered = kNever;      // when it last set out for new land as a whole people
+    CellId trek_to = kInvalidCell;  // where it is going, while on the move
+    std::uint32_t trek_record = 0;  // its movement in SimState::migrations (index + 1)
 };
 
 // A defensive alliance: each joins a war against the other.

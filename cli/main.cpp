@@ -785,10 +785,21 @@ int migrations(const Options& o) {
         const histsim::Polity& pol = s.polities[m.polity];
         std::size_t pushed = 0;
         for (const histsim::FolkMovement& later : s.migrations) pushed += later.pushed_by == order[k] + 1 ? 1 : 0;
-        std::printf("  year %5lld  the %-14s %-13s %8lld people %5.0f km  (%s speakers%s; pushed on %zu peoples)\n",
+        // How long on the road: until it settled (its PolityWandered event).
+        std::string road = "still on the road";
+        if (pol.trek_record != order[k] + 1) {
+            road = "settled";
+            for (const histsim::Event& e : s.events) {
+                if (e.type == histsim::EventType::PolityWandered && e.value == m.polity && e.tick >= m.tick) {
+                    road = std::to_string((e.tick - m.tick) / histsim::kTicksPerYear) + " years on the road";
+                    break;
+                }
+            }
+        }
+        std::printf("  year %5lld  the %-14s %-13s %8lld people %5.0f km, %s  (%s speakers%s; pushed on %zu peoples)\n",
                     static_cast<long long>(m.tick / histsim::kTicksPerYear), pol.name.c_str(),
                     pol.nomadic ? "(nomads)" : "(tribe)", static_cast<long long>(m.people), w.grid.distance_km(m.from, m.to),
-                    s.languages[m.language].name.c_str(), pol.ended != histsim::kNever ? ", since gone" : "", pushed);
+                    road.c_str(), s.languages[m.language].name.c_str(), pol.ended != histsim::kNever ? ", since gone" : "", pushed);
         ++shown;
     }
     // Famine migrations in Bond events (cold, dry centuries) against the rest.

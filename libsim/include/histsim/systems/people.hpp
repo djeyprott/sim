@@ -152,6 +152,11 @@ public:
     // not held by anyone at least kWanderStronger times its people, takes as
     // many cells around it as it held, and kWanderShare of its people (the
     // rulers' lineage) move there with their crops, rulers, name and faith.
+    // They go step by step: each year a step toward the goal with chance
+    // (kTrekKm + kTrekKmMobile x mobility) km / the cell spacing, keeping as
+    // much land around them as they held; kTrekShare of them go on at each
+    // step (the rest settle along the way), and the land they leave is free.
+    // A trek ends at its goal, or where a stronger people blocks the way.
     // Its wars end in its flight (lost where it led a side). The land left
     // behind is free; the locals where they arrive are pushed
     // on (as in chain reactions, by how outnumbered they are) and their
@@ -166,6 +171,11 @@ public:
     static constexpr std::int64_t kWanderYears = 50;
     static constexpr double kWanderStronger = 0.5;
     static constexpr double kWanderShock = 0.3;
+    static constexpr double kWanderDistanceKm = 1000.0;  // appeal / (1 + distance / this): a whole people looks far
+    static constexpr double kTrekKm = 30.0;
+    static constexpr double kTrekKmMobile = 120.0;
+    static constexpr double kTrekShare = 0.9;
+    static constexpr double kLevel5SpacingKm = 225.0;
     static constexpr double kWanderThreatKm = 600.0;
     static constexpr double kWanderThreat = 5.0;
     static constexpr double kWanderRoam = 0.006;

@@ -309,6 +309,8 @@ void serialize(Ar& ar, SimState& s) {
         ar.i64(p.settling_since);
         ar.u32(p.religion);
         ar.i64(p.wandered);
+        ar.u32(p.trek_to);
+        ar.u32(p.trek_record);
     });
     doubles(ar, s.stocks);
     doubles(ar, s.prices);

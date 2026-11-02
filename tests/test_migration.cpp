@@ -229,3 +229,43 @@ TEST(migration_a_hard_pressed_tribe_moves_as_a_whole_and_the_locals_mostly_stay)
         CHECK(static_cast<double>(others(c)) >= 0.5 * static_cast<double>(before[c]));
     }
 }
+
+TEST(migration_a_wandering_tribe_goes_step_by_step) {
+    Start x = start();
+    SimState& s = x.s;
+    const World& w = x.sim.world();
+    s.polity_of.assign(w.cell_count(), 0);
+    s.polities.assign(1, Polity{});
+    Polity tribe;
+    tribe.id = 1;
+    tribe.name = "Testfolk";
+    tribe.capital = x.home;
+    tribe.culture = s.cohorts_in(x.home).front().culture;
+    tribe.language = s.cohorts_in(x.home).front().language;
+    s.polities.push_back(tribe);
+    s.polity_of[x.home] = 1;
+    // Already on the road, to land a few steps away.
+    CellId goal = kInvalidCell;
+    for (CellId c = 0; c < w.cell_count() && goal == kInvalidCell; ++c) {
+        const double km = w.grid.distance_km(x.home, c);
+        if (km > 1200.0 && km < 2000.0 && w.is_land[c] && s.env.capacity[c] > 0.0) goal = c;
+    }
+    CHECK(goal != kInvalidCell);
+    s.polities[1].trek_to = goal;
+    std::size_t steps = 0;
+    double last = w.grid.distance_km(x.home, goal);
+    for (int year = 0; year < 400 && s.polities[1].trek_to != kInvalidCell; ++year) {
+        const CellId before = s.polities[1].capital;
+        migrate(w, s);
+        const CellId now = s.polities[1].capital;
+        if (now == before) continue;
+        ++steps;
+        const auto around = w.grid.neighbors(before);
+        CHECK(std::find(around.begin(), around.end(), now) != around.end());  // one step at a time
+        CHECK(w.grid.distance_km(now, goal) < last);  // always nearer the goal
+        last = w.grid.distance_km(now, goal);
+        CHECK_EQ(s.polity_of[now], 1u);
+    }
+    CHECK(steps >= 3);  // the goal was several steps away
+    CHECK(s.polities[1].trek_to == kInvalidCell);  // arrived, or settled where blocked
+}
