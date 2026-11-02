@@ -102,10 +102,10 @@
     {"id": "bureaucracy", "name": "Scribal bureaucracy", "requires": ["writing"], "min_town": 20000, "rate": 0.00002,
      "affinity": {"hierarchy": 0.8},
      "effects": {"administration": 0.8, "harvest_buffer": 0.1}},
-    {"id": "roads", "name": "Built roads", "requires": ["writing"], "min_town": 20000, "rate": 0.00003,
+    {"id": "roads", "name": "Built roads", "requires": ["writing"], "min_town": 20000, "rate": 0.0001,
      "effects": {"administration": 0.8, "contact": 0.3, "land_transport": 0.6}},
     {"id": "provinces", "name": "Provincial government", "requires": ["bureaucracy", "roads"], "min_town": 20000, "rate": 0.0003,
      "affinity": {"hierarchy": 0.6},
-     "effects": {"administration": 1.5}}
+     "effects": {"administration": 2.0}}
   ]
 }

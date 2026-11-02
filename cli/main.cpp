@@ -1167,6 +1167,23 @@ int gate(const Options& o) {
     }
     std::printf("  (per-seed sizes below are marked c chiefdom, s state, e empire, n nomad confederation)\n");
     std::printf("  (history: writing ~6200, bureaucracy ~7400, roads ~8800, provinces ~8750)\n");
+    // The smallest size the grid can resolve: kFloorCells cells.
+    constexpr double kFloorCells = 5.0;
+    double floor_mkm2 = 0.0;
+    {
+        histsim::WorldParams fp = o.params;
+        const Simulation probe = Simulation::create(fp);
+        double land = 0.0;
+        std::size_t cells = 0;
+        for (histsim::CellId c = 0; c < probe.world().cell_count(); ++c) {
+            if (!probe.world().is_land[c]) continue;
+            land += probe.world().grid.area_km2(c);
+            ++cells;
+        }
+        floor_mkm2 = cells > 0 ? kFloorCells * land / static_cast<double>(cells) / 1e6 : 0.0;
+    }
+    std::printf("\n  Sizes below %.2f Mkm^2 (%.0f cells) are compared as that size: the grid's resolution.\n", floor_mkm2,
+                kFloorCells);
     std::size_t passed = 0, scored = 0;
     std::printf("\n  state+  date      history (Mkm^2)                       sim median   per seed                 verdict\n");
     for (std::size_t i = 0; i < std::size(kHistory); ++i) {
@@ -1183,7 +1200,9 @@ int gate(const Options& o) {
         const char* verdict = "no data";
         if (m >= 0.0) {
             ++scored;
-            const double ratio = m > 0.0 ? m / pt.mkm2 : 0.0;
+            // The grid cannot show polities much smaller than a few cells
+            // (chiefdoms already fill that many): compare with at least kFloorCells.
+            const double ratio = m > 0.0 ? m / std::max(pt.mkm2, floor_mkm2) : 0.0;
             const bool ok = ratio >= 1.0 / kTolerance && ratio <= kTolerance;
             passed += ok ? 1 : 0;
             verdict = ok ? "ok" : (ratio > 1.0 ? "TOO LARGE" : "TOO SMALL");
