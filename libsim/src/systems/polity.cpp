@@ -827,6 +827,8 @@ void RulerSystem::step(StepContext& ctx) {
         // ruler died young.
         old.end = ReignEnd::Died;
         old.reign_end = tick;
+        // crown() appends to s.rulers, so `old` must not be used after it.
+        const std::uint32_t old_house = old.dynasty;
         const int heir_age = std::max(0, age - 20 - static_cast<int>(rng.uniform() * 15.0));
         const bool child = heir_age < kAdultAge;
         // Priests lend the heir legitimacy; a council sees the throne passed
@@ -839,18 +841,18 @@ void RulerSystem::step(StepContext& ctx) {
             const double breakup = polity_has_writing(w, s, id) ? kBreakupState : kBreakupChiefdom;
             if (rng.uniform() < breakup) {
                 pol.contested = true;
-                const std::uint32_t heir = crown(id, old.dynasty, heir_age, rng);
+                const std::uint32_t heir = crown(id, old_house, heir_age, rng);
                 pol.ruler = heir;
                 continue;
             }
             const std::uint32_t usurper = crown(id, 0, 25 + static_cast<int>(rng.uniform() * 25.0), rng);
             found_house(id, usurper);
             pol.ruler = usurper;
-            end_house_if_gone(old.dynasty);
+            end_house_if_gone(old_house);
             s.events.push_back({tick, EventType::Usurpation, pol.capital, static_cast<std::int64_t>(usurper)});
             continue;
         }
-        const std::uint32_t heir = crown(id, old.dynasty, heir_age, rng);
+        const std::uint32_t heir = crown(id, old_house, heir_age, rng);
         pol.ruler = heir;
         s.events.push_back({tick, EventType::Succession, pol.capital, static_cast<std::int64_t>(heir)});
     }
