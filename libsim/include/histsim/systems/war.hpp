@@ -67,6 +67,14 @@ public:
     static constexpr double kEngaged = 0.3;
     static constexpr double kBattleDeaths = 0.1;
     static constexpr double kSeize = 0.3;
+    // A side cannot take a cell it would hold with less control than this
+    // (beyond its rulers' reach): armies outran no realm's grip for long.
+    // Distance is counted less (spacing of cells - kConquestNearKm), so that
+    // the capital's neighbours count as kConquestNearKm away at every grid
+    // level (225 km spacing at level 5).
+    static constexpr double kConquestControl = 0.15;
+    static constexpr double kConquestNearKm = 112.5;
+    static constexpr double kLevel5CellKm = 225.0;
     static constexpr int kMaxPushes = 3;
     static constexpr double kSackDeaths = 0.03;
     static constexpr double kRefugees = 0.1;

@@ -136,7 +136,7 @@ public:
     // this many times as many townspeople (people) as the old seat.
     static constexpr double kCapitalMove = 2.0;
     // Reach of a capital's rule without administrative techniques.
-    static constexpr double kBaseReachKm = 100.0;
+    static constexpr double kBaseReachKm = 85.0;
     // Below this control a polity cannot take a cell; below kSecedeBelow a
     // province may break away (kSecession a year).
     static constexpr double kMinControl = 0.3;
@@ -212,7 +212,11 @@ public:
     // kNomadPastoral of the farm food, people ride (horses, or camels in deserts) and warfare is at
     // least kNomadWarfare: chance kNomadFormation x warfare x (1 + wealth of
     // the farmers within raiding range / kShadowWealth, at most kShadowMax)
-    // per check. Their rule reaches kNomadReach times as far. Conquest
+    // per check, but only with a state (a polity with writing) within raiding
+    // range: the shadow empire (Barfield 1989), steppe confederations
+    // living off the tribute and trade of agrarian neighbours. Before that,
+    // mounted herders form tribal chiefdoms. Their rule reaches kNomadReach
+    // times as far. Conquest
     // dynasties stop being nomads kSettleYears after taking a state.
     // Herders without mounts form ordinary (tribal) chiefdoms, needing only
     // kHerderDensity x kMinDensity people per km^2; those that later take
@@ -225,7 +229,7 @@ public:
     static constexpr double kNomadFormation = 0.01;
     static constexpr double kShadowWealth = 20000.0;
     static constexpr double kShadowMax = 5.0;
-    static constexpr double kNomadReach = 3.0;
+    static constexpr double kNomadReach = 2.0;
     static constexpr std::int64_t kSettleYears = 60;
 };
 

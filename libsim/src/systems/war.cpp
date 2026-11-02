@@ -297,6 +297,7 @@ void WarSystem::step(StepContext& ctx) {
     auto control_of = [&](std::uint32_t id, CellId c) {
         return reach[id] > 0.0 ? polity_control(w.grid.distance_km(s.polities[id].capital, c), reach[id]) : 0.0;
     };
+    const double slack = std::max(0.0, kLevel5CellKm * w.cell_scale() - kConquestNearKm);
     const Armies armies = raise_armies(w, s);
     // People of each polity at the start of the year, to weigh its losses.
     std::vector<double> people_of(np, 0.0);
@@ -409,6 +410,11 @@ void WarSystem::step(StepContext& ctx) {
                     (side[owner] == 1 ? front_a : front_d).push_back(c);
                     if (side[owner] == mine && s.cell_population[nb] > 0) {
                         const double ctl = control_of(owner, nb);
+                        if (reach[owner] <= 0.0 ||
+                            polity_control(std::max(0.0, w.grid.distance_km(s.polities[owner].capital, nb) - slack),
+                                           reach[owner]) < kConquestControl) {
+                            continue;
+                        }
                         if (ctl > best || (ctl == best && nb < target)) best = ctl, target = nb, from = c;
                     }
                 }

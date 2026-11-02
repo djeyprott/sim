@@ -1053,7 +1053,11 @@ int gate(const Options& o) {
         std::int64_t first_crop = -1, first_state = -1;
         std::vector<double> at;  // per point, million km^2
         double early = 0.0;      // largest before 5,000 years of farming
+        std::string early_kind;  // what it was
+        std::string kinds;       // per point, the largest's kind: c chiefdom, s state, e empire, n nomads
+        std::vector<std::int64_t> invented;  // per kAdmin technique, years after the first crop (-1: never)
     };
+    static const char* const kAdmin[] = {"writing", "bureaucracy", "roads", "provinces"};
     std::vector<Run> runs(static_cast<std::size_t>(n));
     std::vector<std::thread> threads;
     for (std::int64_t k = 0; k < n; ++k) {
@@ -1061,19 +1065,49 @@ int gate(const Options& o) {
             histsim::WorldParams p = o.params;
             p.seed = static_cast<std::uint64_t>(k + 1);
             Simulation sim = Simulation::create(p);
-            sim.step_years(o.years);
-            const histsim::SimState& s = sim.state();
             Run& r = runs[static_cast<std::size_t>(k)];
+            // Every 25 years: the largest polity's kind.
+            struct Sample {
+                std::int64_t year;
+                double mkm2;
+                std::string kind;
+            };
+            std::vector<Sample> samples;
+            for (std::int64_t done = 0; done < o.years;) {
+                const std::int64_t step = std::min<std::int64_t>(25, o.years - done);
+                sim.step_years(step);
+                done += step;
+                const histsim::SimState& st = sim.state();
+                std::vector<double> area(st.polities.size(), 0.0);
+                for (histsim::CellId c = 0; c < st.polity_of.size(); ++c) area[st.polity_of[c]] += sim.world().grid.area_km2(c);
+                std::uint32_t big = 0;
+                for (std::uint32_t id = 1; id < area.size(); ++id) {
+                    if (st.polities[id].ended == histsim::kNever && (big == 0 || area[id] > area[big])) big = id;
+                }
+                if (big != 0) samples.push_back({sim.year(), area[big] / 1e6, histsim::polity_level(sim.world(), st, big)});
+            }
+            const histsim::SimState& s = sim.state();
             for (const histsim::Domestication& d : s.domestications) {
                 if (sim.world().content->species[d.species].kind != histsim::SpeciesKind::Plant) continue;
                 const std::int64_t y = d.tick / histsim::kTicksPerYear;
                 if (r.first_crop < 0 || y < r.first_crop) r.first_crop = y;
             }
             if (r.first_crop < 0) return;
+            for (const char* id : kAdmin) {
+                std::int64_t first = -1;
+                for (const histsim::Invention& v : s.inventions) {
+                    if (sim.world().content->techniques[v.technique].id != id) continue;
+                    const std::int64_t y = v.tick / histsim::kTicksPerYear - r.first_crop;
+                    if (first < 0 || y < first) first = y;
+                }
+                r.invented.push_back(first);
+            }
             for (const histsim::YearRecord& y : s.history) {
                 const std::int64_t since = y.year - r.first_crop;
                 if (r.first_state < 0 && y.states > 0) r.first_state = since;
-                if (since < 5000) r.early = std::max(r.early, y.largest_polity_km2 / 1e6);
+            }
+            for (const Sample& x : samples) {
+                if (x.year - r.first_crop < 5000 && x.mkm2 > r.early) r.early = x.mkm2, r.early_kind = x.kind;
             }
             for (const Point& pt : kHistory) {
                 double best = -1.0;
@@ -1084,6 +1118,17 @@ int gate(const Options& o) {
                     }
                 }
                 r.at.push_back(best);
+                // What the largest polity of the window was, at its peak.
+                double peak = -1.0;
+                char kind = '-';
+                for (const Sample& x : samples) {
+                    const std::int64_t since = x.year - r.first_crop;
+                    if (since >= pt.since_farming - kWindow && since <= pt.since_farming + kWindow && x.mkm2 > peak) {
+                        peak = x.mkm2;
+                        kind = x.kind == "confederation" ? 'n' : x.kind[0];
+                    }
+                }
+                r.kinds.push_back(kind);
             }
         });
     }
@@ -1095,12 +1140,21 @@ int gate(const Options& o) {
     std::printf("M3 gate: the largest polity by era, %lld seeds at level %d, %lld years each.\n", static_cast<long long>(n),
                 o.params.grid_level, static_cast<long long>(o.years));
     std::printf("Eras are years since the first crop (history: since about 9500 BCE).\n\n");
-    std::printf("  seed  first crop  first state (years after)\n");
+    std::printf("  seed  first crop  years after it: first state  writing  bureaucracy  roads  provinces\n");
     for (std::int64_t k = 0; k < n; ++k) {
         const Run& r = runs[static_cast<std::size_t>(k)];
-        std::printf("  %4lld  year %5lld  %s\n", static_cast<long long>(k + 1), static_cast<long long>(r.first_crop),
-                    r.first_state >= 0 ? std::to_string(r.first_state).c_str() : "none");
+        std::string inv;
+        for (std::int64_t y : r.invented) {
+            char buf[16];
+            std::snprintf(buf, sizeof buf, " %8s", y >= 0 ? std::to_string(y).c_str() : "-");
+            inv += buf;
+        }
+        std::printf("  %4lld  year %5lld  %27s%s   (largest early: %.2f Mkm^2, a %s)\n", static_cast<long long>(k + 1),
+                    static_cast<long long>(r.first_crop), r.first_state >= 0 ? std::to_string(r.first_state).c_str() : "none",
+                    inv.c_str(), r.early, r.early_kind.c_str());
     }
+    std::printf("  (per-seed sizes below are marked c chiefdom, s state, e empire, n nomad confederation)\n");
+    std::printf("  (history: writing ~6200, bureaucracy ~7400, roads ~8800, provinces ~8750)\n");
     std::size_t passed = 0, scored = 0;
     std::printf("\n  years   date      history (Mkm^2)                       sim median   per seed                 verdict\n");
     for (std::size_t i = 0; i < std::size(kHistory); ++i) {
@@ -1110,7 +1164,7 @@ int gate(const Options& o) {
         for (const Run& r : runs) {
             if (r.at.size() > i && r.at[i] >= 0.0) v.push_back(r.at[i]);
             char buf[16];
-            std::snprintf(buf, sizeof buf, " %5.2f", r.at.size() > i ? r.at[i] : -1.0);
+            std::snprintf(buf, sizeof buf, " %5.2f%c", r.at.size() > i ? r.at[i] : -1.0, r.kinds.size() > i ? r.kinds[i] : '-');
             each += buf;
         }
         const double m = median(v);
