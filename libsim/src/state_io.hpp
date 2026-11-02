@@ -309,6 +309,7 @@ void serialize(Ar& ar, SimState& s) {
         ar.i64(p.settling_since);
         ar.u32(p.religion);
         ar.i64(p.wandered);
+        ar.i64(p.arrived);
         ar.u32(p.ruler);
         ar.u8(p.institutions);
         flag(ar, p.contested);

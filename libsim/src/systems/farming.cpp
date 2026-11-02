@@ -192,7 +192,13 @@ void FarmingSystem::step(StepContext& ctx) {
         for (std::size_t sp = 0; sp < content.species.size(); ++sp) {
             if (!((offered >> sp) & 1u)) continue;
             if (w.cultivated(c, sp) < kMinSuitability) continue;  // cannot be raised here
-            if (rng.uniform32() < p) s.domesticates[c] |= 1u << sp;
+            const double herding = s.env.pastoral.size() == n && s.env.farming.size() == n
+                                       ? s.env.pastoral[c] * s.env.farming[c]
+                                       : 0.0;
+            const double herd = content.species[sp].kind == SpeciesKind::Animal
+                                    ? 1.0 + kHerdMobility * trait(c, i_mobility) * herding
+                                    : 1.0;
+            if (rng.uniform32() < std::min(1.0, p * herd)) s.domesticates[c] |= 1u << sp;
         }
     }
 

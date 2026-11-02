@@ -562,14 +562,29 @@ void MigrationSystem::step(StepContext& ctx) {
             std::int64_t gone = 0;
             std::size_t next = 0;
             std::vector<std::int64_t> come(lands.size(), 0);
+            // Room in each new land: up to kTrekRoom x what it feeds.
+            std::vector<double> room(lands.size(), 0.0);
+            for (std::size_t li = 0; li < lands.size(); ++li) {
+                room[li] = std::max(0.0, kTrekRoom * s.env.capacity[lands[li]] -
+                                             static_cast<double>(s.cell_population[lands[li]]));
+            }
             for (CellId c : held[p]) {
                 const std::uint32_t known = s.domesticates.empty() ? 0 : s.domesticates[c];
                 for (auto i = s.cohort_begin[c]; i < s.cohort_begin[c + 1]; ++i) {
                     Cohort& co = s.cohorts[i];
-                    if (s.cultures[co.culture].root != root) continue;
-                    const std::size_t slot = next++ % lands.size();
-                    if (lands[slot] == c) continue;  // already there
-                    Cohort band = split_off(co, lands[slot], share, rng);
+                    if (s.cultures[co.culture].root != root || co.total() <= 0) continue;
+                    // The next land with room (round robin), not where it is.
+                    std::size_t slot = lands.size();
+                    for (std::size_t tries = 0; tries < lands.size(); ++tries) {
+                        const std::size_t k = next++ % lands.size();
+                        if (lands[k] != c && room[k] - static_cast<double>(come[k]) >= 1.0) {
+                            slot = k;
+                            break;
+                        }
+                    }
+                    if (slot == lands.size()) continue;  // no room anywhere: they stay
+                    const double fits = (room[slot] - static_cast<double>(come[slot])) / static_cast<double>(co.total());
+                    Cohort band = split_off(co, lands[slot], std::min(share, fits), rng);
                     if (band.total() <= 0) continue;
                     gone += band.total();
                     come[slot] += band.total();
@@ -619,6 +634,7 @@ void MigrationSystem::step(StepContext& ctx) {
             pol.trek_to = kInvalidCell;
             if (pol.trek_record != 0 && pol.trek_record <= s.migrations.size()) s.migrations[pol.trek_record - 1].to = pol.capital;
             pol.trek_record = 0;
+            pol.arrived = ctx.tick;
             s.events.push_back({ctx.tick, EventType::PolityWandered, pol.capital, static_cast<std::int64_t>(pol.id)});
         };
         for (std::uint32_t p = 1; p < np; ++p) {

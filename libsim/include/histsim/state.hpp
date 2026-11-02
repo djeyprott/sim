@@ -226,6 +226,7 @@ struct Polity {
     Tick settling_since = kNever;
     std::uint32_t religion = 0;  // the rulers' faith (that of the capital)
     Tick wandered = kNever;      // when it last set out for new land as a whole people
+    Tick arrived = kNever;       // when its last trek ended (it settled)
     std::uint32_t ruler = 0;        // current ruler (0 = none yet)
     std::uint8_t institutions = 0;  // bits of Institution
     bool contested = false;         // a disputed succession this year threatens to break it up

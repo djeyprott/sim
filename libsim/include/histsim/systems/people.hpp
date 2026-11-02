@@ -176,6 +176,10 @@ public:
     static constexpr double kTrekKmMobile = 120.0;
     static constexpr double kTrekShare = 0.9;
     static constexpr double kLevel5SpacingKm = 225.0;
+    // A step moves no more of the people into a cell than fill it to
+    // kTrekRoom x what it feeds (with those already there); the rest stay
+    // behind where they were, as real migrations shed people on the way.
+    static constexpr double kTrekRoom = 1.1;
     static constexpr double kWanderThreatKm = 600.0;
     static constexpr double kWanderThreat = 5.0;
     static constexpr double kWanderRoam = 0.006;

@@ -51,6 +51,11 @@ public:
     // + openness, for 50,000 km^2 cells): farming spreads ~1 km a year, as
     // across Neolithic Europe.
     static constexpr double kLearning = 0.0005;
+    // Herd animals travel with mobile herders, who meet their neighbours
+    // across wide seasonal ranges: learning one is x (1 + kHerdMobility x
+    // mobility x herding), herding being the share of the people's food
+    // from herds. Horses crossed the steppe in a few centuries.
+    static constexpr double kHerdMobility = 12.0;
     // A domestication is a new, independent origin only if nobody within
     // this distance already knows the species.
     static constexpr double kIndependentOriginKm = 1000.0;

@@ -189,6 +189,13 @@ public:
     static constexpr double kEpidemicScale = 40.0;
     static constexpr double kUsualDiseaseDeaths = 0.005;
     static constexpr double kShockDecay = 0.2;  // share of the war shock that fades a year
+    // A people on the march, and for kArrivalYears after it settles, holds
+    // together under its war leaders (+kMarchCohesion to the target) and
+    // lives off the herds and stores it brings and the harvests it takes
+    // (famine pressure x kMarchFamine).
+    static constexpr std::int64_t kArrivalYears = 20;
+    static constexpr double kMarchCohesion = 0.15;
+    static constexpr double kMarchFamine = 0.3;
     // A polity below kFragile stability breaks up with chance kCollapse x
     // ((kFragile - stability) / kFragile)^2 a year. Fragility also speeds
     // secession and civil war (x 2 x (1 - stability)).
@@ -212,10 +219,11 @@ public:
     // kNomadPastoral of the farm food, people ride (horses, or camels in deserts) and warfare is at
     // least kNomadWarfare: chance kNomadFormation x warfare x (1 + wealth of
     // the farmers within raiding range / kShadowWealth, at most kShadowMax)
-    // per check, but only with a state (a polity with writing) within raiding
-    // range: the shadow empire (Barfield 1989), steppe confederations
-    // living off the tribute and trade of agrarian neighbours. Before that,
-    // mounted herders form tribal chiefdoms. Their rule reaches kNomadReach
+    // per check, but only with a state (a polity with writing) within
+    // kShadowKm (otherwise kNoShadow times as readily): the shadow empire
+    // (Barfield 1989), steppe confederations living off the tribute and
+    // trade of agrarian neighbours. Mounted herders who do not band
+    // together form tribal chiefdoms. Their rule reaches kNomadReach
     // times as far. Conquest
     // dynasties stop being nomads kSettleYears after taking a state.
     // Herders without mounts form ordinary (tribal) chiefdoms, needing only
@@ -230,6 +238,12 @@ public:
     static constexpr double kShadowWealth = 20000.0;
     static constexpr double kShadowMax = 5.0;
     static constexpr double kNomadReach = 2.0;
+    // A confederation needs a state within this distance (the shadow empire).
+    static constexpr double kShadowKm = 1500.0;
+    // Without one, confederations still form, kNoShadow times as readily
+    // (and a riding herder chiefdom becomes one with this chance a check):
+    // the steppe's own wars could unite it too (the early Scythians).
+    static constexpr double kNoShadow = 0.2;
     static constexpr std::int64_t kSettleYears = 60;
 };
 

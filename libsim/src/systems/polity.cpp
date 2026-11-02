@@ -22,6 +22,7 @@ constexpr std::uint32_t kNameEntity = 0x60000000u;
 constexpr std::uint32_t kCollapseEntity = 0x10000000u;
 constexpr std::uint32_t kOfficialsEntity = 0x70000000u;
 constexpr std::uint32_t kInstitutionEntity = 0x80000000u;
+constexpr std::uint32_t kRidersEntity = 0x90000000u;
 
 std::size_t trait_index(const Content& c, const char* id) {
     for (std::size_t t = 0; t < c.traits.size(); ++t) {
@@ -406,6 +407,9 @@ void PolitySystem::step(StepContext& ctx) {
             }
         }
         pr[static_cast<std::size_t>(Pressure::War)] = std::min(1.0, pol.shock);
+        const bool marching = pol.trek_to != kInvalidCell ||
+                              (pol.arrived != kNever && ctx.tick - pol.arrived < kArrivalYears * kTicksPerYear);
+        if (marching) pr[static_cast<std::size_t>(Pressure::Famine)] *= kMarchFamine;
         const std::uint64_t known = techniques_in(s, pol.capital);
         double target = kStabilityBase + kHierarchyWeight * cell_trait(s, pol.capital, i_hierarchy) +
                         kRitualWeight * cell_trait(s, pol.capital, i_ritual) +
@@ -420,6 +424,7 @@ void PolitySystem::step(StepContext& ctx) {
             target += RulerSystem::kAbilityWeight * (r.ability - 0.5) * 2.0;
             if (ruler_age(r, ctx.tick) < RulerSystem::kAdultAge) target -= RulerSystem::kRegencyPenalty;
         }
+        if (marching) target += kMarchCohesion;
         for (std::size_t k = 0; k < kPressureCount; ++k) target -= kPressureWeight[k] * pr[k];
         target = std::clamp(target, 0.0, 1.0);
         pol.stability += (target < pol.stability ? kStabilityFall : kStabilityRise) * (target - pol.stability);
@@ -653,7 +658,7 @@ void PolitySystem::step(StepContext& ctx) {
         };
         // The shadow empire (Barfield): steppe confederations arise beside
         // agrarian states, living off their tribute and trade, and do not
-        // form until there is a state within raiding range.
+        // form until there is a state within kShadowKm.
         std::vector<char> state_polity(s.polities.size(), 0);
         for (std::size_t id = 1; id < s.polities.size(); ++id) {
             state_polity[id] = s.polities[id].ended == kNever && !s.polities[id].nomadic &&
@@ -661,7 +666,7 @@ void PolitySystem::step(StepContext& ctx) {
         }
         std::vector<CellId> near_state;
         auto beside_a_state = [&](CellId c) {
-            cells_within(w, c, WarSystem::kRaidKm, near_state);
+            cells_within(w, c, kShadowKm, near_state);
             for (CellId nb : near_state) {
                 if (state_polity[s.polity_of[nb]] != 0) return true;
             }
@@ -676,8 +681,9 @@ void PolitySystem::step(StepContext& ctx) {
             Polity& pol = s.polities[id];
             if (pol.ended != kNever || pol.nomadic || polity_has_writing(w, s, static_cast<std::uint32_t>(id))) continue;
             if (herders_at(pol.capital) && cell_trait(s, pol.capital, i_warfare) >= kNomadWarfare &&
-                mounted_country(pol.capital) && beside_a_state(pol.capital)) {
-                pol.nomadic = true;
+                mounted_country(pol.capital)) {
+                RngStream rng = ctx.rng(Stream::Polity, kRidersEntity | static_cast<std::uint32_t>(id));
+                if (beside_a_state(pol.capital) || rng.uniform() < kNoShadow) pol.nomadic = true;
             }
         }
         std::vector<CellId> in_reach;
@@ -686,29 +692,30 @@ void PolitySystem::step(StepContext& ctx) {
             const double farming = s.env.farming.empty() ? 0.0 : s.env.farming[c];
             const double density = static_cast<double>(s.cell_population[c]) / w.grid.area_km2(c);
             const double hierarchy = cell_trait(s, c, i_hierarchy);
+            RngStream rng = ctx.rng(Stream::Polity, kFormationEntity | c);
             if (herders_at(c)) {
                 // Mounted herders band together in confederations, the
                 // richer their farming neighbours the likelier (the shadow
                 // empire).
                 const double warfare = cell_trait(s, c, i_warfare);
-                if (warfare >= kNomadWarfare && mounted_country(c) && beside_a_state(c)) {
+                if (warfare >= kNomadWarfare && mounted_country(c)) {
+                    const bool shadow = beside_a_state(c);
                     double wealth = 0.0;
                     cells_within(w, c, WarSystem::kRaidKm, in_reach);
                     for (CellId nb : in_reach) wealth += raid_wealth(s, nb);
                     const double lure = std::min(kShadowMax, 1.0 + wealth / kShadowWealth);
-                    RngStream rng = ctx.rng(Stream::Polity, kFormationEntity | c);
                     const double roaming = mobility_factor(cell_trait(s, c, trait_index(content, "mobility")), 0.5);
-                    if (rng.uniform() < w.per_area(kNomadFormation * warfare * lure * roaming)) {
+                    if (rng.uniform() < w.per_area(kNomadFormation * warfare * lure * roaming * (shadow ? 1.0 : kNoShadow))) {
                         s.polity_of[c] = found(c, 0, true);
+                        continue;
                     }
-                    continue;
+                    if (shadow) continue;
                 }
                 // Herders without mounts, or with no state to raid and trade
                 // with, form tribal chiefdoms, from the
                 // thinner numbers herds can feed.
                 const double enough = kHerderDensity * kMinDensity;
                 if (hierarchy < kMinHierarchy || density < enough) continue;
-                RngStream rng = ctx.rng(Stream::Polity, kFormationEntity | c);
                 if (rng.uniform() < w.per_area(kFormation * hierarchy * 0.5 * std::min(2.0, density / enough))) {
                     s.polity_of[c] = found(c, 0, false);
                 }
@@ -725,7 +732,6 @@ void PolitySystem::step(StepContext& ctx) {
             const double circumscription = around > 0 ? static_cast<double>(hemmed) / around : 0.0;
             const double p =
                 w.per_area(kFormation * hierarchy * (0.5 + circumscription) * std::min(2.0, density / kMinDensity));
-            RngStream rng = ctx.rng(Stream::Polity, kFormationEntity | c);
             if (rng.uniform() < p) s.polity_of[c] = found(c, 0, false);
         }
     }
