@@ -13,6 +13,7 @@
 //   histsim religions [--seed N] [--level L] [--years Y]
 //   histsim slavery [--seed N] [--level L] [--years Y]
 //   histsim timeline [--seed N] [--level L] [--years Y]
+//   histsim gate [--seeds N] [--level L] [--years Y]
 //
 // With no arguments (for example, double-clicked in Explorer) it runs a short
 // demo and waits for Enter so the window stays open.
@@ -24,6 +25,7 @@
 #include <cstdlib>
 #include <exception>
 #include <map>
+#include <thread>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -69,6 +71,8 @@ struct Options {
     bool rivers = true;
     // languages command: how many families to print (0 = all)
     std::int64_t top = 0;
+    // gate command: how many seeds (1..N)
+    std::int64_t seeds = 3;
     // --at YEAR:ACTION:...: interventions, applied when the run reaches YEAR
     std::vector<std::pair<std::int64_t, std::string>> at;
 };
@@ -110,6 +114,9 @@ struct Options {
                  "                 colonists and folk migrations every 500 years, the largest\n"
                  "                 movements with the chains they set off, and how the language\n"
                  "                 families' lands changed\n"
+                 "  histsim gate [--seeds N] [--level L] [--years Y]\n"
+                 "                 the M3 gate: the largest polity era by era against history,\n"
+                 "                 over seeds 1..N (default 3, 10,700 years each)\n"
                  "  histsim timeline [--seed N] [--level L] [--years Y]\n"
                  "                 the last 60 events of the run, in words\n"
                  "  histsim slavery [--seed N] [--level L] [--years Y]\n"
@@ -176,6 +183,7 @@ Options parse(const std::vector<std::string_view>& args, std::size_t first) {
         else if (a == "--report-every") o.report_every = parse_int(value());
         else if (a == "--save") o.save_path = std::string(value());
         else if (a == "--hash-only") o.hash_only = true;
+        else if (a == "--seeds") o.seeds = parse_int(value());
         else if (a == "--mode") o.mode = std::string(value());
         else if (a == "--out") o.out = std::string(value());
         else if (a == "--width") o.width = static_cast<int>(parse_int(value()));
@@ -1017,6 +1025,122 @@ int timeline(const Options& o) {
     return 0;
 }
 
+// The M3 gate: the largest polity, era by era, against history. Eras are
+// counted from the first domesticated crop, set against the start of
+// farming in the Fertile Crescent (about 9500 BCE). Reference: the largest
+// empire to date (Taagepera's figures, as compiled in Wikipedia's list of
+// largest empires).
+int gate(const Options& o) {
+    struct Point {
+        std::int64_t since_farming;  // years
+        const char* when;
+        const char* who;
+        double mkm2;  // largest polity, million km^2
+    };
+    static const Point kHistory[] = {
+        {6500, "3000 BCE", "Upper and Lower Egypt", 0.1}, {6650, "2850 BCE", "Old Kingdom Egypt", 0.25},
+        {7100, "2400 BCE", "(Egypt, Sumer)", 0.4},       {7200, "2300 BCE", "Akkad", 0.65},
+        {8050, "1450 BCE", "New Kingdom Egypt", 1.0},     {8380, "1120 BCE", "Shang", 1.25},
+        {8830, "670 BCE", "Neo-Assyria", 1.4},            {8960, "540 BCE", "Achaemenid Persia", 3.6},
+        {9000, "500 BCE", "Achaemenid Persia", 5.5},
+    };
+    constexpr std::int64_t kWindow = 300;     // the largest within this many years either side
+    constexpr double kTolerance = 3.0;        // pass within this factor
+    constexpr std::int64_t kFirstState = 6300;  // writing and the first states, about 3200 BCE
+    constexpr double kChiefdomCeiling = 0.3;  // million km^2: largest before 5,000 years of farming
+    const std::int64_t n = std::max<std::int64_t>(1, o.seeds);
+    struct Run {
+        std::int64_t first_crop = -1, first_state = -1;
+        std::vector<double> at;  // per point, million km^2
+        double early = 0.0;      // largest before 5,000 years of farming
+    };
+    std::vector<Run> runs(static_cast<std::size_t>(n));
+    std::vector<std::thread> threads;
+    for (std::int64_t k = 0; k < n; ++k) {
+        threads.emplace_back([&, k] {
+            histsim::WorldParams p = o.params;
+            p.seed = static_cast<std::uint64_t>(k + 1);
+            Simulation sim = Simulation::create(p);
+            sim.step_years(o.years);
+            const histsim::SimState& s = sim.state();
+            Run& r = runs[static_cast<std::size_t>(k)];
+            for (const histsim::Domestication& d : s.domestications) {
+                if (sim.world().content->species[d.species].kind != histsim::SpeciesKind::Plant) continue;
+                const std::int64_t y = d.tick / histsim::kTicksPerYear;
+                if (r.first_crop < 0 || y < r.first_crop) r.first_crop = y;
+            }
+            if (r.first_crop < 0) return;
+            for (const histsim::YearRecord& y : s.history) {
+                const std::int64_t since = y.year - r.first_crop;
+                if (r.first_state < 0 && y.states > 0) r.first_state = since;
+                if (since < 5000) r.early = std::max(r.early, y.largest_polity_km2 / 1e6);
+            }
+            for (const Point& pt : kHistory) {
+                double best = -1.0;
+                for (const histsim::YearRecord& y : s.history) {
+                    const std::int64_t since = y.year - r.first_crop;
+                    if (since >= pt.since_farming - kWindow && since <= pt.since_farming + kWindow) {
+                        best = std::max(best, y.largest_polity_km2 / 1e6);
+                    }
+                }
+                r.at.push_back(best);
+            }
+        });
+    }
+    for (std::thread& th : threads) th.join();
+    auto median = [](std::vector<double> v) {
+        std::sort(v.begin(), v.end());
+        return v.empty() ? -1.0 : v[v.size() / 2];
+    };
+    std::printf("M3 gate: the largest polity by era, %lld seeds at level %d, %lld years each.\n", static_cast<long long>(n),
+                o.params.grid_level, static_cast<long long>(o.years));
+    std::printf("Eras are years since the first crop (history: since about 9500 BCE).\n\n");
+    std::printf("  seed  first crop  first state (years after)\n");
+    for (std::int64_t k = 0; k < n; ++k) {
+        const Run& r = runs[static_cast<std::size_t>(k)];
+        std::printf("  %4lld  year %5lld  %s\n", static_cast<long long>(k + 1), static_cast<long long>(r.first_crop),
+                    r.first_state >= 0 ? std::to_string(r.first_state).c_str() : "none");
+    }
+    std::size_t passed = 0, scored = 0;
+    std::printf("\n  years   date      history (Mkm^2)                       sim median   per seed                 verdict\n");
+    for (std::size_t i = 0; i < std::size(kHistory); ++i) {
+        const Point& pt = kHistory[i];
+        std::vector<double> v;
+        std::string each;
+        for (const Run& r : runs) {
+            if (r.at.size() > i && r.at[i] >= 0.0) v.push_back(r.at[i]);
+            char buf[16];
+            std::snprintf(buf, sizeof buf, " %5.2f", r.at.size() > i ? r.at[i] : -1.0);
+            each += buf;
+        }
+        const double m = median(v);
+        const char* verdict = "no data";
+        if (m >= 0.0) {
+            ++scored;
+            const double ratio = m > 0.0 ? m / pt.mkm2 : 0.0;
+            const bool ok = ratio >= 1.0 / kTolerance && ratio <= kTolerance;
+            passed += ok ? 1 : 0;
+            verdict = ok ? "ok" : (ratio > 1.0 ? "TOO LARGE" : "TOO SMALL");
+        }
+        std::printf("  %5lld  %-9s %-28s %5.2f      %5.2f   %-24s %s\n", static_cast<long long>(pt.since_farming), pt.when, pt.who,
+                    pt.mkm2, m, each.c_str(), verdict);
+    }
+    std::vector<double> states, early;
+    for (const Run& r : runs) {
+        if (r.first_state >= 0) states.push_back(static_cast<double>(r.first_state));
+        early.push_back(r.early);
+    }
+    const double first_state = median(states), largest_early = median(early);
+    const bool states_ok = first_state >= 0.0 && std::fabs(first_state - kFirstState) <= 1000.0;
+    const bool early_ok = largest_early <= kChiefdomCeiling;
+    std::printf("\n  First states: median %.0f years after the first crop (history about %lld): %s\n", first_state,
+                static_cast<long long>(kFirstState), states_ok ? "ok" : "OFF");
+    std::printf("  Largest polity in the first 5,000 years: median %.2f Mkm^2 (chiefdoms: at most %.1f): %s\n", largest_early,
+                kChiefdomCeiling, early_ok ? "ok" : "TOO LARGE");
+    std::printf("\n  %zu of %zu eras within a factor of %.0f of history.\n", passed, scored, kTolerance);
+    return passed == scored && states_ok && early_ok ? 0 : 3;
+}
+
 int world_info(const Options& o) {
     const histsim::World w = histsim::generate_test_world(o.params);
     std::size_t land = 0;
@@ -1099,6 +1223,11 @@ int main(int argc, char** argv) {
         }
         if (cmd == "migrations") {
             return migrations(parse(args, 2));
+        }
+        if (cmd == "gate") {
+            Options g = parse(args, 2);
+            if (std::find(args.begin(), args.end(), std::string_view("--years")) == args.end()) g.years = 10700;
+            return gate(g);
         }
         if (cmd == "timeline") {
             return timeline(parse(args, 2));
