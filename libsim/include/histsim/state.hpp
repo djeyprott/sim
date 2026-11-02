@@ -224,6 +224,10 @@ struct Polity {
     // Nomads who conquered a settled state rule from its capital and settle
     // down over a few generations (kNever = not settling).
     Tick settling_since = kNever;
+    // Value (at base prices) of the loot and tribute it has taken in recent
+    // years, fading by WarSystem::kPlunderFade a year: what a steppe ruler
+    // hands out to keep his followers.
+    double plunder = 0.0;
     std::uint32_t religion = 0;  // the rulers' faith (that of the capital)
     Tick wandered = kNever;      // when it last set out for new land as a whole people
     Tick arrived = kNever;       // when its last trek ended (it settled)
@@ -599,6 +603,7 @@ struct SimState {
     std::vector<SlaveRoute> slave_routes;
     std::int64_t captives = 0;
     std::int64_t sold = 0;
+    std::int64_t march_deaths = 0;  // died on wandering peoples' treks, all time
 
     // ---- Derived data: rebuilt by refresh(), never saved or hashed.
     std::vector<std::uint32_t> cell_population;

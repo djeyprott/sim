@@ -180,6 +180,12 @@ public:
     // kTrekRoom x what it feeds (with those already there); the rest stay
     // behind where they were, as real migrations shed people on the way.
     static constexpr double kTrekRoom = 1.1;
+    // The march kills: kMarchDeaths of those who take a step die on the way,
+    // x kMarchHarsh into desert (half that into dry scrub or tundra), x
+    // kMarchHostile into land held by another people (fighting through).
+    static constexpr double kMarchDeaths = 0.03;
+    static constexpr double kMarchHarsh = 3.0;
+    static constexpr double kMarchHostile = 2.0;
     static constexpr double kWanderThreatKm = 600.0;
     static constexpr double kWanderThreat = 5.0;
     static constexpr double kWanderRoam = 0.006;

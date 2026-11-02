@@ -152,11 +152,19 @@ Armies raise_armies(const World& w, const SimState& s) {
         a.levy[id] += static_cast<double>(s.cell_population[c]) * control * WarSystem::kLevy *
                       (0.5 + cell_trait(s, c, i_warfare)) * (p.nomadic ? WarSystem::kNomadLevy : 1.0);
     }
+    std::vector<double> people(np, 0.0);
+    for (CellId c = 0; c < w.cell_count(); ++c) {
+        const std::uint32_t id = s.polity_of[c];
+        if (id != 0 && id < np) people[id] += static_cast<double>(s.cell_population[c]);
+    }
     for (std::uint32_t id = 1; id < np; ++id) {
         if (a.levy[id] <= 0.0) continue;
-        const TechEffects e = technique_effects(w, s.polities[id].capital, techniques_in(s, s.polities[id].capital));
+        const Polity& p = s.polities[id];
+        const TechEffects e = technique_effects(w, p.capital, techniques_in(s, p.capital));
         a.strength[id] = a.levy[id] * (1.0 + e.military) *
-                         (has_institution(s.polities[id].institutions, Institution::Army) ? Institutions::kArmyStrength : 1.0);
+                         (has_institution(p.institutions, Institution::Army) ? Institutions::kArmyStrength : 1.0);
+        // Followers come for the plunder.
+        if (p.nomadic) a.strength[id] *= 1.0 + WarSystem::kPlunderStrength * plunder_plenty(p, people[id]);
     }
     return a;
 }
@@ -164,6 +172,13 @@ Armies raise_armies(const World& w, const SimState& s) {
 }  // namespace
 
 std::vector<double> polity_strengths(const World& w, const SimState& s) { return raise_armies(w, s).strength; }
+
+bool herder_tribe(const World& w, const SimState& s, std::uint32_t id) {
+    if (id == 0 || id >= s.polities.size()) return false;
+    const CellId seat = s.polities[id].capital;
+    if (polity_has_writing(w, s, id) || (s.city_of.size() > seat && s.city_of[seat] != 0)) return false;
+    return s.env.pastoral.size() > seat && s.env.pastoral[seat] >= WarSystem::kHerderTribe;
+}
 
 void cells_within(const World& w, CellId start, double km, std::vector<CellId>& out) {
     out.clear();
@@ -275,6 +290,7 @@ void WarSystem::step(StepContext& ctx) {
     if (s.wars.empty()) s.wars.emplace_back();
     s.war_deaths.assign(n, 0);
     s.strife.assign(n, 0);
+    for (Polity& p : s.polities) p.plunder *= 1.0 - kPlunderFade;
     s.captives = 0;
     s.raids = 0;
     if (s.last_raid.size() != n) s.last_raid.assign(n, kNever);
@@ -540,7 +556,9 @@ void WarSystem::step(StepContext& ctx) {
                     nomads.settling_since = tick;
                     s.events.push_back({tick, EventType::ConquestDynasty, seat, static_cast<std::int64_t>(lead_a)});
                 } else {
-                    subjugate(s, lead_d, lead_a, Bond::Tributary, tick);
+                    // Herder tribes join the confederation as clans; others pay.
+                    subjugate(s, lead_d, lead_a,
+                              nomads.nomadic && herder_tribe(w, s, lead_d) ? Bond::Vassal : Bond::Tributary, tick);
                 }
             } else if (winner == lead_a && capital_fell) {
                 if (own_cells(loser) <= w.cells_for(kAnnexBelowCells)) {
@@ -565,14 +583,18 @@ void WarSystem::step(StepContext& ctx) {
                 const double q = kTribute * s.stocks[from * ng + g];
                 s.stocks[from * ng + g] -= q;
                 s.stocks[to * ng + g] += q;
+                s.polities[lord].plunder += q * content.goods[g].base_price;
             }
         }
         RngStream rng = ctx.rng(Stream::War, kDiplomacyEntity | id);
         const double rival = power[lord] - (p.bond == Bond::Vassal ? kVassalShare * armies.strength[id] : 0.0);
         if (armies.strength[id] >= kRebelRatio * rival && war_between(s, id, lord) == 0) {
             if (rng.uniform() < kRebellion) start_war(w, s, tick, id, lord, WarGoal::Independence);
-        } else if (p.bond == Bond::Vassal && control_of(lord, p.capital) >= kAbsorbControl && rng.uniform() < kAbsorb &&
-                   war_between(s, id, lord) == 0) {
+        } else if (p.bond == Bond::Vassal && war_between(s, id, lord) == 0 &&
+                   ((control_of(lord, p.capital) >= kAbsorbControl && rng.uniform() < kAbsorb) ||
+                    // A herder clan bordering its confederation merges into it.
+                    (s.polities[lord].nomadic && herder_tribe(w, s, id) &&
+                     std::binary_search(borders[id].begin(), borders[id].end(), lord) && rng.uniform() < kClanAbsorb))) {
             for (CellId c : cells[id]) {
                 if (s.polity_of[c] == id) s.polity_of[c] = lord;
             }
@@ -721,13 +743,14 @@ void WarSystem::step(StepContext& ctx) {
                     const double q = kRaidLoot * s.stocks[h * ng + g];
                     s.stocks[h * ng + g] -= q;
                     s.stocks[p.capital * ng + g] += q;
+                    s.polities[id].plunder += q * content.goods[g].base_price;
                 }
             }
         }
         // The victim's ruler buys peace with tribute.
         if (owner != 0 && s.polities[owner].bond == Bond::None && power[id] > kRaidTributeRatio * power[owner] &&
             war_between(s, id, owner) == 0 && rng.uniform() < kRaidTribute) {
-            subjugate(s, owner, id, Bond::Tributary, tick);
+            subjugate(s, owner, id, herder_tribe(w, s, owner) ? Bond::Vassal : Bond::Tributary, tick);
         }
     }
 

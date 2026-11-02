@@ -93,6 +93,24 @@ public:
     static constexpr double kRebellion = 0.03;
     static constexpr double kAbsorb = 0.01;        // chance a year a firmly held vassal is absorbed
     static constexpr double kAbsorbControl = 0.5;
+    // Steppe confederations grow by taking in the herder tribes they beat:
+    // a herder chiefdom (no writing, no city, mostly herding) beaten by
+    // nomads, in war or by raids, becomes a vassal clan (adding half its
+    // strength, and absorbed as other vassals are) rather than a tributary.
+    static constexpr double kHerderTribe = 0.5;  // herds' share of its farm food
+    // A herder clan bordering its confederation merges into it with this
+    // chance a year (firm control is not needed: the steppe's ties are of
+    // kin and loyalty).
+    static constexpr double kClanAbsorb = 0.02;
+    // Plunder: loot and tribute received, at base prices, fading kPlunderFade
+    // a year. A confederation's followers come for it: its strength is x (1
+    // + kPlunderStrength x plenty) and its stability target moves by
+    // kPlunderStability x (2 x plenty - 1), where plenty = min(1, plunder /
+    // (people x kPlunderPerPerson)). Cut off from loot, it loses followers.
+    static constexpr double kPlunderFade = 0.2;
+    static constexpr double kPlunderStrength = 0.5;
+    static constexpr double kPlunderStability = 0.1;
+    static constexpr double kPlunderPerPerson = 0.05;
     // Nomad raids: chance a year, reach (from any cell the nomads hold),
     // share of goods taken, share of people killed, and chance a successful
     // raid makes the victim's ruler pay tribute (if the nomads are at least
@@ -133,6 +151,16 @@ double raid_wealth(const SimState& state, CellId cell);
 
 // Each living polity's own fighting strength (levy x quality), by polity id.
 std::vector<double> polity_strengths(const World& world, const SimState& state);
+
+// How well a polity's plunder keeps its followers: min(1, plunder / (people
+// x kPlunderPerPerson)), 0-1.
+[[nodiscard]] inline double plunder_plenty(const Polity& polity, double people) {
+    return people > 0.0 ? std::min(1.0, polity.plunder / (people * WarSystem::kPlunderPerPerson)) : 0.0;
+}
+
+// A herder chiefdom: no writing, no city at its seat, herds giving at least
+// kHerderTribe of its farm food. Nomads take such tribes in as clans.
+bool herder_tribe(const World& world, const SimState& state, std::uint32_t polity);
 
 // The polity at the top of a chain of overlords.
 std::uint32_t top_overlord(const SimState& state, std::uint32_t polity);

@@ -213,7 +213,8 @@ TEST(migration_a_hard_pressed_tribe_moves_as_a_whole_and_the_locals_mostly_stay)
     CHECK(moved.capital != x.home);
     CHECK(s.polity_of[x.home] != 1);  // the land left behind is free
     CHECK_EQ(s.polity_of[moved.capital], 1u);
-    CHECK_EQ(s.total_population(), people);  // moving, not dying
+    CHECK(s.march_deaths > 0);  // a few die on the march
+    CHECK_EQ(s.total_population(), people - s.march_deaths);  // and nobody else
     bool logged = false;
     for (const FolkMovement& m : s.migrations) {
         logged |= m.cause == MigrationCause::Wandering && m.polity == 1 && m.to == moved.capital;
@@ -253,6 +254,8 @@ TEST(migration_a_wandering_tribe_goes_step_by_step) {
     }
     CHECK(goal != kInvalidCell);
     s.polities[1].trek_to = goal;
+    const std::int64_t people = s.total_population();
+    const std::int64_t deaths = s.ledger.deaths;
     std::size_t steps = 0;
     double last = w.grid.distance_km(x.home, goal);
     for (int year = 0; year < 400 && s.polities[1].trek_to != kInvalidCell; ++year) {
@@ -269,4 +272,8 @@ TEST(migration_a_wandering_tribe_goes_step_by_step) {
     }
     CHECK(steps >= 3);  // the goal was several steps away
     CHECK(s.polities[1].trek_to == kInvalidCell);  // arrived, or settled where blocked
+    // The march killed some, and they are in the ledger.
+    CHECK(s.march_deaths > 0);
+    CHECK_EQ(s.ledger.deaths - deaths, s.march_deaths);
+    CHECK_EQ(s.total_population(), people - s.march_deaths);
 }

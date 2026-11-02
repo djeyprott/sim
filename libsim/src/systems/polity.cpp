@@ -425,6 +425,8 @@ void PolitySystem::step(StepContext& ctx) {
             if (ruler_age(r, ctx.tick) < RulerSystem::kAdultAge) target -= RulerSystem::kRegencyPenalty;
         }
         if (marching) target += kMarchCohesion;
+        // A confederation holds together while the plunder flows.
+        if (pol.nomadic) target += WarSystem::kPlunderStability * (2.0 * plunder_plenty(pol, people) - 1.0);
         for (std::size_t k = 0; k < kPressureCount; ++k) target -= kPressureWeight[k] * pr[k];
         target = std::clamp(target, 0.0, 1.0);
         pol.stability += (target < pol.stability ? kStabilityFall : kStabilityRise) * (target - pol.stability);
@@ -685,7 +687,7 @@ void PolitySystem::step(StepContext& ctx) {
             if (herders_at(pol.capital) && cell_trait(s, pol.capital, i_warfare) >= kNomadWarfare &&
                 mounted_country(pol.capital)) {
                 RngStream rng = ctx.rng(Stream::Polity, kRidersEntity | static_cast<std::uint32_t>(id));
-                if (beside_a_state(pol.capital) || rng.uniform() < kNoShadow) pol.nomadic = true;
+                if (rng.uniform() < (beside_a_state(pol.capital) ? kRiderUnite : kRiderUnite * kNoShadow)) pol.nomadic = true;
             }
         }
         std::vector<CellId> in_reach;

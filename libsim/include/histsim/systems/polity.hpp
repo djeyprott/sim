@@ -240,10 +240,13 @@ public:
     static constexpr double kNomadReach = 2.0;
     // A confederation needs a state within this distance (the shadow empire).
     static constexpr double kShadowKm = 1500.0;
-    // Without one, confederations still form, kNoShadow times as readily
-    // (and a riding herder chiefdom becomes one with this chance a check):
+    // Without one, confederations still form, kNoShadow times as readily:
     // the steppe's own wars could unite it too (the early Scythians).
     static constexpr double kNoShadow = 0.2;
+    // A riding herder chiefdom becomes a confederation with chance
+    // kRiderUnite a check beside a state (x kNoShadow without): most riding
+    // tribes stay tribes, for a confederation to take in as clans.
+    static constexpr double kRiderUnite = 0.05;
     static constexpr std::int64_t kSettleYears = 60;
 };
 
