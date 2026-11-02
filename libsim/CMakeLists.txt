@@ -22,6 +22,7 @@ add_library(histsim
     src/systems/farming.cpp
     src/systems/polity.cpp
     src/systems/religion.cpp
+    src/systems/bondage.cpp
     src/systems/technology.cpp
     src/systems/war.cpp
     src/rng.cpp

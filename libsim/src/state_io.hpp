@@ -167,6 +167,7 @@ void serialize(Ar& ar, SimState& s) {
         for (auto& t : c.traits) ar.f64(t);
         for (auto& d : c.dialect) ar.f64(d);
         ar.f64(c.farming);
+        ar.f64(c.bonded);
     });
     vec(ar, s.ever_settled, [&](std::uint8_t& v) { ar.u8(v); });
 
@@ -371,6 +372,16 @@ void serialize(Ar& ar, SimState& s) {
     vec(ar, s.last_arrival_tick, [&](Tick& t) { ar.i64(t); });
     doubles(ar, s.recent_capacity);
     doubles(ar, s.usual_capacity);
+    vec(ar, s.slave_routes, [&](SlaveRoute& r) {
+        ar.u32(r.from);
+        ar.u32(r.to);
+        ar.i64(r.people);
+        ar.i64(r.first);
+        ar.i64(r.last);
+        ar.u32(r.language);
+    });
+    ar.i64(s.captives);
+    ar.i64(s.sold);
     ar.i64(s.colonists);
     ar.i64(s.folk_movers);
     vec(ar, s.domestications, [&](Domestication& d) {
@@ -414,6 +425,9 @@ void serialize(Ar& ar, SimState& s) {
         ar.i64(r.folk_movers);
         ar.u32(r.religions);
         ar.i64(r.organized_faithful);
+        ar.i64(r.enslaved);
+        ar.i64(r.captives);
+        ar.i64(r.sold);
     });
 }
 

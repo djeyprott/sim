@@ -429,6 +429,28 @@ from home. `histsim religions` prints the timeline and the largest faiths;
 the religion map colors organized faiths by family (sects in shades of their
 parent) and folk beliefs in muted tints.
 
+### Forced labour and the slave trade (M3)
+
+Each group of people holds a share in bondage (`Cohort::bonded`); groups
+split off carry the same share, merged ones average it by headcount, and the
+enslaved keep their own language and culture. `BondageSystem` runs each year
+after the war system.
+
+| Process | Model |
+| --- | --- |
+| Captives | When land is taken in war, 15% of its people are carried off to the conqueror's capital; nomad raids carry off 5% of the lands they strike to the raiders' capital. Fewer are taken of the captors' own lineage (×0.3), and few of their own organized faith (×0.1): a shared universal faith protects its own. |
+| Demand | A land wants a share of its people in bondage: 0.4 × its town share + 0.05 where settled people work metal or salt deposits + 0.08 × farming × hierarchy, all × (1.5 − sharing), at most 35%. |
+| Trade | Each year a land holding more than it wants sells half its surplus (lots of 50 or more) to the land within 1,500 km, on the market network, that wants them most (want ÷ (1 + distance ÷ 400 km)). Routes keep their totals and when they were used. |
+| Freedom and its lack | 0.5% of the enslaved go free each year, 1.5% where they have taken up the main culture of the land. They die younger (mortality × 1.3) and have fewer children (× 0.6). A polity's division pressure counts half the share of its people in bondage. |
+
+At level 5 the enslaved grow from the first wars between chiefdoms to about
+0.4% of the world (3–11% of the people of the largest towns) by year 9,000;
+about a million captives are taken and half a million sold on per 500 years
+late in a run, along a few hundred routes of up to 1,500 km. `histsim slavery`
+prints the timeline, where the enslaved live and who they are, and the
+busiest routes; the Enslavement map (People) shades their share and draws the
+routes used in the last 50 years.
+
 ## Roadmap
 
 | Milestone | Simulation | Front end | Gate |
@@ -436,7 +458,7 @@ parent) and folk beliefs in muted tints.
 | M0 Foundations (done) | Grid, test-world generator, scheduler, RNG, snapshots, headless runner | Sim API, map viewer | Identical replays on Windows, Linux and macOS |
 | M1 Living planet (done) | Climate and environment systems, cohort demography, migration, foragers | Globe, climate and population map modes, pyramid, charts | Forager populations settle near carrying capacity (`m1_gate_populations_settle_near_capacity`) |
 | M2 Neolithic (done) | Agriculture, herding, disease, culture and language drift, early tech | Culture and language map modes, language tree | Farming arises in several plausible regions |
-| **M3 States and trade** (in progress: towns, cities and early states; goods, markets and trade routes; war, diplomacy and nomads; religion done) | Goods, markets, transport, polities, war, religion, notable agents, forced labor and the slave trade | Trade flows, inspectors, explain view, timeline | Polity sizes track Seshat ranges by era |
+| **M3 States and trade** (in progress: towns, cities and early states; goods, markets and trade routes; war, diplomacy and nomads; religion; forced labour and the slave trade done) | Goods, markets, transport, polities, war, religion, notable agents, forced labor and the slave trade | Trade flows, inspectors, explain view, timeline | Polity sizes track Seshat ranges by era |
 | M4 Modern era | Energy, carbon cycle, demographic transition, Earth importer, procedural generator | God mode, branch comparison, modding tools | Full runs to the near future on Earth and generated worlds |
 
 M0 to M3 run on the generated test world, so the foundation is solid before any

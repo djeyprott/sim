@@ -11,6 +11,7 @@ add_executable(histsim_tests
     test_migration.cpp
     test_religion.cpp
     test_scale.cpp
+    test_bondage.cpp
     test_rng.cpp
     test_polity.cpp
     test_simulation.cpp

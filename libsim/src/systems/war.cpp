@@ -4,6 +4,7 @@
 #include <cmath>
 #include <vector>
 
+#include "histsim/systems/bondage.hpp"
 #include "histsim/systems/polity.hpp"
 #include "histsim/systems/technology.hpp"
 
@@ -273,6 +274,7 @@ void WarSystem::step(StepContext& ctx) {
     if (s.wars.empty()) s.wars.emplace_back();
     s.war_deaths.assign(n, 0);
     s.strife.assign(n, 0);
+    s.captives = 0;
     s.raids = 0;
     if (s.last_raid.size() != n) s.last_raid.assign(n, kNever);
     const Tick tick = ctx.tick;
@@ -417,6 +419,12 @@ void WarSystem::step(StepContext& ctx) {
             blow(loser, kShockLand * static_cast<double>(s.cell_population[target]));
             // The sack, and refugees to the nearest cell their side still holds.
             war.deaths += kill(s, target, kSackDeaths, false, rng);
+            // Captives carried off to the conquerors' capital.
+            {
+                const std::uint32_t captor = s.polity_of[from];
+                take_captives(s, target, s.polities[captor].capital,
+                              captive_share(w, s, captor, target, BondageSystem::kWarCaptives), rng, arrivals);
+            }
             CellId refuge = kInvalidCell;
             for (CellId nb : w.grid.neighbors(target)) {
                 const std::uint32_t o = s.polity_of[nb];
@@ -692,6 +700,8 @@ void WarSystem::step(StepContext& ctx) {
             s.strife[h] = 3;
             s.last_raid[h] = tick;
             kill(s, h, kRaidDeaths, false, rng);
+            // Captives carried off to the raiders' camp.
+            take_captives(s, h, p.capital, captive_share(w, s, id, h, BondageSystem::kRaidCaptives), rng, arrivals);
         }
         if (owner != 0) s.polities[owner].shock += kShockRaid;
         if (have_stocks) {
@@ -714,6 +724,27 @@ void WarSystem::step(StepContext& ctx) {
     // ---- Refugees arrive; the dead are gone.
     s.cohorts.insert(s.cohorts.end(), arrivals.begin(), arrivals.end());
     s.normalize_cohorts(n);
+
+    // ---- Polities overrun this year, left with no land, end now.
+    std::vector<std::uint8_t> landed(s.polities.size(), 0);
+    for (CellId c = 0; c < n; ++c) landed[s.polity_of[c]] = 1;
+    for (std::uint32_t id = 1; id < s.polities.size(); ++id) {
+        Polity& p = s.polities[id];
+        if (p.ended != kNever || landed[id]) continue;
+        p.ended = tick;
+        if (p.fate == PolityFate::Living) p.fate = PolityFate::Conquered;
+        s.events.push_back({tick, EventType::PolityEnded, p.capital, static_cast<std::int64_t>(id)});
+        // Its subjects go free and its alliances end with it.
+        for (Polity& q : s.polities) {
+            if (q.overlord == id) {
+                q.overlord = 0;
+                q.bond = Bond::None;
+            }
+        }
+        for (Alliance& a : s.alliances) {
+            if (a.ended == kNever && (a.a == id || a.b == id)) a.ended = tick;
+        }
+    }
 }
 
 }  // namespace histsim

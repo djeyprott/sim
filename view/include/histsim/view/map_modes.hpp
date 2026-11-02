@@ -123,6 +123,10 @@ std::vector<MapMarker> capital_markers(const Simulation& sim, std::string_view m
 bool same_group_cells(const Simulation& sim, std::string_view mode_id, CellId cell, std::vector<std::uint8_t>& out,
                       Rgba* group_color = nullptr);
 
+// Slave routes used in the last `years` years, as arrows (strength by the
+// people carried).
+std::vector<RouteLine> slave_route_lines(const Simulation& sim, std::int64_t years = 50);
+
 // Neutral colors shared by modes and overlays.
 Rgba ocean_neutral();
 Rgba coastline_color();

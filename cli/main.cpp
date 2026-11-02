@@ -11,6 +11,7 @@
 //   histsim wars [--seed N] [--level L] [--years Y]
 //   histsim migrations [--seed N] [--level L] [--years Y]
 //   histsim religions [--seed N] [--level L] [--years Y]
+//   histsim slavery [--seed N] [--level L] [--years Y]
 //
 // With no arguments (for example, double-clicked in Explorer) it runs a short
 // demo and waits for Enter so the window stays open.
@@ -40,6 +41,7 @@
 #include "histsim/systems/culture.hpp"
 #include "histsim/systems/economy.hpp"
 #include "histsim/systems/polity.hpp"
+#include "histsim/systems/bondage.hpp"
 #include "histsim/systems/religion.hpp"
 #include "histsim/systems/technology.hpp"
 #include "histsim/systems/war.hpp"
@@ -106,6 +108,9 @@ struct Options {
                  "                 colonists and folk migrations every 500 years, the largest\n"
                  "                 movements with the chains they set off, and how the language\n"
                  "                 families' lands changed\n"
+                 "  histsim slavery [--seed N] [--level L] [--years Y]\n"
+                 "                 captives and the enslaved every 500 years, where they live,\n"
+                 "                 who they are, and the busiest slave routes\n"
                  "  histsim religions [--seed N] [--level L] [--years Y]\n"
                  "                 religions every 500 years, the largest faiths with their\n"
                  "                 followers, origins and sects, and the states that hold them\n"
@@ -392,6 +397,9 @@ int map_images(const Options& o) {
         ro.routes = id == "trade" || id == "resources" ? &routes : nullptr;
         const bool peoples = id == "language" || id == "language_family" || id == "culture" || id == "population";
         ro.migrations = peoples ? &moves : nullptr;
+        const std::vector<histsim::view::RouteLine> slaving = id == "bondage" ? histsim::view::slave_route_lines(sim)
+                                                                              : std::vector<histsim::view::RouteLine>{};
+        if (id == "bondage") ro.migrations = &slaving;
         const std::vector<histsim::view::MapMarker> capitals = histsim::view::capital_markers(sim, id);
         ro.markers = capitals.empty() ? nullptr : &capitals;
         histsim::view::render(raster, sim.world(), colors, rgba, ro);
@@ -887,6 +895,67 @@ int religions(const Options& o) {
     return 0;
 }
 
+// Forced labour and the slave trade.
+int slavery(const Options& o) {
+    Simulation sim = Simulation::create(o.params);
+    apply_due_now(sim, o, true);
+    advance(sim, o.years, o, true);
+    const histsim::SimState& s = sim.state();
+    const histsim::World& w = sim.world();
+    std::printf("Every 500 years:\n");
+    std::int64_t captives = 0, sold = 0;
+    for (const histsim::YearRecord& r : s.history) {
+        captives += r.captives;
+        sold += r.sold;
+        if (r.year % 500 != 0) continue;
+        std::printf("  year %5lld  enslaved %9lld (%4.1f%% of people)  captives taken %9lld  sold on %9lld\n",
+                    static_cast<long long>(r.year), static_cast<long long>(r.enslaved),
+                    r.population > 0 ? 100.0 * static_cast<double>(r.enslaved) / static_cast<double>(r.population) : 0.0,
+                    static_cast<long long>(captives), static_cast<long long>(sold));
+        captives = sold = 0;
+    }
+    // Where the enslaved are now, and who they are.
+    std::vector<std::pair<std::int64_t, histsim::CellId>> places;
+    std::map<std::uint32_t, std::int64_t> by_language;
+    for (histsim::CellId c = 0; c < w.cell_count(); ++c) {
+        const std::int64_t b = histsim::bonded_people(s, c);
+        if (b > 0) places.emplace_back(b, c);
+    }
+    for (const histsim::Cohort& co : s.cohorts) {
+        if (co.bonded > 0.0) by_language[co.language] += static_cast<std::int64_t>(co.bonded * static_cast<double>(co.total()) + 0.5);
+    }
+    std::stable_sort(places.begin(), places.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+    std::printf("\nWhere the enslaved live (%zu lands):\n", places.size());
+    for (std::size_t k = 0; k < places.size() && k < 10; ++k) {
+        const histsim::CellId c = places[k].second;
+        const std::uint32_t city = s.city_of.empty() ? 0 : s.city_of[c];
+        const std::uint32_t ruler = s.polity_of.empty() ? 0 : s.polity_of[c];
+        std::printf("  %8lld  (%4.1f%% of its people)  %-14s ruled by %s\n", static_cast<long long>(places[k].first),
+                    100.0 * static_cast<double>(places[k].first) / static_cast<double>(std::max<std::uint32_t>(1, s.cell_population[c])),
+                    city != 0 ? s.cities[city].name.c_str() : "(countryside)", ruler != 0 ? s.polities[ruler].name.c_str() : "no one");
+    }
+    std::vector<std::pair<std::int64_t, std::uint32_t>> langs;
+    for (const auto& [l, n] : by_language) langs.emplace_back(n, l);
+    std::stable_sort(langs.begin(), langs.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+    std::printf("\nWho they are (by language):\n");
+    for (std::size_t k = 0; k < langs.size() && k < 8; ++k) {
+        std::printf("  %8lld  %s speakers\n", static_cast<long long>(langs[k].first), s.languages[langs[k].second].name.c_str());
+    }
+    std::vector<const histsim::SlaveRoute*> routes;
+    for (const histsim::SlaveRoute& r : s.slave_routes) routes.push_back(&r);
+    std::stable_sort(routes.begin(), routes.end(), [](auto a, auto b) { return a->people > b->people; });
+    std::printf("\nBusiest slave routes (%zu in all):\n", routes.size());
+    for (std::size_t k = 0; k < routes.size() && k < 10; ++k) {
+        const histsim::SlaveRoute& r = *routes[k];
+        const std::uint32_t to_city = s.city_of.empty() ? 0 : s.city_of[r.to];
+        std::printf("  %8lld people  %5.0f km  to %-14s years %lld-%lld  (last: %s speakers)\n", static_cast<long long>(r.people),
+                    w.grid.distance_km(r.from, r.to), to_city != 0 ? s.cities[to_city].name.c_str() : "(countryside)",
+                    static_cast<long long>(r.first / histsim::kTicksPerYear), static_cast<long long>(r.last / histsim::kTicksPerYear),
+                    s.languages[r.language].name.c_str());
+    }
+    return 0;
+}
+
 int world_info(const Options& o) {
     const histsim::World w = histsim::generate_test_world(o.params);
     std::size_t land = 0;
@@ -969,6 +1038,9 @@ int main(int argc, char** argv) {
         }
         if (cmd == "migrations") {
             return migrations(parse(args, 2));
+        }
+        if (cmd == "slavery") {
+            return slavery(parse(args, 2));
         }
         if (cmd == "religions") {
             return religions(parse(args, 2));

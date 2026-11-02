@@ -28,9 +28,11 @@ settled neighbours. Farmers colonize new land and carry their languages, and
 peoples flee famine, war and raids in folk migrations that push others on.
 Each people has its own folk beliefs; temple cults rise in city-states and
 universal faiths in great literate cities, spreading by trade and by rulers'
-conversion, and splitting into sects far from home.
+conversion, and splitting into sects far from home. Wars and raids carry off
+captives, who are sold along slave routes to the towns, mines and estates
+that want bound labour.
 A Godot viewer shows it as a map or globe with
-thirty map modes (plus one per culture trait), polity borders, trade routes, world charts, a cell
+thirty-one map modes (plus one per culture trait), polity borders, trade routes, world charts, a cell
 inspector and a god mode.
 
 ## Download
@@ -91,6 +93,9 @@ ctest --test-dir build --output-on-failure
 
 # Religions: when faiths arose, how they spread, the largest after 9,000 years
 ./build/cli/histsim religions --years 9000
+
+# Captives, the enslaved and the busiest slave routes after 9,000 years
+./build/cli/histsim slavery --years 9000
 
 # Goods, prices and the busiest trade routes after 6,000 years
 ./build/cli/histsim trade --years 6000

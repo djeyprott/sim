@@ -35,6 +35,10 @@ struct Cohort {
     std::array<double, kMaxTraits> traits{};       // 0-1 each, as in Content::traits
     std::array<double, kDialectDims> dialect{};
     double farming = 0.0;  // share of its food from crops and herds (0 = foragers)
+    // Share of its people held in bondage (enslaved, 0-1). Groups split off
+    // carry the same share (the enslaved go with their households); merged
+    // groups average it by headcount.
+    double bonded = 0.0;
 
     [[nodiscard]] std::int64_t total() const noexcept {
         std::int64_t t = 0;
@@ -422,6 +426,18 @@ struct YearRecord {
     std::int64_t folk_movers = 0;         // people in folk migrations this year
     std::uint32_t religions = 0;          // religions with followers
     std::int64_t organized_faithful = 0;  // people in lands of organized (not folk) religions
+    std::int64_t enslaved = 0;            // people in bondage
+    std::int64_t captives = 0;            // carried off in war and raids this year
+    std::int64_t sold = 0;                // sold on this year
+};
+
+// A slave route: captives sold from one land to another, with the total
+// carried along it and when it was first and last used.
+struct SlaveRoute {
+    CellId from = kInvalidCell, to = kInvalidCell;
+    std::int64_t people = 0;
+    Tick first = 0, last = 0;
+    std::uint32_t language = 0;  // of the largest lot most recently sold
 };
 
 // ---------------------------------------------------------------- state
@@ -520,6 +536,12 @@ struct SimState {
     std::vector<double> usual_capacity;
     std::int64_t colonists = 0;
     std::int64_t folk_movers = 0;
+
+    // The slave trade: routes (sorted by from, then to) and this year's
+    // totals.
+    std::vector<SlaveRoute> slave_routes;
+    std::int64_t captives = 0;
+    std::int64_t sold = 0;
 
     // ---- Derived data: rebuilt by refresh(), never saved or hashed.
     std::vector<std::uint32_t> cell_population;

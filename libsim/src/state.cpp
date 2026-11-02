@@ -37,6 +37,7 @@ void SimState::normalize_cohorts(std::size_t cell_count) {
             // the residents' values by the square of their share, so a few
             // newcomers change little and a crowd of them nearly everything.
             const double wm = static_cast<double>(m.total()), wc = static_cast<double>(c.total());
+            if (wm + wc > 0.0 && (m.bonded != 0.0 || c.bonded != 0.0)) m.bonded = (wm * m.bonded + wc * c.bonded) / (wm + wc);
             if (wm + wc > 0.0) {
                 const double share = wc / (wm + wc);
                 const double f = share * share;

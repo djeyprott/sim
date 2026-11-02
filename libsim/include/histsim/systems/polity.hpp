@@ -103,7 +103,8 @@ public:
     // poverty = 1 - (trade value per person / kTradePerPerson); epidemic =
     // kEpidemicScale x (disease deaths per person - kUsualDiseaseDeaths);
     // division = share of people whose culture is of another lineage +
-    // kFaithDivision x share holding an organized faith not the rulers'.
+    // kFaithDivision x share holding an organized faith not the rulers' +
+    // kBondDivision x share held in bondage.
     static constexpr double kStabilityBase = 0.45;
     static constexpr double kStabilityRise = 0.1;
     static constexpr double kStabilityFall = 0.3;
@@ -113,6 +114,7 @@ public:
     static constexpr double kBureaucracyWeight = 0.1;
     static constexpr double kFaithWeight = 0.1;
     static constexpr double kMobileRule = 0.5;
+    static constexpr double kBondDivision = 0.5;
     static constexpr double kFaithDivision = 0.5;
     static constexpr std::array<double, kPressureCount> kPressureWeight = {1.0, 0.8, 0.5, 0.15, 0.6, 0.3};
     static constexpr double kFamineScale = 3.0;

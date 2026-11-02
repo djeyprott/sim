@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "histsim/hash.hpp"
+#include "histsim/systems/bondage.hpp"
 #include "histsim/systems/climate.hpp"
 #include "histsim/systems/culture.hpp"
 #include "histsim/systems/disease.hpp"
@@ -48,6 +49,7 @@ void Simulation::install_systems() {
     scheduler_.add(std::make_unique<ReligionSystem>());
     scheduler_.add(std::make_unique<PolitySystem>());
     scheduler_.add(std::make_unique<WarSystem>());
+    scheduler_.add(std::make_unique<BondageSystem>());
     scheduler_.add(std::make_unique<HistorySystem>());
 }
 

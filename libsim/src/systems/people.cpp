@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 
+#include "histsim/systems/bondage.hpp"
 #include "histsim/systems/culture.hpp"
 #include "histsim/systems/farming.hpp"
 #include "histsim/systems/polity.hpp"
@@ -138,7 +139,9 @@ void DemographySystem::step(StepContext& ctx) {
                                   : 0.0;
         // Towns are deadlier (crowding, dirt, water): the urban graveyard.
         const double urban = s.urban.empty() ? 0.0 : s.urban[co.cell];
-        const double mort_mult = std::min(kMaxMortalityMultiplier, 1.0 + famine) * (1.0 + kUrbanMortality * urban);
+        // The enslaved die younger and have fewer children.
+        const double mort_mult = std::min(kMaxMortalityMultiplier, 1.0 + famine) * (1.0 + kUrbanMortality * urban) *
+                                 (1.0 + kBondMortality * co.bonded);
         RngStream rng = ctx.rng(Stream::Demography, static_cast<std::uint32_t>(i));
 
         // Deaths: the life table (raised by famine) plus disease. Deaths are
@@ -166,7 +169,7 @@ void DemographySystem::step(StepContext& ctx) {
         // Births, to the women who survived the year.
         double expected = 0.0;
         for (int b = 0; b < kAgeBins; ++b) expected += co.female[b] * vital::kForagerFertility[b];
-        const std::int64_t births = stochastic_round(expected * fert_mult, rng);
+        const std::int64_t births = stochastic_round(expected * fert_mult * (1.0 - kBondFertility * co.bonded), rng);
         const std::int64_t girls = std::min(births, stochastic_round(static_cast<double>(births) * vital::kFemaleShareOfBirths, rng));
 
         // Aging: a fifth of each 5-year bin moves up a bin each year. Work from
@@ -270,6 +273,7 @@ void MigrationSystem::step(StepContext& ctx) {
             band.traits = co.traits;
             band.dialect = co.dialect;
             band.farming = co.farming;
+            band.bonded = co.bonded;
             std::int64_t band_size = 0;
             for (int b = 0; b < kAgeBins; ++b) {
                 const double share = std::min(1.0, rate * kMigrationByAge[b] * (1.0 - kFarmerStay * settled) * moves);
@@ -306,6 +310,7 @@ void MigrationSystem::step(StepContext& ctx) {
         band.traits = co.traits;
         band.dialect = co.dialect;
         band.farming = co.farming;
+        band.bonded = co.bonded;
         share = std::clamp(share, 0.0, 1.0);
         for (int b = 0; b < kAgeBins; ++b) {
             const auto f = std::min<std::int64_t>(co.female[b], stochastic_round(share * co.female[b], rng));
@@ -597,9 +602,12 @@ void MigrationSystem::step(StepContext& ctx) {
                     arrivals.push_back(band);
                     if (known != 0) carried.emplace_back(lands[slot], known);
                 }
-                s.polity_of[c] = 0;  // the land left behind is free
             }
-            if (gone == 0) continue;
+            if (gone == 0) {
+                for (CellId c : lands) claimed[c] = 0;
+                continue;  // none of the rulers' people left to go
+            }
+            for (CellId c : held[p]) s.polity_of[c] = 0;  // the land left behind is free
             moved += gone;
             s.folk_movers += gone;
             s.migrations.push_back({ctx.tick, from, target, gone, pol.language, pol.culture, MigrationCause::Wandering, 0, p});
@@ -688,6 +696,9 @@ void MigrationSystem::step(StepContext& ctx) {
                 const double f = ws / (wb + ws);
                 for (std::size_t t = 0; t < kMaxTraits; ++t) big.traits[t] += f * (s.cohorts[i].traits[t] - big.traits[t]);
                 big.farming += f * (s.cohorts[i].farming - big.farming);
+                if (s.cohorts[i].bonded != 0.0 || big.bonded != 0.0) {
+                    big.bonded = (wb * big.bonded + ws * s.cohorts[i].bonded) / (wb + ws);
+                }
             }
             for (int b = 0; b < kAgeBins; ++b) {
                 s.cohorts[largest].female[b] += s.cohorts[i].female[b];
@@ -781,6 +792,11 @@ void HistorySystem::step(StepContext& ctx) {
         }
         for (std::uint8_t h : held) r.religions += h;
     }
+    double enslaved = 0.0;
+    for (const Cohort& co : s.cohorts) enslaved += co.bonded * static_cast<double>(co.total());
+    r.enslaved = static_cast<std::int64_t>(enslaved + 0.5);
+    r.captives = s.captives;
+    r.sold = s.sold;
     s.history.push_back(r);
 }
 

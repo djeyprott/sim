@@ -4,9 +4,11 @@
 #include <cmath>
 #include <cstdio>
 #include <iterator>
+#include <map>
 #include <stdexcept>
 
 #include "histsim/language.hpp"
+#include "histsim/systems/bondage.hpp"
 #include "histsim/systems/economy.hpp"
 #include "histsim/systems/people.hpp"
 #include "histsim/systems/polity.hpp"
@@ -144,6 +146,14 @@ const ColorScale& towns_scale() {  // brick, light to dark
                                {0.08, hex("#d68a63")},
                                {0.15, hex("#ad5530")},
                                {0.3, hex("#6b2c12")}});
+    return s;
+}
+const ColorScale& bondage_scale() {  // plum, light to dark
+    static const ColorScale s({{0, hex("#f3edf2")},
+                               {0.01, hex("#dcc3d8")},
+                               {0.03, hex("#b98ab3")},
+                               {0.1, hex("#8a4f86")},
+                               {0.25, hex("#4f1f4d")}});
     return s;
 }
 const Rgba kStateless = hex("#dcd9cf");
@@ -285,6 +295,7 @@ const std::vector<MapModeInfo> kModes = {
     {"culture", "Culture", "Main culture; related cultures share a hue", "Culture"},
     {"religion", "Religion", "Faith of each land: organized religions in strong colors (sects in shades of their parent), folk beliefs muted", "Culture"},
     {"technology", "Technology", "Number of techniques the people know", "Culture"},
+    {"bondage", "Enslavement", "Share of people held in bondage; arrows: slave routes used in the last 50 years", "People"},
     {"subsistence", "Way of life", "How people get their food: foraging, fishing, farming, herding, towns", "Economy"},
     {"farming", "Farming", "Share of people's food from crops and herds", "Economy"},
     {"domesticates", "Domesticates", "Domesticated crops and animals the people know", "Economy"},
@@ -496,6 +507,21 @@ std::vector<RouteLine> migration_lines(const Simulation& sim, std::int64_t years
     return out;
 }
 
+std::vector<RouteLine> slave_route_lines(const Simulation& sim, std::int64_t years) {
+    std::vector<RouteLine> out;
+    const SimState& s = sim.state();
+    for (const SlaveRoute& r : s.slave_routes) {
+        if (s.tick - r.last > years * kTicksPerYear) continue;
+        RouteLine l;
+        l.a = r.from;
+        l.b = r.to;
+        l.strength = std::min(1.0, static_cast<double>(r.people) / 20000.0);
+        l.migration = true;
+        out.push_back(l);
+    }
+    return out;
+}
+
 Rgba ocean_neutral() { return kOceanNeutral; }
 Rgba coastline_color() { return kCoastline; }
 
@@ -649,6 +675,10 @@ void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rg
             out[c] = inhabited ? towns_scale()(s.urban.empty() ? 0.0 : s.urban[c]) : kEmptyLand;
         } else if (id == "subsistence") {
             out[c] = inhabited ? way_of_life_color(w, s, c, irrigation) : kEmptyLand;
+        } else if (id == "bondage") {
+            out[c] = inhabited ? bondage_scale()(static_cast<double>(bonded_people(s, c)) /
+                                                 static_cast<double>(s.cell_population[c]))
+                               : kEmptyLand;
         } else if (id == "religion") {
             out[c] = inhabited && s.faith_of.size() == n ? religion_color(w, s, s.faith_of[c]) : kEmptyLand;
         } else if (id.rfind("trait:", 0) == 0) {
@@ -786,6 +816,11 @@ Legend legend(std::string_view mode_id) {
         l.title = "Polities";
         l.swatches = {{"No ruler (bands, tribes, villages)", kStateless}, {"Uninhabited", kEmptyLand},
                       {"Ocean", kOceanNeutral}};
+    } else if (id == "bondage") {
+        l.title = "Share of people held in bondage (arrows: slave routes of the last 50 years)";
+        l.ramp = {{"0%", bondage_scale()(0)}, {"1%", bondage_scale()(0.01)}, {"3%", bondage_scale()(0.03)},
+                  {"10%", bondage_scale()(0.1)}, {"25%", bondage_scale()(0.25)}};
+        l.swatches = empty_and_ocean;
     } else if (id == "towns") {
         l.title = "Share of people living in towns";
         l.ramp = {{"0%", towns_scale()(0)}, {"3%", towns_scale()(0.03)}, {"8%", towns_scale()(0.08)},
@@ -1220,6 +1255,21 @@ std::vector<Row> describe_cell_rows(const Simulation& sim, CellId c,
     }
 
     mark("People");
+    if (const std::int64_t held = bonded_people(s, c); held > 0) {
+        std::map<std::uint32_t, std::int64_t> by_language;
+        for (const Cohort& co : s.cohorts_in(c)) {
+            by_language[co.language] += static_cast<std::int64_t>(co.bonded * static_cast<double>(co.total()) + 0.5);
+        }
+        std::uint32_t most = 0;
+        std::int64_t most_n = -1;
+        for (const auto& [l, k] : by_language) {
+            if (k > most_n) most = l, most_n = k;
+        }
+        f.push_back({"Enslaved", with_commas(static_cast<long long>(held)) +
+                                     fmt(" (%.1f%%), ", 100.0 * static_cast<double>(held) / static_cast<double>(s.cell_population[c])) +
+                                     "most " + s.languages[most].name + " speakers; wanted here: " +
+                                     fmt("%.0f%%", 100.0 * bondage_demand(w, s, c))});
+    }
     if (s.last_arrival.size() == w.cell_count() && s.last_arrival[c] != 0 && s.last_arrival[c] <= s.migrations.size()) {
         const FolkMovement& move = s.migrations[s.last_arrival[c] - 1];
         static const char* const why[] = {"fleeing famine", "fleeing war", "fleeing raids", "pushed out by others",

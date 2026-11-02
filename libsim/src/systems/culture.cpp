@@ -524,6 +524,7 @@ void CultureSystem::step(StepContext& ctx) {
             moved.traits = new_traits[i];
             moved.dialect = s.cohorts[top_lang_cohort].dialect;
             moved.farming = co.farming;
+            moved.bonded = co.bonded;
             std::int64_t moved_n = 0;
             Cohort& src = s.cohorts[i];
             for (int b = 0; b < kAgeBins; ++b) {
@@ -549,6 +550,7 @@ void CultureSystem::step(StepContext& ctx) {
             moved.traits = s.cohorts[top_culture_cohort].traits;
             moved.dialect = new_dialect[i];
             moved.farming = co.farming;
+            moved.bonded = co.bonded;
             std::int64_t moved_n = 0;
             Cohort& src = s.cohorts[i];
             for (int b = 0; b < kAgeBins; ++b) {

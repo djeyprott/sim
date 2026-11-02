@@ -271,7 +271,10 @@ Ref<Image> HistSimWorld::render_map(const String& mode, bool coastlines, bool ri
             options.routes = &lines;
         }
         std::vector<histsim::view::RouteLine> moves;
-        if (migrations) {
+        if (to_std(mode) == "bondage") {
+            moves = histsim::view::slave_route_lines(*sim_);  // the slave routes, always
+            options.migrations = &moves;
+        } else if (migrations) {
             moves = histsim::view::migration_lines(*sim_);
             options.migrations = &moves;
         }

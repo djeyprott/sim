@@ -355,7 +355,7 @@ void PolitySystem::step(StepContext& ctx) {
         if (pol.ended != kNever) continue;
         const std::uint32_t root = s.cultures[pol.culture].root;
         double people = 0.0, unfed = 0.0, held = 0.0, trade = 0.0, sick = 0.0, others = 0.0;
-        double faithful = 0.0, heretics = 0.0;
+        double faithful = 0.0, heretics = 0.0, enslaved = 0.0;
         // Mobile subjects (herders, foragers) are held more loosely: they can
         // move away from tax collectors and garrisons.
         const bool faiths = s.faith_of.size() == s.cell_population.size();
@@ -375,6 +375,7 @@ void PolitySystem::step(StepContext& ctx) {
             if (!s.disease_deaths.empty()) sick += s.disease_deaths[c];
             for (const Cohort& co : s.cohorts_in(c)) {
                 if (s.cultures[co.culture].root != root) others += static_cast<double>(co.total());
+                enslaved += co.bonded * static_cast<double>(co.total());
             }
         }
         pol.shock *= 1.0 - kShockDecay;
@@ -388,7 +389,7 @@ void PolitySystem::step(StepContext& ctx) {
             pr[static_cast<std::size_t>(Pressure::Epidemic)] =
                 std::clamp(kEpidemicScale * (sick / people - kUsualDiseaseDeaths), 0.0, 1.0);
             pr[static_cast<std::size_t>(Pressure::Division)] =
-                std::min(1.0, (others + kFaithDivision * heretics) / people);
+                std::min(1.0, (others + kFaithDivision * heretics + kBondDivision * enslaved) / people);
         }
         pr[static_cast<std::size_t>(Pressure::War)] = std::min(1.0, pol.shock);
         const std::uint64_t known = techniques_in(s, pol.capital);
