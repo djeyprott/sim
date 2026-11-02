@@ -668,7 +668,9 @@ void PolitySystem::step(StepContext& ctx) {
         auto beside_a_state = [&](CellId c) {
             cells_within(w, c, kShadowKm, near_state);
             for (CellId nb : near_state) {
-                if (state_polity[s.polity_of[nb]] != 0) return true;
+                // Polities founded this year (past the end) are chiefdoms, not states.
+                const std::uint32_t q = s.polity_of[nb];
+                if (q < state_polity.size() && state_polity[q] != 0) return true;
             }
             return false;
         };
