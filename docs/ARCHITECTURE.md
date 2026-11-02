@@ -132,7 +132,7 @@ spells.
 | --- | --- |
 | Terrain | Fractal noise continents; sea level set so the requested share of cells is ocean. On Earth worlds (`WorldKind::Earth`, `--earth`), Earth's relief instead (below). |
 | Temperature | Mean annual T = 27 − 30z² − 17z⁴ − 6.5 × altitude in km (z = sine of latitude). |
-| Rainfall | A zonal profile (wet equator, dry subtropics near 30°, wet westerlies, dry poles) scaled by moisture from upwind: each cell traces back along its prevailing wind (trades and polar easterlies from the east, westerlies from the west between 30° and 60°) and dries with the distance of land crossed. A ridge more than 800 m above the cell upwind casts a rain shadow; otherwise height lifts rain on the windward side. |
+| Rainfall | Two sources. The prevailing wind: a zonal profile (wet equator, a dry subtropical belt from about 15° to 30°, wet westerlies, dry poles) scaled by moisture from upwind: each cell traces back along its prevailing wind (trades and polar easterlies from the east, westerlies from the west between 30° and 60°) and dries with the distance of land crossed (fading over 1,400 km, three times as far at the equator, where rising air and forests recycle rain: the Congo and the Amazon). The summer monsoon: land heated in summer draws moist air from the sea on its equator side, and beyond about 27° from the east coast too where that is nearer (the western flank of the subtropical highs): up to 1,300 mm, strongest near 27° and fading to nothing by 5° and 50°, falling off steeply inland (÷ (1 + (distance ÷ 600 km)³)), so India, West Africa's Sahel, East Asia, the eastern United States and northern Australia are wet in summer while the hearts of the Sahara and Australia stay dry. Water narrower than 1,200 km (the Red Sea, Caspian, Black Sea, Baltic) is not a moisture source: a trace crosses it, counting half its width as land, so the steppes behind it stay dry. A ridge more than 800 m above the cell on either path casts a rain shadow; otherwise height lifts rain on the windward side. Rainfall is then smoothed once with each cell's land neighbours. |
 | Seasons | Temperature range grows with latitude and continentality (land upwind); rain season is signed (−1 winter rain, Mediterranean; +1 summer rain, monsoon). Monthly values come from these, peaking in July in the north and January in the south. |
 | Biomes | Köppen-style classification from the twelve months: ice, tundra, boreal, temperate, warm temperate, Mediterranean, grassland, shrubland, desert, savanna, rainforest. Growing months = months with T ≥ 5 °C and rain ≥ 35% of potential evaporation. |
 | Rivers | Runoff = max(0, rain − 0.8 × potential evaporation). Priority-flood drainage (lakes and pits are filled) gives every land cell one downstream cell, and discharge and basin area accumulate downstream. A cell is a river when its basin is at least 150,000 km² and its flow at least 300 m³/s, so the network looks alike at every grid level. |
@@ -169,12 +169,14 @@ land at every level, as on Earth. The coastline is today's (sea level 60 m
 lower at 10,000 BCE, Doggerland, Beringia and Sundaland, is not modelled), and
 the world hash includes the kind (generated worlds hash as before).
 
-On Earth the climate model gets temperatures right (tropics, cold Tibet,
-Andes and Siberia) but its rainfall, built for generated worlds, misses some
-of Earth's: the eastern United States and eastern China come out as
-grassland and desert (no summer monsoon onshore), Arabia and the Horn of
-Africa too wet (moisture carried by the trades from the nearby sea, with no
-subtropical subsidence), and the Congo a little dry.
+On Earth the climate model puts the main belts where they are: rainforest in
+the Congo, Amazon and Indonesia; the Sahara, Arabia, the Kalahari and
+inner Australia desert, with the Sahel and savannas around them; steppe from
+the Caspian to Mongolia; forest in the eastern United States, Europe and
+China; taiga and tundra in the north. Smaller features are coarser than on
+Earth: the Horn of Africa is too wet (its dryness comes from winds blowing
+along the coast and cold upwelling), the American Southwest and Patagonia
+too green.
 
 ### Culture and language (M2)
 
@@ -317,7 +319,10 @@ the date of their rise, which varies far more from world to world. With seeds
 1–5 at level 5 all nine eras pass: the median world has states of 0.4 million
 km² 200 years after the first, 0.8 at Akkad's time, 1.6 by 1450 BCE and 2.1 by
 500 BCE (Persia's 5.5 is at the edge of the factor of 3); of the five worlds
-one never invents writing and one never builds roads.
+one never invents writing and one never builds roads. Since the monsoon and
+dry-subtropics rainfall (M4) the gate has not been re-tuned: with seeds 1–3
+all nine eras still pass, but the first states come about 1,350 years early
+(4,950 years after the first crop, against 6,300).
 
 ### Goods, markets and trade (M3)
 

@@ -113,9 +113,11 @@ double sea_level_temperature(double z) {
 
 // Rainfall belts before winds and mountains: wet equator (ITCZ), dry
 // subtropics, the mid-latitude storm track, dry poles. mm per year.
+// The subtropical dry belt (sinking air of the Hadley cell) runs from about
+// 15° to 30°; the monsoon (below) wets its summer side where land heats.
 double zonal_precipitation(double abs_z) {
-    static constexpr std::array<double, 8> a = {0.0, 0.18, 0.42, 0.5, 0.62, 0.78, 0.92, 1.0};
-    static constexpr std::array<double, 8> p = {2600, 1900, 450, 350, 650, 1050, 450, 180};
+    static constexpr std::array<double, 10> a = {0.0, 0.12, 0.22, 0.3, 0.42, 0.5, 0.62, 0.78, 0.92, 1.0};
+    static constexpr std::array<double, 10> p = {2600, 2000, 1050, 450, 200, 300, 650, 1050, 450, 180};
     return piecewise(abs_z, a, p);
 }
 
@@ -124,29 +126,56 @@ struct Upwind {
     double barrier_m = 0.0;     // highest land crossed
 };
 
-// March upwind from a cell until the sea (or 4,000 km of land). The wind
-// belt is set by the cell's latitude: trade winds and polar easterlies blow
-// from the east, the westerlies (30°-60°) from the west.
-Upwind trace_upwind(const World& w, CellId c, double step_km) {
+enum class Toward { East, West, Equator };
+
+// March from a cell toward where its air comes from (east, west, or the
+// equator) until the open sea (or 4,000 km of land). Narrow and inland
+// water (under kOpenSeaKm across: the Red Sea, the Caspian, the Black Sea,
+// the Baltic)
+// lends little moisture: it counts as half its width of land.
+constexpr double kOpenSeaKm = 1200.0;
+Upwind trace_from(const World& w, CellId c, double step_km, Toward toward) {
     Upwind u;
-    const Vec3& p0 = w.grid.center(c);
-    const double abs_z = std::fabs(p0.z);
-    const double toward = (abs_z > 0.5 && abs_z < 0.866) ? -1.0 : 1.0;  // upwind: +east or -east
-    Vec3 p = p0;
+    Vec3 p = w.grid.center(c);
+    const double hemisphere = p.z >= 0.0 ? 1.0 : -1.0;
     CellId cell = c;
     const double step = step_km / kPlanetRadiusKm;
+    double water_km = 0.0;  // width of the water crossed so far, without land
     while (u.land_km < 4000.0) {
-        const double ex = -p.y, ey = p.x;  // east = z x p
-        const double elen = std::sqrt(ex * ex + ey * ey);
-        if (elen < 1e-6) break;  // at a pole there is no east
-        p = normalized(p.x + toward * step * ex / elen, p.y + toward * step * ey / elen, p.z);
+        double dx = 0.0, dy = 0.0, dz = 0.0;
+        if (toward == Toward::Equator) {
+            // South in the north, north in the south: -hemisphere x north,
+            // north = (-z x, -z y, 1 - z^2).
+            dx = hemisphere * p.z * p.x;
+            dy = hemisphere * p.z * p.y;
+            dz = -hemisphere * (1.0 - p.z * p.z);
+        } else {
+            const double sign = toward == Toward::East ? 1.0 : -1.0;
+            dx = -sign * p.y;  // east = z x p
+            dy = sign * p.x;
+        }
+        const double len = std::sqrt(dx * dx + dy * dy + dz * dz);
+        if (len < 1e-6) break;  // at a pole (or, going east, on the axis) there is no direction
+        p = normalized(p.x + step * dx / len, p.y + step * dy / len, p.z + step * dz / len);
         cell = nearest_from(w.grid, cell, p);
-        if (!w.is_land[cell]) return u;
-        u.land_km += step_km;
+        if (!w.is_land[cell]) {
+            water_km += step_km;
+            if (water_km >= kOpenSeaKm) return u;
+            continue;
+        }
+        u.land_km += step_km + 0.5 * water_km;
+        water_km = 0.0;
         u.barrier_m = std::max(u.barrier_m, w.elevation_m[cell]);
     }
     u.land_km = std::max(u.land_km, 4000.0);
     return u;
+}
+
+// The prevailing wind, set by the cell's latitude: trade winds and polar
+// easterlies blow from the east, the westerlies (30°-60°) from the west.
+Upwind trace_upwind(const World& w, CellId c, double step_km) {
+    const double abs_z = std::fabs(w.grid.center(c).z);
+    return trace_from(w, c, step_km, (abs_z > 0.5 && abs_z < 0.866) ? Toward::West : Toward::East);
 }
 
 // Months: phase 0 at mid-summer of the cell's hemisphere.
@@ -813,15 +842,35 @@ World generate_test_world(const WorldParams& params, const Content& content) {
             w.continentality[c] = 0.0;
             continue;
         }
+        // Mountains: a dry lee behind high ground, more rain on the
+        // windward slopes.
+        auto relief = [&](const Upwind& u) {
+            const double shadow_m = u.barrier_m - elev;
+            return shadow_m > 800.0 ? 1.0 / (1.0 + (shadow_m - 800.0) / 1200.0) : 1.0 + 0.35 * std::min(alt_km, 3.0);
+        };
+        // The prevailing wind: moisture fades with the land it crosses,
+        // more slowly near the equator, where rising air and forests
+        // recycle the rain far inland (the Congo, the Amazon).
         const Upwind up = trace_upwind(w, c, cell_km);
-        const double moisture = 1.0 / (1.0 + up.land_km / 1400.0);
-        double p = zonal_precipitation(abs_z) * (0.25 + 0.75 * moisture);
-        const double shadow_m = up.barrier_m - elev;
-        if (shadow_m > 800.0) {
-            p /= 1.0 + (shadow_m - 800.0) / 1200.0;  // dry lee of mountains
-        } else {
-            p *= 1.0 + 0.35 * std::min(alt_km, 3.0);  // rain on windward slopes
+        const double fade_km = 1400.0 * (1.0 + 2.0 * bump(abs_z, 0.0, 0.25));
+        const double moisture = 1.0 / (1.0 + up.land_km / fade_km);
+        const double p_wind = zonal_precipitation(abs_z) * (0.25 + 0.75 * moisture) * relief(up);
+        // The summer monsoon: land heated in summer draws moist air in from
+        // the sea on its equator side (India, West Africa, East Asia, the
+        // eastern United States and northern Australia), from about 5° to
+        // 50°, fading quickly inland (the hearts of the Sahara and of
+        // Australia stay dry).
+        // Beyond about 27° the summer air comes onshore on the east side of
+        // continents too (the western flank of the subtropical highs over
+        // the oceans), from whichever sea is nearer.
+        Upwind sea = trace_from(w, c, cell_km, Toward::Equator);
+        if (abs_z >= 0.45) {
+            const Upwind east = trace_from(w, c, cell_km, Toward::East);
+            if (east.land_km < sea.land_km) sea = east;
         }
+        const double reach = sea.land_km / 600.0;
+        const double p_monsoon = 1300.0 * bump(abs_z, 0.45, 0.37) / (1.0 + reach * reach * reach) * relief(sea);
+        const double p = p_wind + p_monsoon;
         w.precipitation_mm[c] = p;
 
         const double cont = std::min(1.0, up.land_km / 2500.0);
@@ -833,7 +882,27 @@ World generate_test_world(const WorldParams& params, const Content& content) {
         const double summer = 0.1 + 0.7 * bump(abs_z, 0.30, 0.18) + 0.3 * cont * bump(abs_z, 0.62, 0.25) +
                               0.25 * bump(abs_z, 0.92, 0.15);
         const double winter = 0.75 * bump(abs_z, 0.58, 0.13) * (1.0 - cont);
-        w.rain_season[c] = std::clamp(summer - winter, -0.85, 0.9);
+        // Monsoon rain falls in summer.
+        const double season = p > 0.0 ? (p_wind * (summer - winter) + p_monsoon * 0.9) / p : 0.0;
+        w.rain_season[c] = std::clamp(season, -0.85, 0.9);
+    }
+
+    // Smooth land rainfall once with its land neighbours: the traces march
+    // in steps, and weather blurs what they draw.
+    {
+        std::vector<double> smoothed = w.precipitation_mm;
+        for (CellId c = 0; c < n; ++c) {
+            if (!w.is_land[c]) continue;
+            double sum = 0.0;
+            int count = 0;
+            for (CellId nb : w.grid.neighbors(c)) {
+                if (!w.is_land[nb]) continue;
+                sum += w.precipitation_mm[nb];
+                ++count;
+            }
+            if (count > 0) smoothed[c] = 0.5 * w.precipitation_mm[c] + 0.5 * sum / count;
+        }
+        w.precipitation_mm = std::move(smoothed);
     }
 
     // --- Biomes and growing season ---------------------------------------------
