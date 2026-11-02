@@ -18,10 +18,21 @@
 
 namespace histsim {
 
+// What the terrain is: generated from the seed, or Earth's (ETOPO1 relief,
+// baked into data/earth). On Earth the seed still places species, deposits
+// and peoples and shapes all of history; only land and sea are fixed.
+// Append new values; never renumber (saved in snapshots).
+enum class WorldKind : std::uint8_t {
+    Generated = 0,
+    Earth = 1,
+};
+const char* world_kind_name(WorldKind kind);  // "generated", "earth"
+
 struct WorldParams {
     std::uint64_t seed = 1;
     int grid_level = 5;
-    double ocean_fraction = 0.70;  // share of cells below sea level
+    double ocean_fraction = 0.70;  // share of cells below sea level (generated worlds only)
+    WorldKind kind = WorldKind::Generated;
 };
 
 // Biomes from a Köppen-style classification of each cell's monthly climate.

@@ -27,6 +27,9 @@ class HistSimWorld : public godot::RefCounted {
 public:
     // Lifecycle. Each returns false and sets get_last_error() on failure.
     bool create_world(int64_t seed, int64_t level, double ocean_fraction);
+    // kind: "generated" or "earth" (Earth's land and sea; ocean_fraction unused).
+    bool create_world_of_kind(int64_t seed, int64_t level, double ocean_fraction, const godot::String& kind);
+    godot::String get_world_kind() const;
     bool load_snapshot(const godot::String& path);
     bool save_snapshot(const godot::String& path);
     bool has_world() const { return sim_.has_value(); }

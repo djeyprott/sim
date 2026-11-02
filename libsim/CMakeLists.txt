@@ -8,9 +8,16 @@ foreach(_pack species phonology culture diseases techniques goods religions)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_file}")
 endforeach()
 configure_file(src/content_data.cpp.in "${CMAKE_CURRENT_BINARY_DIR}/generated/content_data.cpp" @ONLY)
+# Earth's relief on the level-7 grid (tools/bake_earth.cpp), for Earth worlds.
+set(_earth "${PROJECT_SOURCE_DIR}/data/earth/elevation_l7.bin")
+file(READ "${_earth}" _hex HEX)
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," HISTSIM_EARTH_BYTES "${_hex}")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_earth}")
+configure_file(src/earth_data.cpp.in "${CMAKE_CURRENT_BINARY_DIR}/generated/earth_data.cpp" @ONLY)
 
 add_library(histsim
     "${CMAKE_CURRENT_BINARY_DIR}/generated/content_data.cpp"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/earth_data.cpp"
     src/content.cpp
     src/grid.cpp
     src/interventions.cpp

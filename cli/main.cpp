@@ -83,6 +83,9 @@ struct Options {
     }
     std::fprintf(stderr,
                  "usage:\n"
+                 "  (every command that builds a world takes --earth: Earth's land and sea\n"
+                 "   instead of a generated planet; the seed still places species, deposits\n"
+                 "   and peoples and shapes history)\n"
                  "  histsim run    [--seed N] [--level L] [--ocean F] [--years Y]\n"
                  "                 [--report-every Y] [--save FILE] [--hash-only]\n"
                  "  histsim resume FILE [--years Y] [--report-every Y] [--save FILE] [--hash-only]\n"
@@ -183,6 +186,7 @@ Options parse(const std::vector<std::string_view>& args, std::size_t first) {
         else if (a == "--report-every") o.report_every = parse_int(value());
         else if (a == "--save") o.save_path = std::string(value());
         else if (a == "--hash-only") o.hash_only = true;
+        else if (a == "--earth") o.params.kind = histsim::WorldKind::Earth;
         else if (a == "--seeds") o.seeds = parse_int(value());
         else if (a == "--mode") o.mode = std::string(value());
         else if (a == "--out") o.out = std::string(value());

@@ -66,7 +66,9 @@ jobs:
             --at 170:outbreak:1439:800:pox | tr -d '\r')
           # Long enough for domestication, farming and Bond events.
           farmed=$("$exe" run --seed 3 --level 4 --years 2500 --hash-only | tr -d '\r')
-          echo "$plain $meddled $farmed" > hash-${{ matrix.name }}.txt
+          # Earth: the baked relief, resampled to level 4.
+          earth=$("$exe" run --earth --seed 1 --level 4 --years 1000 --hash-only | tr -d '\r')
+          echo "$plain $meddled $farmed $earth" > hash-${{ matrix.name }}.txt
           echo "::notice title=determinism hash::${{ matrix.name }} $(cat hash-${{ matrix.name }}.txt)"
 
       - uses: actions/upload-artifact@v4

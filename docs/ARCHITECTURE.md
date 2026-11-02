@@ -130,7 +130,7 @@ spells.
 
 | Step | Model |
 | --- | --- |
-| Terrain | Fractal noise continents; sea level set so the requested share of cells is ocean. |
+| Terrain | Fractal noise continents; sea level set so the requested share of cells is ocean. On Earth worlds (`WorldKind::Earth`, `--earth`), Earth's relief instead (below). |
 | Temperature | Mean annual T = 27 − 30z² − 17z⁴ − 6.5 × altitude in km (z = sine of latitude). |
 | Rainfall | A zonal profile (wet equator, dry subtropics near 30°, wet westerlies, dry poles) scaled by moisture from upwind: each cell traces back along its prevailing wind (trades and polar easterlies from the east, westerlies from the west between 30° and 60°) and dries with the distance of land crossed. A ridge more than 800 m above the cell upwind casts a rain shadow; otherwise height lifts rain on the windward side. |
 | Seasons | Temperature range grows with latitude and continentality (land upwind); rain season is signed (−1 winter rain, Mediterranean; +1 summer rain, monsoon). Monthly values come from these, peaking in July in the north and January in the south. |
@@ -147,6 +147,34 @@ exactly (decimal digits up to 15 and powers of ten up to 22, a single correctly
 rounded operation) and rejects anything it cannot read exactly, so content
 never depends on the platform's `strtod`. The pack's hash goes into the world
 hash: a snapshot made with different content is refused.
+
+### Earth (M4)
+
+An Earth world (`WorldParams::kind = WorldKind::Earth`; `--earth` on the
+command line, "Earth" in the viewer) has Earth's land, sea and mountains in
+place of the fractal planet. Everything else is built from that terrain as on
+a generated world: climate, biomes, rivers, soils, and, from the seed, wild
+species, deposits and the starting peoples. So the map is always Earth's,
+while each seed is a different "alternate biology" and history on it.
+
+The relief comes from ETOPO1 (NOAA, public domain), as resampled to 10 arc
+minutes by ETOPO10 (github.com/g2e/etopo10, MIT), ice-surface version, so
+Antarctica and Greenland are land. `tools/bake_earth.cpp` averages it onto
+the level-7 grid (a cell is land if at least half its area is, at the mean
+height of its land or sea) into `data/earth/elevation_l7.bin`, one int16 per
+cell, compiled into the library. Coarser grids gather the level-7 cells the
+same way; finer grids take their nearest level-7 cell. The bake is offline
+and committed, so the simulation reads only integers, and 29.2% of cells are
+land at every level, as on Earth. The coastline is today's (sea level 60 m
+lower at 10,000 BCE, Doggerland, Beringia and Sundaland, is not modelled), and
+the world hash includes the kind (generated worlds hash as before).
+
+On Earth the climate model gets temperatures right (tropics, cold Tibet,
+Andes and Siberia) but its rainfall, built for generated worlds, misses some
+of Earth's: the eastern United States and eastern China come out as
+grassland and desert (no summer monsoon onshore), Arabia and the Horn of
+Africa too wet (moisture carried by the trades from the nearby sea, with no
+subtropical subsidence), and the Congo a little dry.
 
 ### Culture and language (M2)
 
@@ -486,4 +514,4 @@ routes used in the last 50 years.
 | M4 Modern era | Energy, carbon cycle, demographic transition, Earth importer, procedural generator | God mode, branch comparison, modding tools | Full runs to the near future on Earth and generated worlds |
 
 M0 to M3 run on the generated test world, so the foundation is solid before any
-real data is involved.
+real data is involved. Earth terrain (part of M4) is an option beside it.

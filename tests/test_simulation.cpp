@@ -91,6 +91,22 @@ TEST(sim_save_and_resume_matches_uninterrupted_run) {
     std::filesystem::remove(path);
 }
 
+TEST(sim_an_earth_run_saves_and_resumes_as_earth) {
+    const std::string path = temp_path("histsim_test_earth.hsim");
+    WorldParams p = small_world();
+    p.kind = WorldKind::Earth;
+    Simulation straight = Simulation::create(p);
+    straight.step_years(30);
+    Simulation first = Simulation::create(p);
+    first.step_years(10);
+    first.save(path);
+    Simulation resumed = Simulation::load(path);
+    CHECK(resumed.world().params.kind == WorldKind::Earth);
+    resumed.step_years(20);
+    CHECK_EQ(resumed.state_hash(), straight.state_hash());
+    std::filesystem::remove(path);
+}
+
 TEST(sim_resume_mid_year_matches) {
     const std::string path = temp_path("histsim_test_midyear.hsim");
     Simulation straight = Simulation::create(small_world());

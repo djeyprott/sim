@@ -46,6 +46,20 @@ void HistSimWorld::fail(const std::string& message) {
 String HistSimWorld::get_last_error() const { return to_godot(last_error_); }
 
 bool HistSimWorld::create_world(int64_t seed, int64_t level, double ocean_fraction) {
+    return create_world_of_kind(seed, level, ocean_fraction, "generated");
+}
+
+String HistSimWorld::get_world_kind() const {
+    if (!sim_) return String();
+    return String(histsim::world_kind_name(sim_->world().params.kind));
+}
+
+bool HistSimWorld::create_world_of_kind(int64_t seed, int64_t level, double ocean_fraction, const String& kind) {
+    const std::string k = to_std(kind);
+    if (k != "generated" && k != "earth") {
+        fail("world kind must be \"generated\" or \"earth\"");
+        return false;
+    }
     if (level < 2 || level > 8) {
         fail("grid level must be between 2 and 8");
         return false;
@@ -55,6 +69,7 @@ bool HistSimWorld::create_world(int64_t seed, int64_t level, double ocean_fracti
         p.seed = static_cast<std::uint64_t>(seed);
         p.grid_level = static_cast<int>(level);
         p.ocean_fraction = ocean_fraction;
+        p.kind = k == "earth" ? histsim::WorldKind::Earth : histsim::WorldKind::Generated;
         sim_.emplace(histsim::Simulation::create(p));
         raster_.reset();
         last_error_.clear();
@@ -468,6 +483,9 @@ void HistSimWorld::set_highlight(int64_t cell, double radius_km) {
 
 void HistSimWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("create_world", "seed", "level", "ocean_fraction"), &HistSimWorld::create_world);
+    ClassDB::bind_method(D_METHOD("create_world_of_kind", "seed", "level", "ocean_fraction", "kind"),
+                         &HistSimWorld::create_world_of_kind);
+    ClassDB::bind_method(D_METHOD("get_world_kind"), &HistSimWorld::get_world_kind);
     ClassDB::bind_method(D_METHOD("load_snapshot", "path"), &HistSimWorld::load_snapshot);
     ClassDB::bind_method(D_METHOD("save_snapshot", "path"), &HistSimWorld::save_snapshot);
     ClassDB::bind_method(D_METHOD("has_world"), &HistSimWorld::has_world);

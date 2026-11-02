@@ -5,12 +5,16 @@
 #include <deque>
 #include <memory>
 #include <queue>
+#include <stdexcept>
 
 #include "histsim/hash.hpp"
 #include "histsim/portable_math.hpp"
 #include "histsim/rng.hpp"
 
 namespace histsim {
+
+extern const unsigned char kEarthElevationL7[];
+extern const std::size_t kEarthElevationL7Size;
 
 namespace {
 
@@ -620,6 +624,71 @@ double World::month_precipitation_mm(CellId c, int m) const noexcept {
     return precipitation_mm[c] / 12.0 * (1.0 + rain_season[c] * pmath::cos(season_phase(grid.center(c).z, m)));
 }
 
+const char* world_kind_name(WorldKind kind) {
+    switch (kind) {
+        case WorldKind::Generated: return "generated";
+        case WorldKind::Earth: return "earth";
+    }
+    return "?";
+}
+
+namespace {
+
+// Earth's relief at the world's grid level, from the level-7 bake: at level
+// 7 as baked; coarser, each level-7 cell's area goes to the nearest cell (a
+// cell is land if at least half of it is, at the mean elevation of its land
+// or sea); finer, each cell takes its nearest level-7 cell's value.
+void earth_relief(World& w) {
+    constexpr int kBakedLevel = 7;
+    const std::size_t baked_n = 10 * (std::size_t{1} << (2 * kBakedLevel)) + 2;
+    if (kEarthElevationL7Size != 2 * baked_n) throw std::runtime_error("Earth relief data has the wrong size");
+    std::vector<double> baked(baked_n);
+    for (std::size_t i = 0; i < baked_n; ++i) {
+        const auto u = static_cast<std::uint16_t>(kEarthElevationL7[2 * i] | (kEarthElevationL7[2 * i + 1] << 8));
+        baked[i] = static_cast<double>(static_cast<std::int16_t>(u));
+    }
+    const std::size_t n = w.cell_count();
+    w.elevation_m.assign(n, 0.0);
+    w.is_land.assign(n, 0);
+    if (w.grid.level() == kBakedLevel) {
+        for (CellId c = 0; c < n; ++c) w.elevation_m[c] = baked[c];
+    } else {
+        const Grid fine = make_icosahedral_grid(kBakedLevel);
+        if (w.grid.level() > kBakedLevel) {
+            CellId at = 0;
+            for (CellId c = 0; c < n; ++c) {
+                at = nearest_from(fine, at, w.grid.center(c));
+                w.elevation_m[c] = baked[at];
+            }
+        } else {
+            std::vector<double> total(n, 0.0), land(n, 0.0), land_sum(n, 0.0), sea_sum(n, 0.0);
+            CellId at = 0;
+            for (CellId f = 0; f < baked_n; ++f) {
+                at = nearest_from(w.grid, at, fine.center(f));
+                const double a = fine.area_km2(f);
+                total[at] += a;
+                if (baked[f] > 0.0) {
+                    land[at] += a;
+                    land_sum[at] += a * baked[f];
+                } else {
+                    sea_sum[at] += a * baked[f];
+                }
+            }
+            for (CellId c = 0; c < n; ++c) {
+                if (land[c] >= 0.5 * total[c] && land[c] > 0.0) {
+                    w.elevation_m[c] = std::max(1.0, land_sum[c] / land[c]);
+                } else {
+                    const double sea = total[c] - land[c];
+                    w.elevation_m[c] = sea > 0.0 ? std::min(-1.0, sea_sum[c] / sea) : -1.0;
+                }
+            }
+        }
+    }
+    for (CellId c = 0; c < n; ++c) w.is_land[c] = w.elevation_m[c] > 0.0 ? 1 : 0;
+}
+
+}  // namespace
+
 // River corridors and coastal strips (see World::river_share).
 void build_corridors(World& w) {
     const std::size_t n = w.cell_count();
@@ -670,28 +739,32 @@ World generate_test_world(const WorldParams& params, const Content& content) {
     const std::size_t n = w.grid.cell_count();
 
     // --- Elevation and sea level -------------------------------------------
-    std::vector<double> raw(n);
-    for (CellId c = 0; c < n; ++c) {
-        raw[c] = fractal_noise(params.seed, w.grid.center(c));
-    }
-    std::vector<double> sorted = raw;
-    const auto k = static_cast<std::size_t>(params.ocean_fraction * static_cast<double>(n - 1));
-    std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(k), sorted.end());
-    const double sea = sorted[k];  // the k-th smallest value is unique, whatever the sort
-    const double lo = *std::min_element(raw.begin(), raw.end());
-    const double hi = *std::max_element(raw.begin(), raw.end());
+    if (params.kind == WorldKind::Earth) {
+        earth_relief(w);
+    } else {
+        std::vector<double> raw(n);
+        for (CellId c = 0; c < n; ++c) {
+            raw[c] = fractal_noise(params.seed, w.grid.center(c));
+        }
+        std::vector<double> sorted = raw;
+        const auto k = static_cast<std::size_t>(params.ocean_fraction * static_cast<double>(n - 1));
+        std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(k), sorted.end());
+        const double sea = sorted[k];  // the k-th smallest value is unique, whatever the sort
+        const double lo = *std::min_element(raw.begin(), raw.end());
+        const double hi = *std::max_element(raw.begin(), raw.end());
 
-    w.elevation_m.resize(n);
-    w.is_land.resize(n);
-    for (CellId c = 0; c < n; ++c) {
-        if (raw[c] > sea) {
-            const double t = (raw[c] - sea) / (hi - sea);
-            w.elevation_m[c] = 6000.0 * t * t;  // most land low, a few high ranges
-            w.is_land[c] = 1;
-        } else {
-            const double t = (sea - raw[c]) / (sea - lo);
-            w.elevation_m[c] = -200.0 - 5000.0 * std::sqrt(t);  // shelf, then deep ocean
-            w.is_land[c] = 0;
+        w.elevation_m.resize(n);
+        w.is_land.resize(n);
+        for (CellId c = 0; c < n; ++c) {
+            if (raw[c] > sea) {
+                const double t = (raw[c] - sea) / (hi - sea);
+                w.elevation_m[c] = 6000.0 * t * t;  // most land low, a few high ranges
+                w.is_land[c] = 1;
+            } else {
+                const double t = (sea - raw[c]) / (sea - lo);
+                w.elevation_m[c] = -200.0 - 5000.0 * std::sqrt(t);  // shelf, then deep ocean
+                w.is_land[c] = 0;
+            }
         }
     }
 
@@ -873,6 +946,7 @@ std::uint64_t World::hash() const noexcept {
     h.u64(params.seed);
     h.u32(static_cast<std::uint32_t>(params.grid_level));
     h.f64(params.ocean_fraction);
+    if (params.kind != WorldKind::Generated) h.u32(static_cast<std::uint32_t>(params.kind));  // generated hashes unchanged
     h.u64(content_hash);
     h.u64(grid.geometry_hash());
     h.span<double>(elevation_m);

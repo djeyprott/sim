@@ -197,7 +197,7 @@ RunSummary Simulation::summary() const {
 }
 
 // Snapshot layout (little-endian): "HSIM" | u32 version | u64 seed | u32 grid
-// level | f64 ocean fraction | u64 world hash | SimState (see state_io.hpp)
+// level | f64 ocean fraction | u32 world kind | u64 world hash | SimState (see state_io.hpp)
 // | u64 checksum of everything before it.
 void Simulation::save(const std::string& path) const {
     io::WriteArchive ar;
@@ -210,6 +210,8 @@ void Simulation::save(const std::string& path) const {
     ar.u32(level);
     double ocean = world_.params.ocean_fraction;
     ar.f64(ocean);
+    std::uint32_t kind = static_cast<std::uint32_t>(world_.params.kind);
+    ar.u32(kind);
     std::uint64_t world_hash = world_.hash();
     ar.count(world_hash);
     io::serialize(ar, const_cast<SimState&>(state_));  // the writer only reads
@@ -259,6 +261,10 @@ Simulation Simulation::load(const std::string& path) {
     ar.u32(level);
     params.grid_level = static_cast<int>(level);
     ar.f64(params.ocean_fraction);
+    std::uint32_t kind = 0;
+    ar.u32(kind);
+    if (kind > static_cast<std::uint32_t>(WorldKind::Earth)) throw std::runtime_error(path + " has an unknown world kind");
+    params.kind = static_cast<WorldKind>(kind);
     const std::uint64_t world_hash = ar.u64();
 
     Simulation sim;

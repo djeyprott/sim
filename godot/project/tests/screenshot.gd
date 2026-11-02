@@ -9,7 +9,8 @@ extends SceneTree
 ## "map" or "globe", and optionally a god-mode tool id: the run then gets an
 ## eruption and a plague halfway through, and the panel is shown with that
 ## tool previewing its area ("" for none). A sixth argument "keep" keeps the
-## hovered cell, as a click would.
+## hovered cell, as a click would. With HISTSIM_SHOT_WORLD=earth in the
+## environment the run is on Earth.
 
 var main: Control
 var frames := 0
@@ -43,6 +44,10 @@ func _initialize() -> void:
 func _process(_delta: float) -> bool:
 	frames += 1
 	if frames == 2:
+		# HISTSIM_SHOT_WORLD=earth shoots an Earth world instead.
+		if OS.get_environment("HISTSIM_SHOT_WORLD") == "earth":
+			main.kind_option.selected = 1
+			main._new_world()
 		# Simulate in yearly steps so the history charts fill in.
 		if god_tool != "":
 			main.world.step_years(years / 2)

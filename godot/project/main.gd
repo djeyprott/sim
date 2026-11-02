@@ -14,6 +14,8 @@ const MAP_WIDTH := 2048
 const MAP_HEIGHT := 1024
 const SPEEDS := [1, 10, 100, 1000]  # simulated years per real second
 const LEVELS := [4, 5, 6, 7]
+const WORLD_KINDS := ["generated", "earth"]
+const WORLD_KIND_NAMES := ["Generated world", "Earth"]
 const LEVEL_NAMES := ["Coarse (2.6k cells)", "Normal (10k cells)", "Fine (41k cells)", "Detailed (164k cells)"]
 const STEP_BUDGET_MSEC := 12.0  # max time per frame spent simulating
 const RENDER_INTERVAL := 1.0 / 15.0  # max map redraws per second while playing
@@ -62,6 +64,7 @@ var speed_option: OptionButton
 var actual_speed_label: Label
 var seed_spin: SpinBox
 var level_option: OptionButton
+var kind_option: OptionButton
 var coastline_check: CheckBox
 var river_check: CheckBox
 var border_check: CheckBox
@@ -119,13 +122,14 @@ func _ready() -> void:
 
 func _new_world() -> void:
 	var level: int = LEVELS[level_option.selected]
-	if not world.create_world(int(seed_spin.value), level, 0.7):
+	var kind: String = WORLD_KINDS[kind_option.selected]
+	if not world.create_world_of_kind(int(seed_spin.value), level, 0.7, kind):
 		status_label.text = "Could not create world: " + world.get_last_error()
 		return
 	world.set_map_size(MAP_WIDTH, MAP_HEIGHT)
 	_after_world_change()
-	status_label.text = "New world: seed %d, %s cells, forager capacity %s people." % [
-		world.get_seed(), _commas(world.get_cell_count()), _commas(int(world.get_forager_capacity()))]
+	status_label.text = "New %s: seed %d, %s cells, forager capacity %s people." % [
+		"Earth" if kind == "earth" else "world", world.get_seed(), _commas(world.get_cell_count()), _commas(int(world.get_forager_capacity()))]
 
 
 # Reset view state after the world is replaced (new world or quickload).
@@ -588,6 +592,7 @@ func _quickload() -> void:
 	_set_playing(false)
 	seed_spin.set_value_no_signal(world.get_seed())
 	level_option.selected = maxi(0, LEVELS.find(world.get_level()))
+	kind_option.selected = maxi(0, WORLD_KINDS.find(world.get_world_kind()))
 	_after_world_change()
 	_clear_cell_info()
 	map_dirty = true
@@ -940,6 +945,13 @@ func _build_top_bar() -> Control:
 	level_option.selected = 1
 	level_option.tooltip_text = "Grid detail. Finer grids look better but run slower."
 	bar.add_child(level_option)
+
+	kind_option = OptionButton.new()
+	for name in WORLD_KIND_NAMES:
+		kind_option.add_item(name)
+	kind_option.selected = 0
+	kind_option.tooltip_text = "Generated: a new planet from the seed. Earth: Earth's land and sea; the seed still places plants, animals, ores and peoples and shapes history."
+	bar.add_child(kind_option)
 
 	var new_button := Button.new()
 	new_button.text = "New world"
