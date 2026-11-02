@@ -156,6 +156,30 @@ TEST(war_nomad_confederations_reach_far_and_raise_big_levies) {
     CHECK(std::string(polity_level(w, s, 1)) == "confederation");
 }
 
+TEST(war_plunder_keeps_a_confederations_followers) {
+    Setup x = two_polities();
+    SimState& s = x.s;
+    const World& w = x.sim.world();
+    s.polities[1].nomadic = true;
+    const double lean = polity_strengths(w, s)[1];
+    s.polities[1].plunder = 1e12;  // more than enough for every follower
+    CHECK_NEAR(polity_strengths(w, s)[1], lean * (1.0 + WarSystem::kPlunderStrength), 1e-6 * lean);
+    // Plunder fades a year at a time.
+    run_war_system(w, s, 1);
+    CHECK(s.polities[1].plunder < 1e12 && s.polities[1].plunder >= 1e12 * (1.0 - WarSystem::kPlunderFade) * 0.999);
+    // Tribute received counts as plunder.
+    s.polities[1].plunder = 0.0;
+    s.polities[2].overlord = 1;
+    s.polities[2].bond = Bond::Tributary;
+    const std::size_t ng = w.content->goods.size();
+    if (s.stocks.empty()) s.stocks.assign(w.cell_count() * ng, 0.0);
+    std::size_t salt = 0;
+    while (w.content->goods[salt].id != "salt") ++salt;
+    s.stocks[x.victim * ng + salt] = 100.0;
+    run_war_system(w, s, 1);
+    CHECK(s.polities[1].plunder > 0.0);
+}
+
 TEST(war_nomads_raid_the_richest_farmers_within_reach) {
     WorldParams p;
     p.grid_level = 5;

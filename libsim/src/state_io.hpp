@@ -307,6 +307,7 @@ void serialize(Ar& ar, SimState& s) {
         u8(ar, p.fate);
         ar.u8(p.fate_cause);
         ar.i64(p.settling_since);
+        ar.f64(p.plunder);
         ar.u32(p.religion);
         ar.i64(p.wandered);
         ar.i64(p.arrived);
@@ -409,6 +410,7 @@ void serialize(Ar& ar, SimState& s) {
     });
     ar.i64(s.captives);
     ar.i64(s.sold);
+    ar.i64(s.march_deaths);
     ar.i64(s.colonists);
     ar.i64(s.folk_movers);
     vec(ar, s.domestications, [&](Domestication& d) {

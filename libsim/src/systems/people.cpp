@@ -587,6 +587,29 @@ void MigrationSystem::step(StepContext& ctx) {
                     Cohort band = split_off(co, lands[slot], std::min(share, fits), rng);
                     if (band.total() <= 0) continue;
                     gone += band.total();
+                    // Deaths on the way: hunger, cold, thirst and fighting.
+                    {
+                        const auto biome = static_cast<Biome>(w.biome[lands[slot]]);
+                        double die = kMarchDeaths;
+                        if (biome == Biome::Desert) {
+                            die *= kMarchHarsh;
+                        } else if (biome == Biome::DryShrubland || biome == Biome::Tundra) {
+                            die *= 0.5 * (1.0 + kMarchHarsh);
+                        }
+                        const std::uint32_t holder = s.polity_of[lands[slot]];
+                        if (holder != 0 && holder != p) die *= kMarchHostile;
+                        std::int64_t dead = 0;
+                        for (int b = 0; b < kAgeBins; ++b) {
+                            const auto df = std::min<std::int64_t>(band.female[b], stochastic_round(die * band.female[b], rng));
+                            const auto dm = std::min<std::int64_t>(band.male[b], stochastic_round(die * band.male[b], rng));
+                            band.female[b] -= static_cast<std::uint32_t>(df);
+                            band.male[b] -= static_cast<std::uint32_t>(dm);
+                            dead += df + dm;
+                        }
+                        s.ledger.deaths += dead;
+                        s.march_deaths += dead;
+                    }
+                    if (band.total() <= 0) continue;
                     come[slot] += band.total();
                     arrivals.push_back(band);
                     if (known != 0) carried.emplace_back(lands[slot], known);
