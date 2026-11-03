@@ -23,6 +23,7 @@ add_library(histsim
     src/interventions.cpp
     src/json.cpp
     src/language.cpp
+    src/parallel.cpp
     src/systems/culture.cpp
     src/systems/disease.cpp
     src/systems/economy.cpp
@@ -47,6 +48,7 @@ target_include_directories(histsim PUBLIC
     $<INSTALL_INTERFACE:include>)
 
 target_compile_features(histsim PUBLIC cxx_std_20)
-target_link_libraries(histsim PRIVATE histsim_flags)
+find_package(Threads REQUIRED)
+target_link_libraries(histsim PRIVATE histsim_flags PUBLIC Threads::Threads)
 # The Godot extension is a shared library that links this one.
 set_target_properties(histsim PROPERTIES POSITION_INDEPENDENT_CODE ON)

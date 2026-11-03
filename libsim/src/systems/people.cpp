@@ -1,5 +1,7 @@
 #include "histsim/systems/people.hpp"
 
+#include "histsim/parallel.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -116,18 +118,21 @@ void DemographySystem::step(StepContext& ctx) {
     const std::size_t n = ctx.world.cell_count();
     const std::int64_t before = s.total_population();
     s.disease_deaths.assign(n, 0);
-    std::int64_t births_total = 0, deaths_total = 0;
+    std::int64_t all_births = 0, all_deaths = 0;
 
     // Births replace deaths at capacity under each cell's own death rates.
-    CellId cached = kInvalidCell;
-    double replacement = vital::kReplacementFertilityMultiplier;
-    for (std::size_t i = 0; i < s.cohorts.size(); ++i) {
+    // Cells are independent (each cohort has its own random stream), so they
+    // run in parallel; per-cell tallies are summed afterwards.
+    std::vector<std::int64_t> cell_births(n, 0), cell_deaths(n, 0), cell_disease(n, 0);
+    parallel_for(n, [&](std::size_t c_begin, std::size_t c_end) {
+    for (std::size_t c = c_begin; c < c_end; ++c) {
+    if (s.cohort_begin[c] == s.cohort_begin[c + 1]) continue;
+    const double replacement = cell_replacement_fertility(s, static_cast<CellId>(c));
+    std::int64_t& births_total = cell_births[c];
+    std::int64_t& deaths_total = cell_deaths[c];
+    for (std::size_t i = s.cohort_begin[c]; i < s.cohort_begin[c + 1]; ++i) {
         Cohort& co = s.cohorts[i];
         const double crowding = crowding_of(s, co.cell);
-        if (co.cell != cached) {
-            cached = co.cell;
-            replacement = cell_replacement_fertility(s, co.cell);
-        }
         // Farmers' extra fertility is room to grow, not an excess at capacity.
         const double headroom = (1.0 + kFarmerExtraFertility * co.farming) / vital::kReplacementFertilityMultiplier - 1.0;
         const double fert_mult = std::min(
@@ -164,7 +169,7 @@ void DemographySystem::step(StepContext& ctx) {
         if (disease_deaths > 0.0) {
             const auto d = static_cast<std::uint32_t>(disease_deaths + 0.5);
             s.disease_deaths[co.cell] += d;
-            s.disease_deaths_total += d;
+            cell_disease[c] += d;
         }
 
         // Births, to the women who survived the year.
@@ -187,12 +192,19 @@ void DemographySystem::step(StepContext& ctx) {
         co.male[0] += static_cast<std::uint32_t>(births - girls);
         births_total += births;
     }
+    }
+    }, 16);
+    for (CellId c = 0; c < n; ++c) {
+        all_births += cell_births[c];
+        all_deaths += cell_deaths[c];
+        s.disease_deaths_total += cell_disease[c];
+    }
 
-    s.ledger.births += births_total;
-    s.ledger.deaths += deaths_total;
+    s.ledger.births += all_births;
+    s.ledger.deaths += all_deaths;
     s.normalize_cohorts(n);
 
-    const std::int64_t after = before + births_total - deaths_total;
+    const std::int64_t after = before + all_births - all_deaths;
     if (power_of_ten_floor(after) != power_of_ten_floor(before)) {
         s.events.push_back({ctx.tick, EventType::WorldPopulation, kInvalidCell, after});
     }
