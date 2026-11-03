@@ -13,8 +13,12 @@
 // runs everything on the calling thread.
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <functional>
+#include <mutex>
+#include <utility>
+#include <vector>
 
 namespace histsim {
 
@@ -29,5 +33,29 @@ int thread_count();
 // rethrown here. Not reentrant: do not call parallel_for from inside a body.
 void parallel_for(std::size_t n, const std::function<void(std::size_t begin, std::size_t end)>& body,
                   std::size_t grain = 64);
+
+// Like parallel_for, but each chunk fills its own T through body(begin, end,
+// out); returns the chunks' Ts in index order (only those body was called
+// for), so that appending them one after another gives what one pass over
+// [0, n) would have.
+template <class T, class Body>
+std::vector<T> parallel_gather(std::size_t n, Body&& body, std::size_t grain = 64) {
+    std::vector<std::pair<std::size_t, T>> parts;
+    std::mutex mutex;
+    parallel_for(
+        n,
+        [&](std::size_t begin, std::size_t end) {
+            T out{};
+            body(begin, end, out);
+            std::lock_guard<std::mutex> lock(mutex);
+            parts.emplace_back(begin, std::move(out));
+        },
+        grain);
+    std::sort(parts.begin(), parts.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    std::vector<T> result;
+    result.reserve(parts.size());
+    for (auto& part : parts) result.push_back(std::move(part.second));
+    return result;
+}
 
 }  // namespace histsim

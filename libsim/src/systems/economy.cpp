@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "histsim/parallel.hpp"
 #include "histsim/systems/polity.hpp"
 #include "histsim/systems/technology.hpp"
 
@@ -104,7 +105,8 @@ void EconomySystem::step(StepContext& ctx) {
     // ---- People, their techniques and what carrying costs them.
     std::vector<double> pop(nm), farmers(nm), town(nm), elite(nm);
     std::vector<TechEffects> effects(nm);
-    for (std::size_t m = 0; m < nm; ++m) {
+    parallel_for(nm, [&](std::size_t m_begin, std::size_t m_end) {
+    for (std::size_t m = m_begin; m < m_end; ++m) {
         const CellId c = cell_of[m];
         double hierarchy = 0.0;
         for (const Cohort& co : s.cohorts_in(c)) {
@@ -118,6 +120,7 @@ void EconomySystem::step(StepContext& ctx) {
         elite[m] = pop[m] * kEliteShare * (0.5 + hierarchy) * (ruled ? 2.0 : 1.0);
         effects[m] = technique_effects(w, c, techniques_in(s, c));
     }
+    }, 64);
     // Links between markets, with the carrying cost per unit weight each way:
     // links[m] lists (other market, link, cost from m, cost from the other).
     struct Link {
@@ -141,26 +144,33 @@ void EconomySystem::step(StepContext& ctx) {
     };
     std::vector<std::uint32_t> link_begin(nm + 1, 0);
     std::vector<Link> links;
-    for (std::size_t m = 0; m < nm; ++m) {
-        const CellId c = cell_of[m];
-        for (std::uint32_t e : w.trade_links(c)) {
-            const std::uint32_t o = market[w.trade_other(e, c)];
-            if (o == kNone) continue;
-            if (at_war(c, cell_of[o])) continue;  // no trade across the front
-            const double out = carry_cost(w, w.trade_edges[e], effects[m]);
-            const double in = carry_cost(w, w.trade_edges[e], effects[o]);
-            if (out == kInf && in == kInf) continue;
-            links.push_back({o, e, out, in});
-        }
-        link_begin[m + 1] = static_cast<std::uint32_t>(links.size());
+    std::vector<std::uint32_t> link_count(nm, 0);
+    for (auto& part : parallel_gather<std::vector<Link>>(nm, [&](std::size_t m_begin, std::size_t m_end, std::vector<Link>& out) {
+             for (std::size_t m = m_begin; m < m_end; ++m) {
+                 const CellId c = cell_of[m];
+                 for (std::uint32_t e : w.trade_links(c)) {
+                     const std::uint32_t o = market[w.trade_other(e, c)];
+                     if (o == kNone) continue;
+                     if (at_war(c, cell_of[o])) continue;  // no trade across the front
+                     const double cost_out = carry_cost(w, w.trade_edges[e], effects[m]);
+                     const double cost_in = carry_cost(w, w.trade_edges[e], effects[o]);
+                     if (cost_out == kInf && cost_in == kInf) continue;
+                     out.push_back({o, e, cost_out, cost_in});
+                     ++link_count[m];
+                 }
+             }
+         })) {
+        links.insert(links.end(), part.begin(), part.end());
     }
+    for (std::size_t m = 0; m < nm; ++m) link_begin[m + 1] = link_begin[m] + link_count[m];
     auto links_of = [&](std::size_t m) {
         return std::span<const Link>(links.data() + link_begin[m], links.data() + link_begin[m + 1]);
     };
 
     // ---- Production and demand.
     std::vector<double> stock(nm * ng), demand(nm * ng, 0.0), wanted(nm * ng, 0.0), produced(nm * ng, 0.0);
-    for (std::size_t m = 0; m < nm; ++m) {
+    parallel_for(nm, [&](std::size_t m_begin, std::size_t m_end) {
+    for (std::size_t m = m_begin; m < m_end; ++m) {
         const CellId c = cell_of[m];
         std::copy_n(s.stocks.begin() + static_cast<std::ptrdiff_t>(c * ng), ng, stock.begin() + static_cast<std::ptrdiff_t>(m * ng));
         const std::uint64_t techs = techniques_in(s, c);
@@ -198,10 +208,12 @@ void EconomySystem::step(StepContext& ctx) {
             wanted[k] += demand[k];
         }
     }
+    }, 64);
 
     // ---- Prices, from what the market wants against what it holds.
     std::vector<double> price(nm * ng);
-    for (std::size_t m = 0; m < nm; ++m) {
+    parallel_for(nm, [&](std::size_t m_begin, std::size_t m_end) {
+    for (std::size_t m = m_begin; m < m_end; ++m) {
         const CellId c = cell_of[m];
         for (std::size_t g = 0; g < ng; ++g) {
             const std::size_t k = m * ng + g;
@@ -210,40 +222,57 @@ void EconomySystem::step(StepContext& ctx) {
                                  : base_price * price_ratio(wanted[k], stock[k]);
         }
     }
+    }, 128);
 
     // ---- Trade, from this year's stocks (every market decides at once).
     std::vector<double> delta(nm * ng, 0.0), received(nm * ng, 0.0);
     std::vector<double> carried(ne, 0.0);
     std::vector<double> traded(nm, 0.0);
     std::vector<std::pair<const Link*, double>> buyers;
-    for (std::size_t m = 0; m < nm; ++m) {
-        for (std::size_t g = 0; g < ng; ++g) {
-            if (g == food) continue;
-            const std::size_t k = m * ng + g;
-            const double spare = stock[k] - wanted[k];
-            if (spare <= 0.0) continue;
-            const double weight = content.goods[g].weight;
-            buyers.clear();
-            double total = 0.0;
-            for (const Link& l : links_of(m)) {
-                const double gain = price[l.other * ng + g] - price[k] - weight * l.out;
-                if (gain > 0.0) {
-                    buyers.emplace_back(&l, gain);
-                    total += gain;
+    // Each market's sales are worked out in parallel, then booked in market
+    // order.
+    struct Sale {
+        std::uint32_t m, g;
+        const Link* link;
+        double q;
+    };
+    const auto sales = parallel_gather<std::vector<Sale>>(nm, [&](std::size_t m_begin, std::size_t m_end, std::vector<Sale>& out) {
+        std::vector<std::pair<const Link*, double>> bids;
+        for (std::size_t m = m_begin; m < m_end; ++m) {
+            for (std::size_t g = 0; g < ng; ++g) {
+                if (g == food) continue;
+                const std::size_t k = m * ng + g;
+                const double spare = stock[k] - wanted[k];
+                if (spare <= 0.0) continue;
+                const double weight = content.goods[g].weight;
+                bids.clear();
+                double total = 0.0;
+                for (const Link& l : links_of(m)) {
+                    const double gain = price[l.other * ng + g] - price[k] - weight * l.out;
+                    if (gain > 0.0) {
+                        bids.emplace_back(&l, gain);
+                        total += gain;
+                    }
+                }
+                if (total <= 0.0) continue;
+                const double send = kTradeShare * spare;
+                for (const auto& [l, share] : bids) {
+                    out.push_back({static_cast<std::uint32_t>(m), static_cast<std::uint32_t>(g), l, send * share / total});
                 }
             }
-            if (total <= 0.0) continue;
-            const double send = kTradeShare * spare;
-            for (const auto& [l, share] : buyers) {
-                const double q = send * share / total;
-                delta[k] -= q;
-                delta[l->other * ng + g] += q;
-                received[l->other * ng + g] += q;
-                const double value = q * price[l->other * ng + g];
-                carried[l->edge] += value;
-                traded[m] += value;
-                traded[l->other] += value;
-            }
+        }
+    });
+    for (const auto& part : sales) {
+        for (const Sale& sale : part) {
+            const std::size_t k = sale.m * ng + sale.g;
+            const std::size_t j = sale.link->other * ng + sale.g;
+            delta[k] -= sale.q;
+            delta[j] += sale.q;
+            received[j] += sale.q;
+            const double value = sale.q * price[j];
+            carried[sale.link->edge] += value;
+            traded[sale.m] += value;
+            traded[sale.link->other] += value;
         }
     }
 
@@ -355,7 +384,8 @@ void EconomySystem::step(StepContext& ctx) {
     }
 
     // ---- Use, spoilage, what is on each market, and prices for next year.
-    for (std::size_t m = 0; m < nm; ++m) {
+    parallel_for(nm, [&](std::size_t m_begin, std::size_t m_end) {
+    for (std::size_t m = m_begin; m < m_end; ++m) {
         const CellId c = cell_of[m];
         s.trade_value[c] = traded[m];
         s.food_import[c] = imported[m];
@@ -377,11 +407,13 @@ void EconomySystem::step(StepContext& ctx) {
         }
         s.goods_available[c] = available;
     }
+    }, 64);
     for (std::uint32_t e = 0; e < ne; ++e) s.route_value[e] += kRouteSmoothing * (carried[e] - s.route_value[e]);
 
     // ---- Food stores: put by in good years, drawn on in lean ones.
     if (s.env.food_store.size() != n) s.env.food_store.assign(n, 0.0);
-    for (CellId c = 0; c < n; ++c) {
+    parallel_for(n, [&](std::size_t c_begin, std::size_t c_end) {
+    for (CellId c = static_cast<CellId>(c_begin); c < c_end; ++c) {
         double& store = s.env.food_store[c];
         const double people = static_cast<double>(s.cell_population[c]);
         if (!w.is_land[c] || people <= 0.0) {
@@ -404,6 +436,7 @@ void EconomySystem::step(StepContext& ctx) {
         }
         store *= 1.0 - kStoreSpoilage;
     }
+    }, 128);
 }
 
 // ------------------------------------------------------------------ routes
