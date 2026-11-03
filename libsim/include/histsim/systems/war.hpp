@@ -91,7 +91,11 @@ public:
     static constexpr double kTribute = 0.1;        // share of a subject's goods sent each year
     static constexpr double kRebelRatio = 0.7;     // subjects rebel when this strong against their overlord
     static constexpr double kRebellion = 0.03;
-    static constexpr double kAbsorb = 0.01;        // chance a year a firmly held vassal is absorbed
+    // Chance a year a firmly held vassal is absorbed: its capital within the
+    // overlord's control kAbsorbControl, the distance counted less the cell
+    // spacing beyond kConquestNearKm as for conquest (a neighbour of the
+    // overlord's capital is 112.5 km off at any grid level).
+    static constexpr double kAbsorb = 0.01;
     static constexpr double kAbsorbControl = 0.5;
     // Steppe confederations grow by taking in the herder tribes they beat:
     // a herder chiefdom (no writing, no city, mostly herding) beaten by

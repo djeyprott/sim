@@ -591,7 +591,11 @@ void WarSystem::step(StepContext& ctx) {
         if (armies.strength[id] >= kRebelRatio * rival && war_between(s, id, lord) == 0) {
             if (rng.uniform() < kRebellion) start_war(w, s, tick, id, lord, WarGoal::Independence);
         } else if (p.bond == Bond::Vassal && war_between(s, id, lord) == 0 &&
-                   ((control_of(lord, p.capital) >= kAbsorbControl && rng.uniform() < kAbsorb) ||
+                   // Distance counted as for conquest (less the cell spacing beyond
+                   // kConquestNearKm), so a bordering vassal can be held at any grid level.
+                   ((polity_control(std::max(0.0, w.grid.distance_km(s.polities[lord].capital, p.capital) - slack),
+                                    reach[lord]) >= kAbsorbControl &&
+                     rng.uniform() < kAbsorb) ||
                     // A herder clan bordering its confederation merges into it.
                     (s.polities[lord].nomadic && herder_tribe(w, s, id) &&
                      std::binary_search(borders[id].begin(), borders[id].end(), lord) && rng.uniform() < kClanAbsorb))) {
