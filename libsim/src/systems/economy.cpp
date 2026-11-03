@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "histsim/systems/polity.hpp"
 #include "histsim/systems/technology.hpp"
 
 namespace histsim {
@@ -123,6 +124,21 @@ void EconomySystem::step(StepContext& ctx) {
         std::uint32_t other, edge;
         double out, in;
     };
+    // War cuts trade: pairs of polities on opposite sides of a war.
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> enemies;
+    for (const War& war : s.wars) {
+        if (war.id == 0 || war.ended != kNever) continue;
+        for (std::uint32_t a : war.attackers) {
+            for (std::uint32_t d : war.defenders) enemies.emplace_back(std::min(a, d), std::max(a, d));
+        }
+    }
+    std::sort(enemies.begin(), enemies.end());
+    auto at_war = [&](CellId a, CellId b) {
+        if (enemies.empty() || s.polity_of.empty()) return false;
+        const std::uint32_t pa = s.polity_of[a], pb = s.polity_of[b];
+        if (pa == 0 || pb == 0 || pa == pb) return false;
+        return std::binary_search(enemies.begin(), enemies.end(), std::pair{std::min(pa, pb), std::max(pa, pb)});
+    };
     std::vector<std::uint32_t> link_begin(nm + 1, 0);
     std::vector<Link> links;
     for (std::size_t m = 0; m < nm; ++m) {
@@ -130,6 +146,7 @@ void EconomySystem::step(StepContext& ctx) {
         for (std::uint32_t e : w.trade_links(c)) {
             const std::uint32_t o = market[w.trade_other(e, c)];
             if (o == kNone) continue;
+            if (at_war(c, cell_of[o])) continue;  // no trade across the front
             const double out = carry_cost(w, w.trade_edges[e], effects[m]);
             const double in = carry_cost(w, w.trade_edges[e], effects[o]);
             if (out == kInf && in == kInf) continue;
@@ -262,6 +279,78 @@ void EconomySystem::step(StepContext& ctx) {
             carried[l.edge] += value;
             traded[m] += value;
             traded[l.other] += value;
+        }
+    }
+
+    // ---- Grain trade: stored food beyond a reserve goes where it sells dear.
+    if (food < ng && s.env.food_store.size() == n) {
+        std::vector<double> grain_in(nm, 0.0), grain_out(nm, 0.0);
+        for (std::size_t m = 0; m < nm; ++m) {
+            const CellId c = cell_of[m];
+            const double spare = s.env.food_store[c] - kGrainReserve * pop[m];
+            if (spare <= 0.0) continue;
+            const double pa = price[m * ng + food];
+            buyers.clear();
+            double total = 0.0;
+            for (const Link& l : links_of(m)) {
+                const double gain = price[l.other * ng + food] - pa - content.goods[food].weight * l.out;
+                if (gain > 0.0) {
+                    buyers.emplace_back(&l, gain);
+                    total += gain;
+                }
+            }
+            if (total <= 0.0) continue;
+            const double send = kGrainSale * spare;
+            for (const auto& [l, gain] : buyers) {
+                const double q = send * gain / total;
+                grain_out[m] += q;
+                grain_in[l->other] += q;
+                const double value = q * price[l->other * ng + food];
+                carried[l->edge] += value;
+                traded[m] += value;
+                traded[l->other] += value;
+            }
+        }
+        for (std::size_t m = 0; m < nm; ++m) {
+            s.env.food_store[cell_of[m]] += grain_in[m] - grain_out[m];
+        }
+    }
+
+    // ---- State granaries: a literate polity feeds its hungry provinces
+    // from its full granaries.
+    if (s.env.food_store.size() == n && s.polity_of.size() == n && s.polities.size() > 1) {
+        const std::size_t np = s.polities.size();
+        std::size_t bureaucracy = content.techniques.size();
+        for (std::size_t k = 0; k < content.techniques.size(); ++k) {
+            if (content.techniques[k].id == "bureaucracy") bureaucracy = k;
+        }
+        std::vector<double> spare(np, 0.0), need(np, 0.0), reach(np, -1.0);
+        std::vector<double> want(nm, 0.0), have(nm, 0.0);
+        for (std::size_t m = 0; m < nm; ++m) {
+            const CellId c = cell_of[m];
+            const std::uint32_t p = s.polity_of[c];
+            if (p == 0 || s.polities[p].ended != kNever) continue;
+            if (reach[p] < 0.0) reach[p] = polity_has_writing(w, s, p) ? polity_reach(w, s, p) : 0.0;
+            if (reach[p] <= 0.0) continue;
+            have[m] = std::max(0.0, s.env.food_store[c] - kGrainReserve * pop[m]);
+            spare[p] += have[m];
+            const double hungry = pop[m] - (s.env.capacity[c] + imported[m]) - s.env.food_store[c];
+            if (hungry > 0.0) {
+                want[m] = hungry;
+                need[p] += hungry;
+            }
+        }
+        std::vector<double> sent(np, 0.0);
+        for (std::size_t p = 1; p < np; ++p) {
+            if (need[p] <= 0.0 || spare[p] <= 0.0) continue;
+            const bool scribes = bureaucracy < 64 && ((techniques_in(s, s.polities[p].capital) >> bureaucracy) & 1u);
+            sent[p] = std::min(need[p], (scribes ? kReliefBureaucracy : kRelief) * spare[p]);
+        }
+        for (std::size_t m = 0; m < nm; ++m) {
+            const CellId c = cell_of[m];
+            const std::uint32_t p = s.polity_of[c];
+            if (p == 0 || sent[p] <= 0.0) continue;
+            s.env.food_store[c] += sent[p] * (want[m] / need[p] - have[m] / spare[p]);
         }
     }
 

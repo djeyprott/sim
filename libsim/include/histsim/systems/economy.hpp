@@ -20,6 +20,9 @@
 // way: a link a year, across a continent over decades, as obsidian and tin
 // did. Quantities limit it: a hungry village does not draw a continent's salt.
 //
+// War cuts trade: no goods, food or grain cross a link between polities on
+// opposite sides of a war.
+//
 // Food is bulky and spoils, so it moves only between neighbours: from cells
 // with food to spare to hungry ones and to towns (whose people buy their
 // food and outbid farmers), when the price difference pays for the carrying. Food brought in feeds people (it adds to the capacity this year)
@@ -78,6 +81,22 @@ public:
     static constexpr double kStoreYears = 0.25;
     static constexpr double kStoreYearsPerBuffer = 3.0;
     static constexpr double kStoreSpoilage = 0.1;
+    // Grain trade: stored food beyond kGrainReserve years of a cell's own
+    // needs is for sale. Each year kGrainSale of it goes to neighbouring
+    // markets where food sells for more than here plus the carrying (food
+    // weighs 1), split by that gain, into their stores: it feeds them if
+    // they are hungry, and passes on a link a year if they are not. Cheap by
+    // river and sea, so a wet coast can feed a dry one.
+    static constexpr double kGrainReserve = 0.5;
+    static constexpr double kGrainSale = 0.5;
+    // State granaries: a polity with writing moves stored grain from its
+    // full granaries (beyond kGrainReserve) to its hungry provinces (people
+    // beyond what this year's harvest and trade feed, after their own
+    // stores), anywhere it rules: up to kRelief of what is spare, or
+    // kReliefBureaucracy with a scribal bureaucracy (the Chinese and
+    // Egyptian granary systems).
+    static constexpr double kRelief = 0.3;
+    static constexpr double kReliefBureaucracy = 0.7;
     // Elites: this share of people at hierarchy 0.5, twice as many under a
     // polity.
     static constexpr double kEliteShare = 0.02;

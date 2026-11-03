@@ -233,3 +233,123 @@ TEST(food_stores_fill_in_good_years_and_feed_people_in_lean_ones) {
     CHECK_NEAR(fed, 0.3 * people, 1e-6 * people);  // all of it: the gap was larger
     CHECK(s.env.food_store[c] < 1e-9 * people);
 }
+
+namespace {
+
+// A level-4 world, its state, and an inhabited cell whose neighbours are
+// all inhabited land.
+struct GrainSetup {
+    Simulation sim;
+    SimState s;
+    CellId a = kInvalidCell;
+};
+
+GrainSetup grain_setup() {
+    WorldParams p;
+    p.grid_level = 4;
+    GrainSetup x{Simulation::create(p), {}, kInvalidCell};
+    x.sim.step_years(1);  // markets and stocks in place
+    x.s = x.sim.state();
+    const World& w = x.sim.world();
+    for (CellId c = 0; c < w.cell_count() && x.a == kInvalidCell; ++c) {
+        if (x.s.cell_population[c] < 1000) continue;
+        bool ok = true;
+        for (CellId nb : w.grid.neighbors(c)) ok = ok && x.s.cell_population[nb] >= 1000;
+        if (ok) x.a = c;
+    }
+    CHECK(x.a != kInvalidCell);
+    return x;
+}
+
+void run_economy(const World& w, SimState& s) {
+    EconomySystem economy;
+    StepContext ctx{w, s, 5, s.tick};
+    economy.step(ctx);
+}
+
+}  // namespace
+
+TEST(grain_goes_from_full_stores_to_hungry_neighbours) {
+    GrainSetup x = grain_setup();
+    SimState& s = x.s;
+    const World& w = x.sim.world();
+    const double people = static_cast<double>(s.cell_population[x.a]);
+    s.env.food_store.assign(w.cell_count(), 0.0);
+    s.env.food_store[x.a] = 10.0 * people;
+    s.env.capacity[x.a] = 2.0 * people;  // a good year here
+    // Famine around (food dear enough to pay for hauling grain that far).
+    for (CellId nb : w.grid.neighbors(x.a)) s.env.capacity[nb] = 0.05 * static_cast<double>(s.cell_population[nb]);
+    double around = 0.0;
+    for (CellId nb : w.grid.neighbors(x.a)) around += s.env.capacity[nb];
+    run_economy(w, s);
+    // Sold: much less left than spoilage alone would leave.
+    CHECK(s.env.food_store[x.a] < 0.8 * (1.0 - EconomySystem::kStoreSpoilage) * 10.0 * people);
+    // And the hungry neighbours ate it (more food than harvest and imports).
+    double fed = 0.0;
+    for (CellId nb : w.grid.neighbors(x.a)) fed += s.env.capacity[nb];
+    CHECK(fed > around);
+}
+
+TEST(grain_war_cuts_trade_across_the_front) {
+    GrainSetup x = grain_setup();
+    const World& w = x.sim.world();
+    // Polity 1 holds the cell, polity 2 everything around it.
+    auto rule = [&](SimState& s) {
+        s.polities.assign(3, Polity{});
+        for (std::uint32_t id = 1; id <= 2; ++id) s.polities[id].id = id;
+        s.polities[1].capital = x.a;
+        s.polity_of.assign(w.cell_count(), 0);
+        s.polity_of[x.a] = 1;
+        for (CellId nb : w.grid.neighbors(x.a)) s.polity_of[nb] = 2;
+        s.polities[2].capital = w.grid.neighbors(x.a).front();
+    };
+    SimState peace = x.s;
+    rule(peace);
+    run_economy(w, peace);
+    CHECK(peace.trade_value[x.a] > 0.0);
+    SimState war = x.s;
+    rule(war);
+    War fight;
+    fight.id = static_cast<std::uint32_t>(war.wars.size());
+    fight.attackers = {1};
+    fight.defenders = {2};
+    war.wars.push_back(fight);
+    run_economy(w, war);
+    CHECK_EQ(war.trade_value[x.a], 0.0);
+    CHECK_EQ(war.food_import[x.a], 0.0);
+}
+
+TEST(grain_literate_states_feed_hungry_provinces_from_their_granaries) {
+    GrainSetup x = grain_setup();
+    const World& w = x.sim.world();
+    const CellId province = w.grid.neighbors(x.a).front();
+    auto setup = [&](bool literate) {
+        SimState s = x.s;
+        s.polities.assign(2, Polity{});
+        s.polities[1].id = 1;
+        s.polities[1].capital = x.a;
+        s.polity_of.assign(w.cell_count(), 0);
+        s.polity_of[x.a] = 1;
+        s.polity_of[province] = 1;
+        std::uint64_t writing = 0;
+        for (std::size_t k = 0; k < w.content->techniques.size(); ++k) {
+            if (w.content->techniques[k].id == "writing") writing = std::uint64_t{1} << k;
+        }
+        if (literate) {
+            s.techniques[x.a] |= writing;
+        } else {
+            s.techniques[x.a] &= ~writing;
+        }
+        s.env.food_store.assign(w.cell_count(), 0.0);
+        s.env.food_store[x.a] = 5.0 * static_cast<double>(s.cell_population[x.a]);
+        s.env.capacity[province] = 0.2 * static_cast<double>(s.cell_population[province]);
+        return s;
+    };
+    SimState with = setup(true), without = setup(false);
+    const double base = with.env.capacity[province];
+    run_economy(w, with);
+    run_economy(w, without);
+    const double fed_with = with.env.capacity[province] - with.food_import[province] - base;
+    const double fed_without = without.env.capacity[province] - without.food_import[province] - base;
+    CHECK(fed_with > fed_without);  // the state's granaries fed it more
+}
