@@ -30,7 +30,11 @@ double disease_suitability(const World& w, const DiseaseDef& d, CellId c) {
 double outbreak_size(double r, double s) {
     if (r * s <= 1.0 || s <= 0.0) return 0.0;
     double a = s;
-    for (int i = 0; i < 80; ++i) a = s * (1.0 - pmath::exp(-r * a));
+    for (int i = 0; i < 80; ++i) {
+        const double next = s * (1.0 - pmath::exp(-r * a));
+        if (next == a) break;  // a fixed point: further rounds change nothing
+        a = next;
+    }
     return a;
 }
 

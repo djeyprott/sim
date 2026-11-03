@@ -774,6 +774,12 @@ void RulerSystem::step(StepContext& ctx) {
     auto language_of = [&](const Polity& p) -> const Language& {
         return s.languages[p.language < s.languages.size() ? p.language : 0];
     };
+    // Each house's rulers, oldest first (ruler 0 is no one).
+    std::vector<std::vector<std::uint32_t>> by_house(s.dynasties.size());
+    for (std::size_t i = 1; i < s.rulers.size(); ++i) {
+        const std::uint32_t d = s.rulers[i].dynasty;
+        if (d < by_house.size()) by_house[d].push_back(static_cast<std::uint32_t>(i));
+    }
     // A new ruler of a house, adult (founders and usurpers) or the given age.
     auto crown = [&](std::uint32_t polity, std::uint32_t dynasty, int age, RngStream& rng) {
         const Polity& p = s.polities[polity];
@@ -781,10 +787,12 @@ void RulerSystem::step(StepContext& ctx) {
         r.id = static_cast<std::uint32_t>(s.rulers.size());
         r.polity = polity;
         r.dynasty = dynasty;
-        // Heirs often bear the names of their forebears.
+        // Heirs often bear the names of their forebears: the house's last
+        // six rulers, newest first.
         std::vector<std::uint32_t> house;
-        for (std::size_t i = s.rulers.size(); i-- > 1 && house.size() < 6;) {
-            if (s.rulers[i].dynasty == dynasty) house.push_back(static_cast<std::uint32_t>(i));
+        if (dynasty < by_house.size()) {
+            const auto& all = by_house[dynasty];
+            for (std::size_t i = all.size(); i-- > 0 && house.size() < 6;) house.push_back(all[i]);
         }
         if (!house.empty() && rng.uniform() < 0.4) {
             r.name = s.rulers[house[static_cast<std::size_t>(rng.uniform() * static_cast<double>(house.size())) % house.size()]].name;
@@ -806,6 +814,7 @@ void RulerSystem::step(StepContext& ctx) {
         const double warfare = cell_trait(s, p.capital, i_warfare);
         r.martial = std::clamp(0.5 * warfare + 0.5 * rng.uniform(), 0.0, 1.0);
         s.rulers.push_back(std::move(r));
+        if (dynasty < by_house.size()) by_house[dynasty].push_back(s.rulers.back().id);
         return s.rulers.back().id;
     };
     auto found_house = [&](std::uint32_t polity, std::uint32_t founder) {
@@ -815,8 +824,12 @@ void RulerSystem::step(StepContext& ctx) {
         d.polity = polity;
         d.founder = founder;
         d.founded = tick;
+        // The founder leaves the list of his old (or no) house for his own.
+        const std::uint32_t was = s.rulers[founder].dynasty;
+        if (was < by_house.size()) std::erase(by_house[was], founder);
         s.rulers[founder].dynasty = d.id;
         s.dynasties.push_back(std::move(d));
+        by_house.emplace_back(1, founder);
     };
     auto end_house_if_gone = [&](std::uint32_t dynasty) {
         if (dynasty == 0 || dynasty >= s.dynasties.size() || s.dynasties[dynasty].ended != kNever) return;

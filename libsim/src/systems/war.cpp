@@ -103,10 +103,34 @@ std::pair<std::uint32_t, std::uint32_t> ordered(std::uint32_t a, std::uint32_t b
     return a < b ? std::pair{a, b} : std::pair{b, a};
 }
 
-bool in_truce(const SimState& s, std::uint32_t a, std::uint32_t b) {
-    const auto [x, y] = ordered(a, b);
-    return std::any_of(s.truces.begin(), s.truces.end(), [&](const Truce& t) { return t.a == x && t.b == y; });
-}
+// Active alliances by polity, as alliance indices in ascending order (so
+// sums over a polity's allies add up in the same order as a scan of all
+// alliances). Rebuilt or extended whenever alliances change.
+struct AllianceIndex {
+    std::vector<std::vector<std::uint32_t>> of;
+    void build(const SimState& s, std::size_t np) {
+        of.assign(np, {});
+        for (std::size_t i = 0; i < s.alliances.size(); ++i) {
+            const Alliance& a = s.alliances[i];
+            if (a.ended != kNever) continue;
+            if (a.a < np) of[a.a].push_back(static_cast<std::uint32_t>(i));
+            if (a.b < np) of[a.b].push_back(static_cast<std::uint32_t>(i));
+        }
+    }
+    void add(const SimState& s, std::size_t i) {  // a new alliance (the highest index)
+        const Alliance& a = s.alliances[i];
+        if (a.a < of.size()) of[a.a].push_back(static_cast<std::uint32_t>(i));
+        if (a.b < of.size()) of[a.b].push_back(static_cast<std::uint32_t>(i));
+    }
+    [[nodiscard]] bool allied(const SimState& s, std::uint32_t x, std::uint32_t y) const {
+        if (x >= of.size()) return false;
+        for (std::uint32_t i : of[x]) {
+            const Alliance& a = s.alliances[i];
+            if ((a.a == x && a.b == y) || (a.a == y && a.b == x)) return true;
+        }
+        return false;
+    }
+};
 
 bool on(const std::vector<std::uint32_t>& side, std::uint32_t p) {
     return std::find(side.begin(), side.end(), p) != side.end();
@@ -181,14 +205,26 @@ bool herder_tribe(const World& w, const SimState& s, std::uint32_t id) {
 }
 
 void cells_within(const World& w, CellId start, double km, std::vector<CellId>& out) {
+    // Scratch marks (1 = taken, 2 = too far), cleared before returning; one
+    // set per thread. The cells come out in the same order as a plain
+    // breadth-first search with a membership test.
+    thread_local std::vector<std::uint8_t> mark;
+    thread_local std::vector<CellId> seen;
+    if (mark.size() != w.cell_count()) mark.assign(w.cell_count(), 0);
+    seen.clear();
     out.clear();
     out.push_back(start);
+    mark[start] = 1;
+    seen.push_back(start);
     for (std::size_t i = 0; i < out.size(); ++i) {
         for (CellId nb : w.grid.neighbors(out[i])) {
-            if (w.grid.distance_km(start, nb) > km) continue;
-            if (std::find(out.begin(), out.end(), nb) == out.end()) out.push_back(nb);
+            if (mark[nb] != 0) continue;
+            mark[nb] = w.grid.distance_km(start, nb) > km ? 2 : 1;
+            seen.push_back(nb);
+            if (mark[nb] == 1) out.push_back(nb);
         }
     }
+    for (CellId c : seen) mark[c] = 0;
 }
 
 double raid_wealth(const SimState& s, CellId c) {
@@ -630,11 +666,13 @@ void WarSystem::step(StepContext& ctx) {
     for (const Alliance& a : s.alliances) {
         if (a.ended == kNever) ++ally_count[a.a], ++ally_count[a.b];
     }
+    AllianceIndex allies;
+    allies.build(s, np);
     for (std::uint32_t id = 1; id < np; ++id) {
         if (!alive(s, id) || s.polities[id].bond != Bond::None || ally_count[id] >= kMaxAllies) continue;
         std::uint32_t threat = 0;
         for (std::uint32_t b : borders[id]) {
-            if (power[b] > kThreat * power[id] && !allied(s, id, b) && (threat == 0 || power[b] > power[threat])) {
+            if (power[b] > kThreat * power[id] && !allies.allied(s, id, b) && (threat == 0 || power[b] > power[threat])) {
                 threat = b;
             }
         }
@@ -646,7 +684,7 @@ void WarSystem::step(StepContext& ctx) {
         for (const auto* list : {&borders[id], &borders[threat]}) {
             for (std::uint32_t b : *list) {
                 if (b == id || b == threat || s.polities[b].bond != Bond::None || ally_count[b] >= kMaxAllies) continue;
-                if (allied(s, id, b) || allied(s, threat, b) || war_between(s, id, b) != 0) continue;
+                if (allies.allied(s, id, b) || allies.allied(s, threat, b) || war_between(s, id, b) != 0) continue;
                 const double score = power[b] * (s.cultures[s.polities[b].culture].root == root ? 2.0 : 1.0);
                 if (score > best || (score == best && b < partner)) best = score, partner = b;
             }
@@ -657,6 +695,7 @@ void WarSystem::step(StepContext& ctx) {
         if (rng.uniform() < kAlliance * (related ? 2.0 : 1.0)) {
             const auto [x, y] = ordered(id, partner);
             s.alliances.push_back({x, y, tick, kNever});
+            allies.add(s, s.alliances.size() - 1);
             ++ally_count[x];
             ++ally_count[y];
             s.events.push_back({tick, EventType::AllianceFormed, s.polities[id].capital,
@@ -672,20 +711,26 @@ void WarSystem::step(StepContext& ctx) {
         for (std::uint32_t p : war.attackers) busy[p] = 1;
         for (std::uint32_t p : war.defenders) busy[p] = 1;
     }
+    // Truces in force, as sorted pairs.
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> truced;
+    for (const Truce& t : s.truces) truced.emplace_back(t.a, t.b);
+    std::sort(truced.begin(), truced.end());
     for (std::uint32_t id = 1; id < np; ++id) {
         const Polity& p = s.polities[id];
         if (!alive(s, id) || p.bond != Bond::None || busy[id] || borders[id].empty()) continue;
         RngStream rng = ctx.rng(Stream::War, kDeclareEntity | id);
         const double warfare = cell_trait(s, p.capital, i_warfare);
         for (std::uint32_t b : borders[id]) {
-            if (busy[b] || top_overlord(s, b) == id || allied(s, id, b) || in_truce(s, id, b)) continue;
+            if (busy[b] || top_overlord(s, b) == id || allies.allied(s, id, b) ||
+                std::binary_search(truced.begin(), truced.end(), std::pair{std::min(id, b), std::max(id, b)})) {
+                continue;
+            }
             const Polity& q = s.polities[b];
             double defence = power[b];
             if (alive(s, q.overlord)) defence += kAllyShare * power[q.overlord];
-            for (const Alliance& al : s.alliances) {
-                if (al.ended != kNever) continue;
-                if (al.a == b) defence += kAllyShare * power[al.b];
-                if (al.b == b) defence += kAllyShare * power[al.a];
+            for (std::uint32_t i : allies.of[b]) {
+                const Alliance& al = s.alliances[i];
+                defence += kAllyShare * power[al.a == b ? al.b : al.a];
             }
             const double ratio = defence > 0.0 ? power[id] / defence : 0.0;
             if (ratio < kDeclareRatio) continue;
@@ -714,7 +759,7 @@ void WarSystem::step(StepContext& ctx) {
             for (CellId nb : around) {
                 const std::uint32_t owner = s.polity_of[nb];
                 if (owner == id) continue;
-                if (owner != 0 && (s.polities[owner].nomadic || top_overlord(s, owner) == id || allied(s, id, owner))) {
+                if (owner != 0 && (s.polities[owner].nomadic || top_overlord(s, owner) == id || allies.allied(s, id, owner))) {
                     continue;
                 }
                 const double wealth = raid_wealth(s, nb);
@@ -770,6 +815,7 @@ void WarSystem::step(StepContext& ctx) {
         if (owner != 0 && s.polities[owner].bond == Bond::None && power[id] > kRaidTributeRatio * power[owner] &&
             war_between(s, id, owner) == 0 && rng.uniform() < kRaidTribute) {
             subjugate(s, owner, id, herder_tribe(w, s, owner) ? Bond::Vassal : Bond::Tributary, tick);
+            allies.build(s, np);  // the new subject's alliances ended
         }
     }
 

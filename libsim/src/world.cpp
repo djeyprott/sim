@@ -10,6 +10,7 @@
 #include "histsim/hash.hpp"
 #include "histsim/portable_math.hpp"
 #include "histsim/rng.hpp"
+#include "histsim/systems/technology.hpp"
 
 namespace histsim {
 
@@ -1038,6 +1039,13 @@ World generate_test_world(const WorldParams& params, const Content& content) {
             w.grid.cells_within(c, steps, ball, mark);
             for (const auto& e : ball) w.hinterland_ids.push_back(e.first);
             w.hinterland_begin[c + 1] = static_cast<std::uint32_t>(w.hinterland_ids.size());
+        }
+    }
+    // Where each technique can be used (the places do not change).
+    w.technique_places.assign(n, 0);
+    for (CellId c = 0; c < n; ++c) {
+        for (std::size_t t = 0; t < content.techniques.size() && t < 64; ++t) {
+            if (technique_place_ok(w, c, content.techniques[t].where)) w.technique_places[c] |= std::uint64_t{1} << t;
         }
     }
     return w;

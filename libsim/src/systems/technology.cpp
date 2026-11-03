@@ -1,6 +1,7 @@
 #include "histsim/systems/technology.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <vector>
 
@@ -58,6 +59,10 @@ bool technique_usable(const World& w, const TechniqueDef& t, CellId c, std::uint
     if (t.requires_species != 0 && (known & t.requires_species) == 0) return false;
     if (t.min_town > kept.town) return false;
     if ((kept.goods & t.requires_goods) != t.requires_goods) return false;
+    if (!w.technique_places.empty()) {
+        const auto k = static_cast<std::size_t>(&t - w.content->techniques.data());
+        if (k < 64) return (w.technique_places[c] >> k) & 1u;
+    }
     return technique_place_ok(w, c, t.where);
 }
 
@@ -69,10 +74,11 @@ TechEffects technique_effects(const World& w, CellId c, std::uint64_t techs) {
     TechEffects e;
     if (techs == 0) return e;
     const auto& all = w.content->techniques;
+    const bool placed = !w.technique_places.empty();
+    if (placed) techs &= w.technique_places[c];
     for (std::uint64_t bits = techs; bits != 0; bits &= bits - 1) {
-        std::size_t t = 0;
-        while (!((bits >> t) & 1u)) ++t;  // lowest set bit
-        if (t >= all.size() || !technique_place_ok(w, c, all[t].where)) continue;
+        const auto t = static_cast<std::size_t>(std::countr_zero(bits));  // lowest set bit
+        if (t >= all.size() || (!placed && !technique_place_ok(w, c, all[t].where))) continue;
         const TechEffects& x = all[t].effects;
         e.crop_yield += x.crop_yield;
         e.herd_yield += x.herd_yield;
