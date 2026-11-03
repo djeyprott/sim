@@ -288,7 +288,7 @@ years; copper and horse riding come late.
 | Institutions | A polity may found (1% a year once it qualifies) a temple priesthood (rulers of an organized faith, or ritual ≥ 0.6 with a town of 5,000), a council of notables (3+ level-5 cells' worth of land, hierarchy ≥ 0.4), a law code (writing) and a standing army (writing, 300,000 people, bronze or riding). Temples add 0.05 to the stability target and make disputed successions rarer (× 0.8); councils too (× 0.6); law codes add 0.05 and cut division (× 0.7); armies add a quarter to war strength and cut overreach (× 0.7). Below 30% stability each may be lost (1% a year). A broken state's core and successors keep its institutions, but not its army. |
 | Culture | Being ruled pushes hierarchy, warfare and ritual up. |
 
-Writing needs granaries, a calendar and a town of 20,000 people to be
+Writing needs granaries, a calendar and a town of 25,000 people to be
 invented (not to be kept); bureaucracy and roads follow it (roads need no
 wheel: the Inca built them without), and provincial government needs both. At level 5 a polity lasts about 120 years at the
 median (a quarter outlast 350). Of those that end, over half are conquered,
@@ -296,7 +296,7 @@ about one in six collapses in famine, about one in ten in epidemics or from
 overreach, and about one in six breaks up in a succession dispute; break-ups
 cluster in Bond events and epidemics. Chiefdoms appear a few centuries after
 farming, thousands rise and fall, and the first states (with writing) appear
-around 3,000–6,500 years after the first crops (in some worlds, without
+around 5,000–10,000 years after the first crops (in some worlds, without
 large enough towns, never); the largest early states hold 0.3–0.8 million
 km², the range of archaic states in Seshat, and empires reach 2–3 million
 km² some 2,500 years after the first state. `histsim polities` prints the
@@ -337,7 +337,17 @@ early polities stay small. Foraging by biome leaves that about the same (first s
 7,900 years after the first crop; the last two eras, scored on one world,
 too small). With steppe clans, plunder and deaths on the march: first states
 about 7,900 years after the first crop; the six eras that can be scored
-pass.
+pass. Re-tuned for the first states: writing now needs a town of 25,000 in the
+hinterland (Uruk had some 40,000 by 3200 BCE) and, once one stands, comes
+within a few thousand years (rate 1e-4, from 3e-6), so the size of the
+largest towns sets the date rather than a long lottery among the one or two
+places that qualify; scribal bureaucracy comes three times as fast. With seeds
+1–5 at level 5 all checks pass: the first states come a median 6,640 years
+after the first crop (5,100–9,900 by world), bureaucracy about 1,000 years
+after writing, provinces in four worlds of five, and all nine eras are within
+a factor of 3 (a median 0.8 million km² at Akkad's time and 2.0 by 500 BCE).
+The largest polity in the first 5,000 years stays a chiefdom-sized 0.24
+million km².
 
 ### Goods, markets and trade (M3)
 
