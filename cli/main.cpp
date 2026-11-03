@@ -1065,8 +1065,10 @@ int gate(const Options& o) {
         std::string early_kind;  // what it was
         std::string kinds;       // per point, the largest's kind: c chiefdom, s state, e empire, n nomads
         std::vector<std::int64_t> invented;  // per kAdmin technique, years after the first crop (-1: never)
+        std::array<std::int64_t, 3> town_year{-1, -1, -1};  // per kTowns, sim year first reached (-1: never)
     };
-    static const char* const kAdmin[] = {"writing", "bureaucracy", "roads", "provinces"};
+    static const char* const kAdmin[] = {"granaries", "calendar", "writing", "bureaucracy", "roads", "provinces"};
+    static const double kTowns[] = {5000.0, 10000.0, 20000.0};  // hinterland townspeople
     std::vector<Run> runs(static_cast<std::size_t>(n));
     std::vector<std::thread> threads;
     for (std::int64_t k = 0; k < n; ++k) {
@@ -1094,6 +1096,14 @@ int gate(const Options& o) {
                     if (st.polities[id].ended == histsim::kNever && (big == 0 || area[id] > area[big])) big = id;
                 }
                 if (big != 0) samples.push_back({sim.year(), area[big] / 1e6, histsim::polity_level(sim.world(), st, big)});
+                if (r.town_year[2] < 0) {
+                    std::vector<double> around_people, around_town;
+                    histsim::hinterland_people(sim.world(), st, around_people, around_town);
+                    const double most = around_town.empty() ? 0.0 : *std::max_element(around_town.begin(), around_town.end());
+                    for (std::size_t i = 0; i < std::size(kTowns); ++i) {
+                        if (r.town_year[i] < 0 && most >= kTowns[i]) r.town_year[i] = sim.year();
+                    }
+                }
             }
             const histsim::SimState& s = sim.state();
             for (const histsim::Domestication& d : s.domestications) {
@@ -1156,18 +1166,31 @@ int gate(const Options& o) {
                 o.params.grid_level, static_cast<long long>(o.years));
     std::printf("The first state is timed from the first crop (history: from about 9500 BCE);\n"
                 "polity sizes from the first state (history: from about 3200 BCE).\n\n");
-    std::printf("  seed  first crop  years after it: first state  writing  bureaucracy  roads  provinces\n");
+    std::printf("  seed  first crop  years after it: towns 5k 10k 20k  granaries calendar  first state  writing  bureaucracy  roads  provinces\n");
     for (std::int64_t k = 0; k < n; ++k) {
         const Run& r = runs[static_cast<std::size_t>(k)];
-        std::string inv;
-        for (std::int64_t y : r.invented) {
+        std::string inv, towns;
+        for (std::int64_t y : r.town_year) {
+            char buf[16];
+            std::snprintf(buf, sizeof buf, " %5s", y >= 0 && r.first_crop >= 0 ? std::to_string(y - r.first_crop).c_str() : "-");
+            towns += buf;
+        }
+        std::string pre;
+        for (std::size_t i = 0; i < r.invented.size() && i < 2; ++i) {
+            char buf[16];
+            std::snprintf(buf, sizeof buf, " %9s", r.invented[i] >= 0 ? std::to_string(r.invented[i]).c_str() : "-");
+            pre += buf;
+        }
+        for (std::size_t i = 2; i < r.invented.size(); ++i) {
+            const std::int64_t y = r.invented[i];
             char buf[16];
             std::snprintf(buf, sizeof buf, " %8s", y >= 0 ? std::to_string(y).c_str() : "-");
             inv += buf;
         }
-        std::printf("  %4lld  year %5lld  %27s%s   (largest early: %.2f Mkm^2, a %s)\n", static_cast<long long>(k + 1),
-                    static_cast<long long>(r.first_crop), r.first_state >= 0 ? std::to_string(r.first_state).c_str() : "none",
-                    inv.c_str(), r.early, r.early_kind.c_str());
+        std::printf("  %4lld  year %5lld  %16s%s%s  %11s%s   (largest early: %.2f Mkm^2, a %s)\n", static_cast<long long>(k + 1),
+                    static_cast<long long>(r.first_crop), "", towns.c_str(), pre.c_str(),
+                    r.first_state >= 0 ? std::to_string(r.first_state).c_str() : "none", inv.c_str(), r.early,
+                    r.early_kind.c_str());
     }
     std::printf("  (per-seed sizes below are marked c chiefdom, s state, e empire, n nomad confederation)\n");
     std::printf("  (history: writing ~6200, bureaucracy ~7400, roads ~8800, provinces ~8750)\n");
