@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "histsim/interventions.hpp"
+#include "histsim/parallel.hpp"
 #include "histsim/portable_math.hpp"
 #include "histsim/systems/technology.hpp"
 
@@ -182,7 +183,8 @@ double environment_capacity(const World& w, const SimState& s, CellId c) {
 void EnvironmentSystem::step(StepContext& ctx) {
     const World& w = ctx.world;
     SimState& s = ctx.state;
-    for (CellId c = 0; c < w.cell_count(); ++c) {
+    parallel_for(w.cell_count(), [&](std::size_t c_begin, std::size_t c_end) {
+    for (CellId c = static_cast<CellId>(c_begin); c < c_end; ++c) {
         if (!w.is_land[c]) {
             s.env.capacity[c] = 0.0;
             continue;
@@ -200,6 +202,7 @@ void EnvironmentSystem::step(StepContext& ctx) {
         g = std::clamp(g, 0.02, 1.0);
         s.env.capacity[c] = environment_capacity(w, s, c);
     }
+    }, 256);
 }
 
 }  // namespace histsim

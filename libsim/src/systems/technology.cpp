@@ -5,6 +5,7 @@
 #include <cmath>
 #include <vector>
 
+#include "histsim/parallel.hpp"
 #include "histsim/systems/culture.hpp"
 #include "histsim/systems/polity.hpp"
 
@@ -120,7 +121,11 @@ void TechnologySystem::step(StepContext& ctx) {
     // invent no more and no less.
     std::vector<double> around_people, around_town;
     hinterland_people(w, s, around_people, around_town);
-    for (CellId c = 0; c < n; ++c) {
+    // Each cell in parallel; new inventions are gathered and recorded in cell
+    // order afterwards.
+    const std::size_t inventions_before = s.inventions.size();
+    const auto found = parallel_gather<std::vector<Invention>>(n, [&](std::size_t c_begin, std::size_t c_end, std::vector<Invention>& out) {
+    for (CellId c = static_cast<CellId>(c_begin); c < c_end; ++c) {
         const auto first = s.cohort_begin[c], last = s.cohort_begin[c + 1];
         if (first == last) {
             s.techniques[c] = 0;  // knowledge lives with people
@@ -161,14 +166,11 @@ void TechnologySystem::step(StepContext& ctx) {
             for (CellId o = 0; o < n && origin; ++o) {
                 if (o != c && ((before[o] >> k) & 1u) && w.grid.distance_km(o, c) < kOriginKm) origin = false;
             }
-            for (const Invention& prior : s.inventions) {
+            for (std::size_t i = 0; i < inventions_before && origin; ++i) {
+                const Invention& prior = s.inventions[i];
                 if (prior.technique == k && w.grid.distance_km(prior.cell, c) < kOriginKm) origin = false;
             }
-            if (origin) {
-                const Cohort& co = s.cohorts[lead];
-                s.inventions.push_back({ctx.tick, c, static_cast<std::uint32_t>(k), co.culture});
-                s.events.push_back({ctx.tick, EventType::Invention, c, static_cast<std::int64_t>(k)});
-            }
+            if (origin) out.push_back({ctx.tick, c, static_cast<std::uint32_t>(k), s.cohorts[lead].culture});
         }
 
         // Borrowing from neighbours.
@@ -199,6 +201,20 @@ void TechnologySystem::step(StepContext& ctx) {
             keep_check.town = 1e300;
             if (!technique_usable(w, techs[k], c, mine & ~(std::uint64_t{1} << k), known, keep_check)) loss += kFading;
             if (loss > 0.0 && rng.uniform32() < loss) mine &= ~(std::uint64_t{1} << k);
+        }
+    }
+    }, 32);
+    // An origin unless one found nearer earlier this year.
+    for (const auto& part : found) {
+        for (const Invention& inv : part) {
+            bool origin = true;
+            for (std::size_t i = inventions_before; i < s.inventions.size() && origin; ++i) {
+                const Invention& prior = s.inventions[i];
+                if (prior.technique == inv.technique && w.grid.distance_km(prior.cell, inv.cell) < kOriginKm) origin = false;
+            }
+            if (!origin) continue;
+            s.inventions.push_back(inv);
+            s.events.push_back({ctx.tick, EventType::Invention, inv.cell, static_cast<std::int64_t>(inv.technique)});
         }
     }
 }

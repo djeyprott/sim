@@ -4,6 +4,7 @@
 #include <cmath>
 #include <vector>
 
+#include "histsim/parallel.hpp"
 #include "histsim/systems/climate.hpp"
 #include "histsim/systems/culture.hpp"
 #include "histsim/systems/technology.hpp"
@@ -123,7 +124,8 @@ void FarmingSystem::step(StepContext& ctx) {
     // ---- Per inhabited cell: people's average ways, and who leads it.
     std::vector<std::array<double, kMaxTraits>> ways(n);
     std::vector<std::size_t> main_cohort(n, 0);
-    for (CellId c = 0; c < n; ++c) {
+    parallel_for(n, [&](std::size_t c_begin, std::size_t c_end) {
+    for (CellId c = static_cast<CellId>(c_begin); c < c_end; ++c) {
         const auto first = s.cohort_begin[c], last = s.cohort_begin[c + 1];
         if (first == last) continue;
         double total = 0.0;
@@ -139,13 +141,16 @@ void FarmingSystem::step(StepContext& ctx) {
             for (std::size_t t = 0; t < nt; ++t) ways[c][t] /= total;
         }
     }
+    }, 64);
     auto trait = [&](CellId c, std::size_t t) { return t < nt ? ways[c][t] : 0.5; };
 
     // Foraging capacity of each inhabited cell this year (used many times).
     std::vector<double> forage_of(n, 0.0);
-    for (CellId c = 0; c < n; ++c) {
+    parallel_for(n, [&](std::size_t c_begin, std::size_t c_end) {
+    for (CellId c = static_cast<CellId>(c_begin); c < c_end; ++c) {
         if (s.cell_population[c] > 0) forage_of[c] = forage_capacity(w, s, c);
     }
+    }, 128);
 
     // ---- Domestication where species grow wild.
     for (std::size_t k = 0; k < w.wild_stands.size(); ++k) {
@@ -186,7 +191,8 @@ void FarmingSystem::step(StepContext& ctx) {
     // ---- Learning from neighbours; knowledge lives with people. Foragers
     // often knew of their neighbours' crops long before taking them up.
     const std::vector<std::uint32_t> known = s.domesticates;
-    for (CellId c = 0; c < n; ++c) {
+    parallel_for(n, [&](std::size_t c_begin, std::size_t c_end) {
+    for (CellId c = static_cast<CellId>(c_begin); c < c_end; ++c) {
         if (s.cell_population[c] == 0) {
             s.domesticates[c] = 0;
             continue;
@@ -214,10 +220,12 @@ void FarmingSystem::step(StepContext& ctx) {
             if (rng.uniform32() < std::min(1.0, p * herd)) s.domesticates[c] |= 1u << sp;
         }
     }
+    }, 64);
 
     // ---- What farmland would feed this year.
     if (s.env.pastoral.size() != n) s.env.pastoral.assign(n, 0.0);
-    for (CellId c = 0; c < n; ++c) {
+    parallel_for(n, [&](std::size_t c_begin, std::size_t c_end) {
+    for (CellId c = static_cast<CellId>(c_begin); c < c_end; ++c) {
         if (s.domesticates[c] == 0) {
             s.env.farm_capacity[c] = 0.0;
             s.env.pastoral[c] = 0.0;
@@ -228,9 +236,11 @@ void FarmingSystem::step(StepContext& ctx) {
         s.env.farm_capacity[c] = density * w.grid.area_km2(c) * harvest_factor(w, s, c);
         s.env.pastoral[c] = pastoral_share(parts);
     }
+    }, 64);
 
     // ---- Each cohort's share of food from farming.
-    for (std::size_t i = 0; i < s.cohorts.size(); ++i) {
+    parallel_for(s.cohorts.size(), [&](std::size_t i_begin, std::size_t i_end) {
+    for (std::size_t i = i_begin; i < i_end; ++i) {
         Cohort& co = s.cohorts[i];
         const CellId c = co.cell;
         const double forage = forage_of[c];
@@ -255,9 +265,11 @@ void FarmingSystem::step(StepContext& ctx) {
         const double gain = kAdoption * willing * (need + 0.05) * (1.0 - co.farming);
         co.farming = clamp01(co.farming + gain);
     }
+    }, 256);
 
     // ---- The cell's farming share and capacity.
-    for (CellId c = 0; c < n; ++c) {
+    parallel_for(n, [&](std::size_t c_begin, std::size_t c_end) {
+    for (CellId c = static_cast<CellId>(c_begin); c < c_end; ++c) {
         const auto first = s.cohort_begin[c], last = s.cohort_begin[c + 1];
         double total = 0.0, farmed = 0.0;
         for (auto i = first; i < last; ++i) {
@@ -268,6 +280,7 @@ void FarmingSystem::step(StepContext& ctx) {
         s.env.farming[c] = total > 0.0 ? farmed / total : 0.0;
         s.env.capacity[c] = environment_capacity(w, s, c);
     }
+    }, 128);
 }
 
 }  // namespace histsim
