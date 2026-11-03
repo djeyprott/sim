@@ -58,6 +58,9 @@ func _process(_delta: float) -> bool:
 	if frames == 31:
 		globe_ok = main.showing_globe and main.globe.visible
 	if frames == 32:
+		# Paused, so the background run cannot add a year between the
+		# checks below.
+		main._set_playing(false)
 		main._set_view(false)
 		main._set_god_mode(true)
 		main.god_panel.set_tool("plague")
@@ -262,6 +265,23 @@ func _check_api() -> void:
 	_expect(w2.get_intervention_count() == 5, "snapshot keeps the interventions")
 	_expect(not w2.load_snapshot(path + ".missing"), "load_snapshot fails cleanly on a missing file")
 	DirAccess.remove_absolute(path)
+
+	# Years run in the background.
+	var year_before: int = w2.get_year()
+	w2.queue_years(10)
+	var finished := 0
+	for i in range(600):
+		finished += w2.take_finished_years()
+		if finished >= 10:
+			break
+		OS.delay_msec(10)
+	_expect(finished == 10 and w2.get_year() == year_before + 10 and w2.get_queued_years() == 0, "queue_years runs years in the background")
+	w2.queue_years(1000)
+	w2.clear_queue()
+	w2.take_finished_years()
+	var stopped_at: int = w2.get_year()
+	OS.delay_msec(50)
+	_expect(w2.get_year() == stopped_at and w2.get_queued_years() == 0, "clear_queue stops the background run")
 
 
 func _check_scene() -> void:

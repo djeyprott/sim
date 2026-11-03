@@ -1,12 +1,15 @@
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <iterator>
+#include <numeric>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
+#include "histsim/parallel.hpp"
 #include "histsim/simulation.hpp"
 #include "testing.hpp"
 
@@ -156,6 +159,42 @@ TEST(sim_events_are_in_tick_order) {
     for (std::size_t i = 1; i < events.size(); ++i) {
         CHECK(events[i - 1].tick <= events[i].tick);
     }
+}
+
+// parallel_for covers each index exactly once, however it is split.
+TEST(parallel_for_covers_every_index_once) {
+    for (int threads : {1, 2, 4}) {
+        set_threads(threads);
+        for (std::size_t n : {0u, 1u, 63u, 64u, 1000u, 12345u}) {
+            std::vector<int> seen(n, 0);
+            parallel_for(n, [&](std::size_t begin, std::size_t end) {
+                for (std::size_t i = begin; i < end; ++i) ++seen[i];
+            }, 16);
+            CHECK(std::all_of(seen.begin(), seen.end(), [](int k) { return k == 1; }));
+            const auto parts = parallel_gather<std::vector<std::size_t>>(n, [](std::size_t begin, std::size_t end, std::vector<std::size_t>& out) {
+                for (std::size_t i = begin; i < end; ++i) out.push_back(i);
+            }, 16);
+            std::vector<std::size_t> joined;
+            for (const auto& part : parts) joined.insert(joined.end(), part.begin(), part.end());
+            std::vector<std::size_t> expected(n);
+            std::iota(expected.begin(), expected.end(), std::size_t{0});
+            CHECK(joined == expected);
+        }
+    }
+    set_threads(0);
+}
+
+// A run is bit-identical with any number of threads.
+TEST(sim_same_with_any_thread_count) {
+    std::uint64_t first = 0;
+    for (int threads : {1, 2, 4}) {
+        set_threads(threads);
+        Simulation sim = Simulation::create(small_world(7));
+        sim.step_years(600);
+        if (threads == 1) first = sim.state_hash();
+        CHECK_EQ(sim.state_hash(), first);
+    }
+    set_threads(0);
 }
 
 // Golden hash: pins the exact output of a fixed run. CI runs this on Linux,

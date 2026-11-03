@@ -11,7 +11,12 @@
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/string.hpp>
 
+#include <atomic>
+#include <condition_variable>
+#include <cstdint>
+#include <mutex>
 #include <optional>
+#include <thread>
 #include <string>
 #include <vector>
 
@@ -25,6 +30,8 @@ class HistSimWorld : public godot::RefCounted {
     GDCLASS(HistSimWorld, godot::RefCounted)
 
 public:
+    ~HistSimWorld();
+
     // Lifecycle. Each returns false and sets get_last_error() on failure.
     bool create_world(int64_t seed, int64_t level, double ocean_fraction);
     // kind: "generated" or "earth" (Earth's land and sea; ocean_fraction unused).
@@ -39,6 +46,16 @@ public:
     // time budget is spent, and returns how many years it ran.
     void step_years(int64_t years);
     int64_t step_for_budget(int64_t max_years, double budget_msec);
+
+    // Running in the background: queue_years hands years to a worker thread,
+    // which runs them one at a time while the UI goes on drawing;
+    // take_finished_years returns how many it has run since the last call.
+    // Every other method waits for the year in progress to finish, so it
+    // always sees a whole year.
+    void queue_years(int64_t years);
+    int64_t get_queued_years() const;
+    void clear_queue();
+    int64_t take_finished_years();
 
     // Run summary.
     int64_t get_year() const;
@@ -107,6 +124,30 @@ protected:
     static void _bind_methods();
 
 private:
+    // Holds the simulation for one call from the UI.
+    class Guard {
+    public:
+        explicit Guard(const HistSimWorld& w);
+        ~Guard();
+        Guard(const Guard&) = delete;
+        Guard& operator=(const Guard&) = delete;
+
+    private:
+        const HistSimWorld& w_;
+    };
+    [[nodiscard]] Guard hold() const;
+    void worker_loop();
+    void stop_worker();
+
+    mutable std::recursive_mutex sim_mutex_;
+    mutable std::condition_variable_any wake_;
+    mutable std::atomic<int> readers_waiting_{0};
+    std::thread worker_;
+    bool quit_ = false;
+    bool failed_ = false;
+    int64_t queued_ = 0;
+    int64_t finished_ = 0;
+
     void fail(const std::string& message);
     void ensure_raster();
 
