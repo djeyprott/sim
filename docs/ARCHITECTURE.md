@@ -465,6 +465,32 @@ A run must be bit-identical on every compiler, OS and CPU we support. The CI
   merging cohorts, `normalize_cohorts()` stable-sorts an index array, so
   equal keys merge in the order they were added, on every platform.
 
+**Threads**
+
+Systems split their per-cell and per-cohort work across threads with
+`parallel_for` (parallel.hpp), and a run is still bit-identical with any
+number of threads, on any machine. Inside a parallel loop:
+
+- Each index writes only its own data (its cell's slots, its own cohort) and
+  reads nothing another index writes in the same loop. Anything that reads
+  its neighbours reads last year's values or a copy taken before the loop.
+- Each index draws from its own `RngStream` (keyed by cell or cohort), never
+  from one shared by the loop.
+- Results that go elsewhere (new cohorts, inventions, sales to other markets)
+  are gathered per chunk with `parallel_gather`, which hands them back in
+  index order, and are applied after the loop exactly as a serial loop would
+  have applied them. Floating-point totals are added up serially in index
+  order; integer totals may be added in any order.
+- Work whose order matters (a cell's choice depending on what an earlier cell
+  did this year) stays serial.
+
+The thread count defaults to the machine's cores (up to 16).
+`HISTSIM_THREADS=1` runs everything on one thread; check a change to a
+parallel loop by comparing hashes with `HISTSIM_THREADS=1` and `=4`.
+`HISTSIM_PROFILE=1` prints the time spent in each system at exit. The viewer
+runs the simulation on its own worker thread (`HistSimWorld::queue_years`),
+so drawing never waits for more than one year.
+
 **When behavior changes on purpose**
 
 Update the constant in `sim_golden_hash` (tests/test_simulation.cpp) with the

@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstring>
 #include <exception>
+#include <thread>
 
 using namespace godot;
 
@@ -43,18 +44,26 @@ void HistSimWorld::fail(const std::string& message) {
     UtilityFunctions::push_error(to_godot("histsim: " + message));
 }
 
-String HistSimWorld::get_last_error() const { return to_godot(last_error_); }
+String HistSimWorld::get_last_error() const {
+    const auto guard = hold();
+    return to_godot(last_error_);
+}
 
 bool HistSimWorld::create_world(int64_t seed, int64_t level, double ocean_fraction) {
+    const auto guard = hold();
     return create_world_of_kind(seed, level, ocean_fraction, "generated");
 }
 
 String HistSimWorld::get_world_kind() const {
+    const auto guard = hold();
     if (!sim_) return String();
     return String(histsim::world_kind_name(sim_->world().params.kind));
 }
 
 bool HistSimWorld::create_world_of_kind(int64_t seed, int64_t level, double ocean_fraction, const String& kind) {
+    const auto guard = hold();
+    queued_ = 0;
+    finished_ = 0;
     const std::string k = to_std(kind);
     if (k != "generated" && k != "earth") {
         fail("world kind must be \"generated\" or \"earth\"");
@@ -81,6 +90,9 @@ bool HistSimWorld::create_world_of_kind(int64_t seed, int64_t level, double ocea
 }
 
 bool HistSimWorld::load_snapshot(const String& path) {
+    const auto guard = hold();
+    queued_ = 0;
+    finished_ = 0;
     try {
         sim_.emplace(histsim::Simulation::load(to_std(path)));
         raster_.reset();
@@ -93,6 +105,7 @@ bool HistSimWorld::load_snapshot(const String& path) {
 }
 
 bool HistSimWorld::save_snapshot(const String& path) {
+    const auto guard = hold();
     if (!sim_) {
         fail("no world to save");
         return false;
@@ -107,12 +120,14 @@ bool HistSimWorld::save_snapshot(const String& path) {
 }
 
 void HistSimWorld::step_years(int64_t years) {
+    const auto guard = hold();
     if (sim_ && years > 0) {
         sim_->step_years(years);
     }
 }
 
 int64_t HistSimWorld::step_for_budget(int64_t max_years, double budget_msec) {
+    const auto guard = hold();
     if (!sim_ || max_years <= 0) {
         return 0;
     }
@@ -130,16 +145,108 @@ int64_t HistSimWorld::step_for_budget(int64_t max_years, double budget_msec) {
     return done;
 }
 
-int64_t HistSimWorld::get_year() const { return sim_ ? sim_->year() : 0; }
-int64_t HistSimWorld::get_population() const { return sim_ ? sim_->state().total_population() : 0; }
+// ---- Running in the background.
+
+HistSimWorld::~HistSimWorld() { stop_worker(); }
+
+HistSimWorld::Guard HistSimWorld::hold() const { return Guard(*this); }
+
+HistSimWorld::Guard::Guard(const HistSimWorld& w) : w_(w) {
+    w_.readers_waiting_.fetch_add(1);
+    w_.sim_mutex_.lock();
+    w_.readers_waiting_.fetch_sub(1);
+}
+
+HistSimWorld::Guard::~Guard() {
+    w_.sim_mutex_.unlock();
+    w_.wake_.notify_all();
+}
+
+void HistSimWorld::stop_worker() {
+    {
+        std::lock_guard<std::recursive_mutex> lock(sim_mutex_);
+        quit_ = true;
+        queued_ = 0;
+    }
+    wake_.notify_all();
+    if (worker_.joinable()) worker_.join();
+    quit_ = false;
+}
+
+void HistSimWorld::worker_loop() {
+    std::unique_lock<std::recursive_mutex> lock(sim_mutex_);
+    for (;;) {
+        // Readers (the map, the panels) go first: at most one year waits.
+        wake_.wait(lock, [&] { return quit_ || (queued_ > 0 && readers_waiting_.load() == 0); });
+        if (quit_) return;
+        try {
+            sim_->step_years(1);
+            ++finished_;
+        } catch (const std::exception& e) {
+            queued_ = 0;
+            last_error_ = e.what();
+            failed_ = true;
+            continue;
+        }
+        --queued_;
+    }
+}
+
+void HistSimWorld::queue_years(int64_t years) {
+    const auto guard = hold();
+    if (!sim_ || years <= 0) return;
+    queued_ += years;
+    if (!worker_.joinable()) worker_ = std::thread([this] { worker_loop(); });
+}
+
+int64_t HistSimWorld::get_queued_years() const {
+    const auto guard = hold();
+    return queued_;
+}
+
+void HistSimWorld::clear_queue() {
+    const auto guard = hold();
+    queued_ = 0;
+}
+
+int64_t HistSimWorld::take_finished_years() {
+    const auto guard = hold();
+    if (failed_) {
+        failed_ = false;
+        UtilityFunctions::push_error(to_godot("histsim: " + last_error_));
+    }
+    const int64_t done = finished_;
+    finished_ = 0;
+    return done;
+}
+
+int64_t HistSimWorld::get_year() const {
+    const auto guard = hold();
+    return sim_ ? sim_->year() : 0;
+}
+int64_t HistSimWorld::get_population() const {
+    const auto guard = hold();
+    return sim_ ? sim_->state().total_population() : 0;
+}
 int64_t HistSimWorld::get_inhabited_cells() const {
+    const auto guard = hold();
     return sim_ ? static_cast<int64_t>(sim_->summary().inhabited_cells) : 0;
 }
-int64_t HistSimWorld::get_cell_count() const { return sim_ ? static_cast<int64_t>(sim_->world().cell_count()) : 0; }
-int64_t HistSimWorld::get_seed() const { return sim_ ? static_cast<int64_t>(sim_->world().params.seed) : 0; }
-int64_t HistSimWorld::get_level() const { return sim_ ? sim_->world().params.grid_level : 0; }
+int64_t HistSimWorld::get_cell_count() const {
+    const auto guard = hold();
+    return sim_ ? static_cast<int64_t>(sim_->world().cell_count()) : 0;
+}
+int64_t HistSimWorld::get_seed() const {
+    const auto guard = hold();
+    return sim_ ? static_cast<int64_t>(sim_->world().params.seed) : 0;
+}
+int64_t HistSimWorld::get_level() const {
+    const auto guard = hold();
+    return sim_ ? sim_->world().params.grid_level : 0;
+}
 
 double HistSimWorld::get_forager_capacity() const {
+    const auto guard = hold();
     if (!sim_) return 0.0;
     double total = 0.0;
     for (double k : sim_->world().forager_capacity) total += k;
@@ -147,15 +254,20 @@ double HistSimWorld::get_forager_capacity() const {
 }
 
 double HistSimWorld::get_capacity() const {
+    const auto guard = hold();
     if (!sim_) return 0.0;
     double total = 0.0;
     for (double k : sim_->state().env.capacity) total += k;
     return total;
 }
 
-double HistSimWorld::get_global_anomaly() const { return sim_ ? sim_->state().climate.global_anomaly_c : 0.0; }
+double HistSimWorld::get_global_anomaly() const {
+    const auto guard = hold();
+    return sim_ ? sim_->state().climate.global_anomaly_c : 0.0;
+}
 
 PackedStringArray HistSimWorld::get_disease_names() const {
+    const auto guard = hold();
     PackedStringArray out;
     const histsim::Content& c = sim_ ? *sim_->world().content : histsim::default_content();
     for (const auto& d : c.diseases) out.push_back(to_godot(d.name));
@@ -163,6 +275,7 @@ PackedStringArray HistSimWorld::get_disease_names() const {
 }
 
 Dictionary HistSimWorld::get_people_counts() const {
+    const auto guard = hold();
     Dictionary d;
     const histsim::PeopleCounts p = sim_ ? histsim::count_peoples(sim_->state()) : histsim::PeopleCounts{};
     d["languages"] = static_cast<int64_t>(p.languages);
@@ -172,6 +285,7 @@ Dictionary HistSimWorld::get_people_counts() const {
 }
 
 Dictionary HistSimWorld::get_history(int64_t max_points) const {
+    const auto guard = hold();
     Dictionary d;
     PackedInt64Array years, population;
     PackedFloat64Array capacity, anomaly, farmers;
@@ -204,6 +318,7 @@ Dictionary HistSimWorld::get_history(int64_t max_points) const {
 }
 
 PackedInt64Array HistSimWorld::get_bond_spans() const {
+    const auto guard = hold();
     PackedInt64Array out;
     if (!sim_) return out;
     for (const histsim::BondEvent& b : sim_->state().climate.bond_history) {
@@ -214,6 +329,7 @@ PackedInt64Array HistSimWorld::get_bond_spans() const {
 }
 
 String HistSimWorld::get_state_hash() const {
+    const auto guard = hold();
     if (!sim_) return String();
     char buf[17];
     std::snprintf(buf, sizeof buf, "%016llx", static_cast<unsigned long long>(sim_->state_hash()));
@@ -221,6 +337,7 @@ String HistSimWorld::get_state_hash() const {
 }
 
 Array HistSimWorld::get_modes() const {
+    const auto guard = hold();
     Array out;
     for (const auto& m : histsim::view::map_modes()) {
         Dictionary d;
@@ -234,6 +351,7 @@ Array HistSimWorld::get_modes() const {
 }
 
 Dictionary HistSimWorld::get_legend(const String& mode) const {
+    const auto guard = hold();
     Dictionary d;
     try {
         const histsim::view::Legend l = sim_ ? histsim::view::legend(*sim_, to_std(mode)) : histsim::view::legend(to_std(mode));
@@ -247,12 +365,14 @@ Dictionary HistSimWorld::get_legend(const String& mode) const {
 }
 
 void HistSimWorld::set_map_size(int64_t width, int64_t height) {
+    const auto guard = hold();
     map_width_ = static_cast<int>(width);
     map_height_ = static_cast<int>(height);
     raster_.reset();
 }
 
 void HistSimWorld::ensure_raster() {
+    const auto guard = hold();
     if (!raster_ && sim_) {
         raster_.emplace(histsim::view::MapRaster::build(sim_->world().grid, map_width_, map_height_));
     }
@@ -260,6 +380,7 @@ void HistSimWorld::ensure_raster() {
 
 Ref<Image> HistSimWorld::render_map(const String& mode, bool coastlines, bool rivers, bool borders, bool routes,
                                     bool migrations) {
+    const auto guard = hold();
     if (!sim_) {
         fail("no world to render");
         return Ref<Image>();
@@ -307,12 +428,14 @@ Ref<Image> HistSimWorld::render_map(const String& mode, bool coastlines, bool ri
 }
 
 int64_t HistSimWorld::cell_at(int64_t x, int64_t y) const {
+    const auto guard = hold();
     if (!raster_) return -1;
     const histsim::CellId c = raster_->cell_at(static_cast<int>(x), static_cast<int>(y));
     return c == histsim::kInvalidCell ? -1 : static_cast<int64_t>(c);
 }
 
 Array HistSimWorld::describe_cell(int64_t cell) const {
+    const auto guard = hold();
     Array out;
     if (!sim_ || cell < 0) return out;
     for (const auto& f : histsim::view::describe_cell(*sim_, static_cast<histsim::CellId>(cell))) {
@@ -326,6 +449,7 @@ Array HistSimWorld::describe_cell(int64_t cell) const {
 }
 
 PackedStringArray HistSimWorld::get_native_species(int64_t cell) const {
+    const auto guard = hold();
     PackedStringArray out;
     if (!sim_ || cell < 0) return out;
     for (const std::string& name : histsim::view::native_species(*sim_, static_cast<histsim::CellId>(cell))) {
@@ -335,6 +459,7 @@ PackedStringArray HistSimWorld::get_native_species(int64_t cell) const {
 }
 
 Dictionary HistSimWorld::get_cell_pyramid(int64_t cell) const {
+    const auto guard = hold();
     Dictionary d;
     PackedInt64Array female, male;
     if (sim_ && cell >= 0) {
@@ -351,6 +476,7 @@ Dictionary HistSimWorld::get_cell_pyramid(int64_t cell) const {
 
 Dictionary HistSimWorld::apply_intervention(const String& type, int64_t cell, double radius_km, double amount,
                                             double amount2, int64_t years) {
+    const auto guard = hold();
     Dictionary d;
     d["ok"] = false;
     d["people"] = 0;
@@ -392,13 +518,18 @@ Dictionary HistSimWorld::apply_intervention(const String& type, int64_t cell, do
     return d;
 }
 
-double HistSimWorld::get_imposed_forcing() const { return sim_ ? sim_->state().climate.imposed_forcing : 0.0; }
+double HistSimWorld::get_imposed_forcing() const {
+    const auto guard = hold();
+    return sim_ ? sim_->state().climate.imposed_forcing : 0.0;
+}
 
 int64_t HistSimWorld::get_intervention_count() const {
+    const auto guard = hold();
     return sim_ ? static_cast<int64_t>(sim_->state().commands.size()) : 0;
 }
 
 PackedInt64Array HistSimWorld::get_event_years(const String& kind) const {
+    const auto guard = hold();
     PackedInt64Array out;
     if (!sim_) return out;
     const std::string k = to_std(kind);
@@ -414,6 +545,7 @@ PackedInt64Array HistSimWorld::get_event_years(const String& kind) const {
 }
 
 bool HistSimWorld::set_focus(const String& mode, int64_t cell) {
+    const auto guard = hold();
     focus_on_ = false;
     if (!sim_ || cell < 0 || static_cast<std::size_t>(cell) >= sim_->world().cell_count()) return false;
     try {
@@ -426,6 +558,7 @@ bool HistSimWorld::set_focus(const String& mode, int64_t cell) {
 }
 
 Array HistSimWorld::get_polity_labels() const {
+    const auto guard = hold();
     Array out;
     if (!sim_) return out;
     for (const auto& l : histsim::view::polity_labels(*sim_)) {
@@ -443,6 +576,7 @@ Array HistSimWorld::get_polity_labels() const {
 }
 
 Array HistSimWorld::get_timeline(const String& kind, int64_t polity, int64_t cell, int64_t max_entries) const {
+    const auto guard = hold();
     Array out;
     if (!sim_ || max_entries <= 0) return out;
     const histsim::CellId at = cell < 0 ? histsim::kInvalidCell : static_cast<histsim::CellId>(cell);
@@ -459,12 +593,14 @@ Array HistSimWorld::get_timeline(const String& kind, int64_t polity, int64_t cel
 }
 
 int64_t HistSimWorld::get_cell_polity(int64_t cell) const {
+    const auto guard = hold();
     if (!sim_ || cell < 0 || static_cast<std::size_t>(cell) >= sim_->world().cell_count()) return 0;
     const auto& of = sim_->state().polity_of;
     return of.empty() ? 0 : static_cast<int64_t>(of[static_cast<std::size_t>(cell)]);
 }
 
 Vector2 HistSimWorld::get_cell_uv(int64_t cell) const {
+    const auto guard = hold();
     if (!sim_ || cell < 0) return Vector2(-1, -1);
     double u = 0.0, v = 0.0;
     histsim::view::cell_uv(sim_->world(), static_cast<histsim::CellId>(cell), u, v);
@@ -472,6 +608,7 @@ Vector2 HistSimWorld::get_cell_uv(int64_t cell) const {
 }
 
 void HistSimWorld::set_highlight(int64_t cell, double radius_km) {
+    const auto guard = hold();
     highlight_on_ = false;
     if (!sim_ || cell < 0 || static_cast<std::size_t>(cell) >= sim_->world().cell_count()) return;
     highlight_.assign(sim_->world().cell_count(), 0);
@@ -492,6 +629,10 @@ void HistSimWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_last_error"), &HistSimWorld::get_last_error);
     ClassDB::bind_method(D_METHOD("step_years", "years"), &HistSimWorld::step_years);
     ClassDB::bind_method(D_METHOD("step_for_budget", "max_years", "budget_msec"), &HistSimWorld::step_for_budget);
+    ClassDB::bind_method(D_METHOD("queue_years", "years"), &HistSimWorld::queue_years);
+    ClassDB::bind_method(D_METHOD("get_queued_years"), &HistSimWorld::get_queued_years);
+    ClassDB::bind_method(D_METHOD("clear_queue"), &HistSimWorld::clear_queue);
+    ClassDB::bind_method(D_METHOD("take_finished_years"), &HistSimWorld::take_finished_years);
     ClassDB::bind_method(D_METHOD("get_year"), &HistSimWorld::get_year);
     ClassDB::bind_method(D_METHOD("get_population"), &HistSimWorld::get_population);
     ClassDB::bind_method(D_METHOD("get_inhabited_cells"), &HistSimWorld::get_inhabited_cells);

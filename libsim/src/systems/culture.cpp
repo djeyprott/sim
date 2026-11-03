@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <cmath>
 #include <deque>
+#include <mutex>
 #include <vector>
 
 #include "histsim/language.hpp"
+#include "histsim/parallel.hpp"
 #include "histsim/systems/polity.hpp"
 
 namespace histsim {
@@ -353,16 +355,18 @@ void CultureSystem::step(StepContext& ctx) {
 
     // Per inhabited cell: circumstances and the trait targets they set.
     std::vector<std::array<double, kMaxTraits>> target(n);
-    for (CellId c = 0; c < n; ++c) {
+    parallel_for(n, [&](std::size_t c_begin, std::size_t c_end) {
+    for (CellId c = static_cast<CellId>(c_begin); c < c_end; ++c) {
         if (s.cell_population[c] == 0) continue;
         const auto vars = culture_variables(w, s, c);
         for (std::size_t t = 0; t < nt; ++t) target[c][t] = trait_target(content.traits[t], vars);
     }
+    }, 64);
 
     // ---- Drift, contact and adaptation, computed from last year's values.
     std::vector<std::array<double, kMaxTraits>> new_traits(count);
     std::vector<std::array<double, kDialectDims>> new_dialect(count);
-    std::vector<Cohort> arrivals;
+
     std::vector<std::int64_t> pop(count);
     for (std::size_t i = 0; i < count; ++i) pop[i] = s.cohorts[i].total();
 
@@ -384,7 +388,7 @@ void CultureSystem::step(StepContext& ctx) {
         for (std::size_t p = 1; p < s.polities.size(); ++p) {
             if (s.polities[p].ended == kNever) reach[p] = polity_reach(w, s, static_cast<std::uint32_t>(p));
         }
-        std::vector<std::pair<std::uint32_t, double>> langs, cults;
+
         auto add = [](std::vector<std::pair<std::uint32_t, double>>& v, std::uint32_t id, double p) {
             for (auto& e : v) {
                 if (e.first == id) {
@@ -394,7 +398,9 @@ void CultureSystem::step(StepContext& ctx) {
             }
             v.emplace_back(id, p);
         };
-        for (CellId c = 0; c < n; ++c) {
+        parallel_for(n, [&](std::size_t c_begin, std::size_t c_end) {
+        std::vector<std::pair<std::uint32_t, double>> langs, cults;
+        for (CellId c = static_cast<CellId>(c_begin); c < c_end; ++c) {
             const auto first = s.cohort_begin[c], last = s.cohort_begin[c + 1];
             if (first == last) continue;
             langs.clear();
@@ -441,9 +447,16 @@ void CultureSystem::step(StepContext& ctx) {
                 if (s.cohorts[j].culture == t.culture && pop[j] > best_c) best_c = pop[j], t.culture_cohort = j;
             }
         }
+        }, 64);
     }
 
-    for (std::size_t i = 0; i < count; ++i) {
+    // Cohorts that change language or culture, gathered per chunk and added
+    // in cohort order afterwards.
+    std::vector<std::pair<std::size_t, std::vector<Cohort>>> chunk_arrivals;
+    std::mutex arrivals_mutex;
+    parallel_for(count, [&](std::size_t i_begin, std::size_t i_end) {
+    std::vector<Cohort> arrivals;
+    for (std::size_t i = i_begin; i < i_end; ++i) {
         const Cohort& co = s.cohorts[i];
         RngStream rng = ctx.rng(Stream::Culture, static_cast<std::uint32_t>(i));
 
@@ -565,11 +578,18 @@ void CultureSystem::step(StepContext& ctx) {
             if (moved_n > 0) arrivals.push_back(moved);
         }
     }
+    if (!arrivals.empty()) {
+        std::lock_guard<std::mutex> lock(arrivals_mutex);
+        chunk_arrivals.emplace_back(i_begin, std::move(arrivals));
+    }
+    }, 32);
     for (std::size_t i = 0; i < count; ++i) {
         s.cohorts[i].traits = new_traits[i];
         s.cohorts[i].dialect = new_dialect[i];
     }
-    s.cohorts.insert(s.cohorts.end(), arrivals.begin(), arrivals.end());
+    std::sort(chunk_arrivals.begin(), chunk_arrivals.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
+    for (auto& [begin, moved] : chunk_arrivals) s.cohorts.insert(s.cohorts.end(), moved.begin(), moved.end());
     s.normalize_cohorts(n);
 
     // ---- Every language changes a little.

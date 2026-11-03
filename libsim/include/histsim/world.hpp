@@ -166,6 +166,9 @@ struct World {
     // world; hinterland_ids[hinterland_begin[c] .. hinterland_begin[c + 1]).
     // Derived from the grid alone, so not part of the world hash.
     std::vector<std::uint32_t> hinterland_begin;
+    // For each cell, bit t set if technique t's place (`where`) fits it
+    // (technique_place_ok). Derived from the terrain; not hashed.
+    std::vector<std::uint64_t> technique_places;
     std::vector<CellId> hinterland_ids;
 
     [[nodiscard]] std::size_t cell_count() const noexcept { return grid.cell_count(); }

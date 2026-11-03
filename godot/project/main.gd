@@ -17,7 +17,6 @@ const LEVELS := [4, 5, 6, 7]
 const WORLD_KINDS := ["generated", "earth"]
 const WORLD_KIND_NAMES := ["Generated world", "Earth"]
 const LEVEL_NAMES := ["Coarse (2.6k cells)", "Normal (10k cells)", "Fine (41k cells)", "Detailed (164k cells)"]
-const STEP_BUDGET_MSEC := 12.0  # max time per frame spent simulating
 const RENDER_INTERVAL := 1.0 / 15.0  # max map redraws per second while playing
 const CHART_INTERVAL := 0.25  # chart refreshes per second while playing
 const DYNAMIC_LEGENDS := ["language", "language_family", "culture", "polity", "religion", "realms"]
@@ -152,19 +151,27 @@ func _after_world_change() -> void:
 func _process(delta: float) -> void:
 	if world == null:
 		return
+	# The years run on a worker thread; each frame hands it what is due and
+	# picks up what it finished.
+	var speed: int = SPEEDS[speed_index]
 	if playing:
-		var speed: int = SPEEDS[speed_index]
-		# Cap the backlog so a slow machine falls behind gracefully instead of stalling.
-		years_due = minf(years_due + delta * speed, speed * 0.5 + 1.0)
+		years_due += delta * speed
 		var wanted := int(years_due)
 		if wanted > 0:
-			var done: int = world.step_for_budget(wanted, STEP_BUDGET_MSEC)
-			years_due -= done
-			rate_years += done
-			if done > 0:
-				map_dirty = true
-				charts_dirty = true
-				_update_summary()
+			years_due -= wanted
+			# Keep at most half a second's years waiting, so a slow machine
+			# falls behind gracefully and pausing stops at once.
+			var queued: int = world.get_queued_years()
+			var room: int = int(speed * 0.5) + 1 - queued
+			if room > 0:
+				world.queue_years(mini(wanted, room))
+	var done: int = world.take_finished_years()
+	if done > 0:
+		rate_years += done
+		map_dirty = true
+		charts_dirty = true
+		_update_summary()
+	if playing:
 		# Show the real speed when the machine cannot keep up with the setting.
 		rate_time += delta
 		if rate_time >= 0.5:
@@ -267,6 +274,8 @@ func _set_view(globe_view: bool) -> void:
 
 func _set_playing(value: bool) -> void:
 	playing = value
+	if not playing and world != null:
+		world.clear_queue()
 	play_button.text = "Pause" if playing else "Play"
 	years_due = 0.0
 	rate_years = 0
