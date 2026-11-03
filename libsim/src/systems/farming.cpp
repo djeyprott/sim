@@ -94,6 +94,9 @@ double harvest_factor(const World& w, const SimState& s, CellId c) {
     if (!w.is_land[c]) return 0.0;
     const double rain = std::clamp(s.env.precipitation_mm[c] / std::max(1.0, w.precipitation_mm[c]), 0.4, 1.15);
     const double warmth = std::max(0.3, 1.0 - 0.12 * std::fabs(s.env.temperature_c[c] - w.temperature_c[c]));
+    // Below a normal year, part of the shortfall is made up by mixing crops
+    // and fields, famine foods and kin (harvest_buffer); the rest falls on
+    // the stores (EconomySystem), and famine comes when they are empty.
     const double f = rain * warmth;
     if (f >= 1.0) return f;
     const double buffer = technique_effects(w, c, techniques_in(s, c)).harvest_buffer;

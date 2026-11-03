@@ -39,7 +39,7 @@ Worlds are generated from a seed, or Earth: Earth's land, sea and mountains
 (from NOAA's ETOPO1 relief), with the seed still placing wild plants and
 animals, ores and peoples and shaping all of history.
 A Godot viewer shows it as a map or globe with
-thirty-one map modes (plus one per culture trait), polity borders, trade routes, world charts, a cell
+thirty-two map modes (plus one per culture trait), polity borders, trade routes, world charts, a cell
 inspector and a god mode.
 
 ## Download

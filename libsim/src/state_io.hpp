@@ -202,6 +202,7 @@ void serialize(Ar& ar, SimState& s) {
     doubles(ar, s.env.farming);
     doubles(ar, s.env.farm_capacity);
     doubles(ar, s.env.pastoral);
+    doubles(ar, s.env.food_store);
     doubles(ar, s.env.disease_mortality);
 
     ar.i64(s.ledger.initial_population);

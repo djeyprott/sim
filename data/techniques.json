@@ -25,7 +25,9 @@
 //   herd_yield      herds x (1 + sum)
 //   forage          land foraging (plants and game) x (1 + sum)
 //   aquatic         fish and shellfish x (1 + sum)
-//   harvest_buffer  share of a bad harvest's shortfall made good (stores)
+//   harvest_buffer  share of a bad harvest's shortfall made good (mixed crops
+//                   and fields, famine foods, kin), and storage: a cell may
+//                   keep (0.25 + 3 x sum) years of food (EconomySystem stores)
 //   famine          famine mortality x (1 + sum), so negative is better
 //   contact         learning from and teaching neighbours x (1 + sum)
 //   administration  how far a capital's rule reaches x (1 + sum): writing,

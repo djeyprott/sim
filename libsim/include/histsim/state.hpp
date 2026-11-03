@@ -153,6 +153,9 @@ struct Environment {
     std::vector<double> farming;   // share of the cell's food from farming (population-weighted)
     std::vector<double> farm_capacity;  // people the cell could feed if everyone farmed, this year
     std::vector<double> pastoral;       // share of that farm food from herds (1 = pastoralists)
+    // Food stored in the cell, in person-years: granaries, pits, jars and
+    // herds kept for the lean year (EconomySystem: food stores).
+    std::vector<double> food_store;
     // Extra chance of dying from disease this year, per cell and age group
     // (cell * kDiseaseAgeGroups + group), set by the disease system and
     // applied by demography.

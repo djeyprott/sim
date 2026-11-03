@@ -63,6 +63,21 @@ public:
     // capacity, at most kMaxFoodExport of the sender's capacity in all.
     static constexpr double kFoodShare = 0.5;
     static constexpr double kMaxFoodExport = 0.25;
+    // Food stores, after this year's harvest and food trade (in people fed
+    // for a year). A good year's surplus (what the land feeds beyond its
+    // people) is put by: kStoreShare of it, x (kForagerStore + (1 -
+    // kForagerStore) x farming share), as foragers keep little. A store
+    // holds at most (kStoreYears + kStoreYearsPerBuffer x storage) years of
+    // food for the cell's people, storage being the harvest_buffer of its
+    // techniques (pottery, granaries, calendars, scribes' accounts). In a
+    // lean year the store is drawn on to feed those the harvest does not
+    // (adding to this year's capacity); famine comes when it is empty. It
+    // spoils by kStoreSpoilage a year; an empty cell's store is lost.
+    static constexpr double kStoreShare = 0.7;
+    static constexpr double kForagerStore = 0.1;
+    static constexpr double kStoreYears = 0.25;
+    static constexpr double kStoreYearsPerBuffer = 3.0;
+    static constexpr double kStoreSpoilage = 0.1;
     // Elites: this share of people at hierarchy 0.5, twice as many under a
     // polity.
     static constexpr double kEliteShare = 0.02;

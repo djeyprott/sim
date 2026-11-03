@@ -204,3 +204,32 @@ TEST(busy_links_become_named_trade_routes) {
         if (i > 0) CHECK(routes[i - 1].value >= r.value);
     }
 }
+
+TEST(food_stores_fill_in_good_years_and_feed_people_in_lean_ones) {
+    WorldParams p;
+    p.grid_level = 4;
+    Simulation sim = Simulation::create(p);
+    SimState s = sim.state();
+    const World& w = sim.world();
+    CellId c = 0;
+    while (s.cell_population[c] < 1000) ++c;
+    const double people = static_cast<double>(s.cell_population[c]);
+    EconomySystem economy;
+    // A good year: the land feeds twice its people; some of the surplus is
+    // put by, no more than the room there is.
+    s.env.capacity[c] = 2.0 * people;
+    StepContext good{w, s, 5, s.tick};
+    economy.step(good);
+    const double room = people * (EconomySystem::kStoreYears + EconomySystem::kStoreYearsPerBuffer *
+                                                                   technique_effects(w, c, techniques_in(s, c)).harvest_buffer);
+    CHECK(s.env.food_store[c] > 0.0);
+    CHECK(s.env.food_store[c] <= room + 1e-9);
+    // A lean year: the store feeds those the harvest does not.
+    s.env.food_store[c] = 0.3 * people;
+    s.env.capacity[c] = 0.5 * people;
+    StepContext lean{w, s, 5, s.tick};
+    economy.step(lean);
+    const double fed = s.env.capacity[c] - s.food_import[c] - 0.5 * people;
+    CHECK_NEAR(fed, 0.3 * people, 1e-6 * people);  // all of it: the gap was larger
+    CHECK(s.env.food_store[c] < 1e-9 * people);
+}

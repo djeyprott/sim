@@ -264,6 +264,14 @@ const ColorScale& crowding_scale() {  // room to grow (blue) - at capacity (gray
                                {2, hex("#b52a2a")}});
     return s;
 }
+const ColorScale& stores_scale() {  // amber, light to dark: years of food in store
+    static const ColorScale s({{0, hex("#fbf3dc")},
+                               {0.25, hex("#f3d68f")},
+                               {0.5, hex("#e3b04a")},
+                               {1.0, hex("#b97c16")},
+                               {2.0, hex("#6e4508")}});
+    return s;
+}
 const ColorScale& age_scale() {  // magenta, light to dark
     static const ColorScale s({{12, hex("#fbe4ed")},
                                {17, hex("#f2b0c8")},
@@ -289,6 +297,7 @@ const std::vector<MapModeInfo> kModes = {
     {"resources", "Resources", "Deposits of salt, stone, ores, gold and shell; the most valuable shown", "Land"},
     {"population", "Population", "People per square km", "People"},
     {"crowding", "Crowding", "Population relative to what the land can feed", "People"},
+    {"stores", "Food stores", "Food put by in granaries, pits and herds, in years of food for the people", "People"},
     {"median_age", "Median age", "Median age of the people living in each cell", "People"},
     {"disease", "Disease", "Deaths from disease this year, per 1,000 people", "People"},
     {"language", "Language", "Main language spoken; related languages share a hue", "Culture"},
@@ -666,6 +675,9 @@ void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rg
             out[c] = inhabited ? density_scale()(density(w, s, c)) : kEmptyLand;
         } else if (id == "crowding") {
             out[c] = inhabited ? crowding_scale()(crowding(s, c)) : kEmptyLand;
+        } else if (id == "stores") {
+            const double store = s.env.food_store.size() > c ? s.env.food_store[c] : 0.0;
+            out[c] = inhabited ? stores_scale()(store / static_cast<double>(s.cell_population[c])) : kEmptyLand;
         } else if (id == "farming") {
             const double f = s.env.farming.empty() ? 0.0 : s.env.farming[c];
             out[c] = !inhabited ? kEmptyLand : (f < 0.01 ? kForagers : farming_scale()(f));
@@ -807,6 +819,10 @@ Legend legend(std::string_view mode_id) {
     } else if (id == "crowding") {
         l.title = "Population ÷ capacity (1 = at capacity)";
         l.ramp = ramp_entries(crowding_scale(), "%g");
+        l.swatches = empty_and_ocean;
+    } else if (id == "stores") {
+        l.title = "Food in store (years of food per person)";
+        l.ramp = ramp_entries(stores_scale(), "%g");
         l.swatches = empty_and_ocean;
     } else if (id == "farming") {
         l.title = "Share of food from farming";
@@ -1087,6 +1103,9 @@ std::vector<Row> describe_cell_rows(const Simulation& sim, CellId c,
 
     f.push_back({"Density", fmt("%.3f per km²", density(w, s, c))});
     f.push_back({"Crowding", fmt("%.2f of capacity", crowding(s, c))});
+    if (s.env.food_store.size() > c) {
+        f.push_back({"Food stores", fmt("%.2f years of food", s.env.food_store[c] / static_cast<double>(s.cell_population[c]))});
+    }
     const Pyramid p = cell_pyramid(sim, c);
     f.push_back({"Median age", fmt("%.1f years", median_age(p))});
     {

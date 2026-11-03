@@ -586,6 +586,13 @@ void WarSystem::step(StepContext& ctx) {
                 s.polities[lord].plunder += q * content.goods[g].base_price;
             }
         }
+        // Grain too: a share of the subject's stores goes to the overlord's
+        // capital (the state's granaries).
+        if (s.env.food_store.size() == n) {
+            const double q = kTribute * s.env.food_store[p.capital];
+            s.env.food_store[p.capital] -= q;
+            s.env.food_store[s.polities[lord].capital] += q;
+        }
         RngStream rng = ctx.rng(Stream::War, kDiplomacyEntity | id);
         const double rival = power[lord] - (p.bond == Bond::Vassal ? kVassalShare * armies.strength[id] : 0.0);
         if (armies.strength[id] >= kRebelRatio * rival && war_between(s, id, lord) == 0) {
@@ -740,6 +747,14 @@ void WarSystem::step(StepContext& ctx) {
             take_captives(s, h, p.capital, captive_share(w, s, id, h, BondageSystem::kRaidCaptives), rng, arrivals);
         }
         if (owner != 0) s.polities[owner].shock += kShockRaid;
+        // The raiders drive off herds and carry off grain.
+        if (s.env.food_store.size() == n) {
+            for (CellId h : struck) {
+                const double q = kRaidLoot * s.env.food_store[h];
+                s.env.food_store[h] -= q;
+                s.env.food_store[p.capital] += q;
+            }
+        }
         if (have_stocks) {
             for (CellId h : struck) {
                 for (std::size_t g = 0; g < ng; ++g) {

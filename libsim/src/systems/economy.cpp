@@ -289,6 +289,32 @@ void EconomySystem::step(StepContext& ctx) {
         s.goods_available[c] = available;
     }
     for (std::uint32_t e = 0; e < ne; ++e) s.route_value[e] += kRouteSmoothing * (carried[e] - s.route_value[e]);
+
+    // ---- Food stores: put by in good years, drawn on in lean ones.
+    if (s.env.food_store.size() != n) s.env.food_store.assign(n, 0.0);
+    for (CellId c = 0; c < n; ++c) {
+        double& store = s.env.food_store[c];
+        const double people = static_cast<double>(s.cell_population[c]);
+        if (!w.is_land[c] || people <= 0.0) {
+            store = 0.0;
+            continue;
+        }
+        const double gap = s.env.capacity[c] - people;
+        if (gap >= 0.0) {
+            const double farming = s.env.farming.empty() ? 0.0 : s.env.farming[c];
+            const double keep = kStoreShare * (kForagerStore + (1.0 - kForagerStore) * farming);
+            const double storage = technique_effects(w, c, techniques_in(s, c)).harvest_buffer;
+            const double room = people * (kStoreYears + kStoreYearsPerBuffer * storage);
+            // Added up to the room there is; a store already fuller (grain
+            // brought in as tribute or loot) is not added to.
+            store = std::max(store, std::min(room, store + keep * gap));
+        } else {
+            const double draw = std::min(store, -gap);
+            store -= draw;
+            s.env.capacity[c] += draw;
+        }
+        store *= 1.0 - kStoreSpoilage;
+    }
 }
 
 // ------------------------------------------------------------------ routes
