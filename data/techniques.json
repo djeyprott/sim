@@ -98,7 +98,7 @@
      "min_town": 2000, "rate": 0.00002,
      "affinity": {"hierarchy": 0.5},
      "effects": {"crop_yield": 0.05, "administration": 0.1, "military": 0.4}},
-    {"id": "writing", "name": "Writing", "requires": ["granaries", "calendar"], "min_town": 25000, "rate": 0.000012,
+    {"id": "writing", "name": "Writing", "requires": ["granaries", "calendar"], "min_town": 25000, "rate": 0.0001,
      "affinity": {"hierarchy": 0.6, "ritual": 0.3},
      "effects": {"administration": 0.5, "contact": 0.1}},
     {"id": "bureaucracy", "name": "Scribal bureaucracy", "requires": ["writing"], "min_town": 20000, "rate": 0.00006,
