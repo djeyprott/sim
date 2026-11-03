@@ -12,6 +12,7 @@
 #include <godot_cpp/variant/string.hpp>
 
 #include <atomic>
+#include <memory>
 #include <condition_variable>
 #include <cstdint>
 #include <mutex>
@@ -56,6 +57,26 @@ public:
     int64_t get_queued_years() const;
     void clear_queue();
     int64_t take_finished_years();
+    bool is_running() const;  // years are queued
+    // Time the run spent paused for the UI, with years queued, since the
+    // last call.
+    double take_paused_msec();
+    // A turn for the UI to read without waiting: begin_turn returns true and
+    // holds the simulation between years until end_turn; if a year is in
+    // progress it returns false at once and the run pauses after that year,
+    // so a call on a later frame succeeds. Calls made during a turn return
+    // at once.
+    bool begin_turn();
+    void end_turn();
+
+    // The map, drawn on its own thread: prepare_map takes what it needs from
+    // the simulation (quickly; in a turn) and hands it to the drawing thread;
+    // take_map returns the finished image once (null until then).
+    // render_map does both at once and waits.
+    bool prepare_map(const godot::String& mode, bool coastlines, bool rivers = true, bool borders = false,
+                     bool routes = false, bool migrations = false);
+    bool is_map_pending() const;
+    godot::Ref<godot::Image> take_map();
 
     // Run summary.
     int64_t get_year() const;
@@ -139,20 +160,49 @@ private:
     void worker_loop();
     void stop_worker();
 
+    // What the drawing thread needs, copied out of the simulation.
+    struct MapJob {
+        std::shared_ptr<const histsim::view::MapRaster> raster;
+        const histsim::World* world = nullptr;  // never changes while it lives
+        std::vector<histsim::view::Rgba> colors;
+        bool coastlines = true, rivers = false;
+        std::vector<std::uint32_t> borders;
+        std::vector<std::uint8_t> highlight, focus;
+        histsim::view::Rgba focus_color{255, 255, 255, 255};
+        std::vector<histsim::view::RouteLine> routes, migrations;
+        std::vector<histsim::view::MapMarker> markers;
+    };
+    MapJob make_map_job(const std::string& mode, bool coastlines, bool rivers, bool borders, bool routes,
+                        bool migrations);
+    static void draw_map_job(const MapJob& job, std::vector<std::uint8_t>& rgba);
+    void drawer_loop();
+    void drop_map_jobs();
+
+    mutable std::mutex map_mutex_;
+    std::condition_variable map_wake_, map_idle_;
+    std::thread drawer_;
+    std::optional<MapJob> map_job_;
+    bool drawing_ = false, map_quit_ = false, drawn_ready_ = false;
+    std::vector<std::uint8_t> drawn_;
+    int drawn_width_ = 0, drawn_height_ = 0;
+    std::atomic<bool> want_turn_{false};
+    std::atomic<int64_t> paused_usec_{0};
+    int turns_held_ = 0;
+
     mutable std::recursive_mutex sim_mutex_;
     mutable std::condition_variable_any wake_;
     mutable std::atomic<int> readers_waiting_{0};
     std::thread worker_;
     bool quit_ = false;
-    bool failed_ = false;
-    int64_t queued_ = 0;
-    int64_t finished_ = 0;
+    std::atomic<bool> failed_{false};
+    std::atomic<int64_t> queued_{0};
+    std::atomic<int64_t> finished_{0};
 
     void fail(const std::string& message);
     void ensure_raster();
 
     std::optional<histsim::Simulation> sim_;
-    std::optional<histsim::view::MapRaster> raster_;
+    std::shared_ptr<const histsim::view::MapRaster> raster_;
     int map_width_ = 2048;
     int map_height_ = 1024;
     std::string last_error_;

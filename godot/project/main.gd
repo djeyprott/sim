@@ -17,7 +17,8 @@ const LEVELS := [4, 5, 6, 7]
 const WORLD_KINDS := ["generated", "earth"]
 const WORLD_KIND_NAMES := ["Generated world", "Earth"]
 const LEVEL_NAMES := ["Coarse (2.6k cells)", "Normal (10k cells)", "Fine (41k cells)", "Detailed (164k cells)"]
-const RENDER_INTERVAL := 1.0 / 15.0  # max map redraws per second while playing
+const RENDER_INTERVAL := 0.1  # time between map redraws while playing
+const SUMMARY_INTERVAL := 0.1  # time between summary updates while playing
 const CHART_INTERVAL := 0.25  # chart refreshes per second while playing
 const DYNAMIC_LEGENDS := ["language", "language_family", "culture", "polity", "religion", "realms"]
 # Modes where a kept cell brings out its whole group, and what the group is.
@@ -50,6 +51,10 @@ var rate_years := 0  # years simulated since the last speed sample
 var rate_time := 0.0
 var chart_cooldown := 0.0
 var charts_dirty := true
+var summary_dirty := true
+var summary_cooldown := 0.0
+var pending_legend: Dictionary = {}
+var inspector_dirty := false
 var showing_globe := false
 var highlight_cell := -1  # cell the god-mode preview outline is centred on
 
@@ -170,7 +175,7 @@ func _process(delta: float) -> void:
 		rate_years += done
 		map_dirty = true
 		charts_dirty = true
-		_update_summary()
+		summary_dirty = true
 	if playing:
 		# Show the real speed when the machine cannot keep up with the setting.
 		rate_time += delta
@@ -180,31 +185,47 @@ func _process(delta: float) -> void:
 			rate_years = 0
 			rate_time = 0.0
 	render_cooldown -= delta
-	if map_dirty and render_cooldown <= 0.0:
-		_render_map()
 	chart_cooldown -= delta
-	if charts_dirty and chart_cooldown <= 0.0:
-		_update_charts()
+	# Everything shown is read in one turn between simulated years, so the
+	# frame never waits for a year to finish; if one is in progress, the
+	# turn comes on a later frame. The map itself is drawn on another thread
+	# and shown when ready.
+	# Turns pause the run, so they come at most every SUMMARY_INTERVAL, and
+	# whatever is due then is read in the same turn.
+	summary_cooldown -= delta
+	var want_map: bool = map_dirty and render_cooldown <= 0.0 and not world.is_map_pending()
+	var want_charts: bool = charts_dirty and chart_cooldown <= 0.0
+	var want_summary: bool = summary_dirty and summary_cooldown <= 0.0
+	if (want_summary or want_map or want_charts or inspector_dirty) and world.begin_turn():
+		summary_cooldown = SUMMARY_INTERVAL
+		if summary_dirty:
+			_update_summary()
+		if want_map:
+			_prepare_map()
+		if want_charts:
+			_update_charts()
+		if inspector_dirty:
+			_refresh_inspector_now()
+		world.end_turn()
+		# Widgets are built after the turn, so the run is not kept waiting.
+		if not pending_legend.is_empty():
+			_update_legend(pending_legend)
+			pending_legend = {}
+	var image: Image = world.take_map()
+	if image != null:
+		_show_map(image)
 
 
-func _render_map() -> void:
+# Hands the map to the drawing thread, with the labels and panels that go
+# with it.
+func _prepare_map() -> void:
 	# A kept cell in a mode that groups cells (language, faith, ruler, ...)
 	# brings out every cell of its group.
 	world.set_focus(mode_id, selected_cell)
-	var image: Image = world.render_map(mode_id, coastline_check.button_pressed, river_check.button_pressed,
-		border_check.button_pressed, route_check.button_pressed, migration_check.button_pressed)
-	if image == null:
+	if not world.prepare_map(mode_id, coastline_check.button_pressed, river_check.button_pressed,
+		border_check.button_pressed, route_check.button_pressed, migration_check.button_pressed):
 		status_label.text = "Map render failed: " + world.get_last_error()
 		return
-	if map_texture == null or map_texture.get_size() != Vector2(image.get_size()):
-		map_texture = ImageTexture.create_from_image(image)
-		map_rect.texture = map_texture
-		for copy in map_copies:
-			copy.texture = map_texture
-		globe.set_texture(map_texture)
-		_layout_map()
-	else:
-		map_texture.update(image)
 	map_dirty = false
 	render_cooldown = RENDER_INTERVAL
 	if timeline_panel.visible:
@@ -216,12 +237,25 @@ func _render_map() -> void:
 		l.set_labels(labels)
 	globe_labels.set_labels(labels)
 	if mode_id in DYNAMIC_LEGENDS:
-		_update_legend()  # lists the largest groups, which change as the run goes on
+		pending_legend = world.get_legend(mode_id)  # the largest groups, which change as the run goes on
 	if _inspected_cell() >= 0:
-		_refresh_inspector()
+		_refresh_inspector_now()
+
+
+func _show_map(image: Image) -> void:
+	if map_texture == null or map_texture.get_size() != Vector2(image.get_size()):
+		map_texture = ImageTexture.create_from_image(image)
+		map_rect.texture = map_texture
+		for copy in map_copies:
+			copy.texture = map_texture
+		globe.set_texture(map_texture)
+		_layout_map()
+	else:
+		map_texture.update(image)
 
 
 func _update_summary() -> void:
+	summary_dirty = false
 	year_label.text = "Year %s" % _commas(world.get_year())
 	var capacity: float = world.get_capacity()
 	var share: float = 100.0 * world.get_population() / capacity if capacity > 0.0 else 0.0
@@ -425,7 +459,19 @@ func _inspected_cell() -> int:
 	return selected_cell if selected_cell >= 0 else hover_cell
 
 
+# The inspector is filled in now if the simulation is between years (always
+# when paused), else on the next turn (see _process), so hovering never waits
+# for a simulated year.
 func _refresh_inspector() -> void:
+	if world != null and world.begin_turn():
+		_refresh_inspector_now()
+		world.end_turn()
+	else:
+		inspector_dirty = true
+
+
+func _refresh_inspector_now() -> void:
+	inspector_dirty = false
 	var cell := _inspected_cell()
 	if cell >= 0:
 		_show_cell(cell)
@@ -634,8 +680,9 @@ func _cell_under(local: Vector2) -> int:
 
 # ---------------------------------------------------------------- panels
 
-func _update_legend() -> void:
-	var legend: Dictionary = world.get_legend(mode_id)
+func _update_legend(legend: Dictionary = {}) -> void:
+	if legend.is_empty():
+		legend = world.get_legend(mode_id)
 	legend_title.text = legend.get("title", "")
 	var ramp: Array = legend.get("ramp", [])
 	legend_bar.visible = ramp.size() >= 2
