@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <mutex>
 
 #include "histsim/systems/bondage.hpp"
 #include "histsim/systems/culture.hpp"
@@ -231,10 +232,23 @@ void MigrationSystem::step(StepContext& ctx) {
         return i_mobility < kMaxTraits ? mobility_factor(co.traits[i_mobility], strength) : 1.0;
     };
     std::int64_t moved = 0;
+
+    // ---- Everyday movement, per cell in parallel: each cell's bands are
+    // gathered per chunk and added in cell order afterwards.
+    struct Outbox {
+        std::size_t begin = 0;
+        std::vector<Cohort> arrivals;
+        std::vector<std::pair<CellId, std::uint32_t>> carried;
+        std::int64_t moved = 0;
+    };
+    std::vector<Outbox> outboxes;
+    std::mutex outbox_mutex;
+    parallel_for(n, [&](std::size_t c_begin, std::size_t c_end) {
+    Outbox out;
+    out.begin = c_begin;
     std::array<double, 8> weight{};
     std::array<CellId, 8> dest{};
-
-    for (CellId c = 0; c < n; ++c) {
+    for (CellId c = static_cast<CellId>(c_begin); c < c_end; ++c) {
         const auto first = s.cohort_begin[c], last = s.cohort_begin[c + 1];
         if (first == last) continue;
 
@@ -299,18 +313,29 @@ void MigrationSystem::step(StepContext& ctx) {
                 band_size += mf + mm;
             }
             if (band_size > 0) {
-                arrivals.push_back(band);
-                moved += band_size;
+                out.arrivals.push_back(band);
+                out.moved += band_size;
                 // Farming migrants bring their crops and herds, if they come
                 // in numbers enough to farm rather than to be absorbed (a
                 // few newcomers marry in and take up the local ways).
                 const double there = static_cast<double>(s.cell_population[band.cell]);
                 const bool farm_on = static_cast<double>(band_size) >= kMinGroupShare * there && band_size >= kMinGroupSize;
                 if (farm_on && co.farming > 0.1 && !s.domesticates.empty() && s.domesticates[c] != 0) {
-                    carried.emplace_back(band.cell, s.domesticates[c]);
+                    out.carried.emplace_back(band.cell, s.domesticates[c]);
                 }
             }
         }
+    }
+    if (!out.arrivals.empty()) {
+        std::lock_guard<std::mutex> lock(outbox_mutex);
+        outboxes.push_back(std::move(out));
+    }
+    }, 32);
+    std::sort(outboxes.begin(), outboxes.end(), [](const Outbox& a, const Outbox& b) { return a.begin < b.begin; });
+    for (Outbox& out : outboxes) {
+        arrivals.insert(arrivals.end(), out.arrivals.begin(), out.arrivals.end());
+        carried.insert(carried.end(), out.carried.begin(), out.carried.end());
+        moved += out.moved;
     }
 
     // A group of `share` of a cohort's people, in its age structure, bound
@@ -672,6 +697,13 @@ void MigrationSystem::step(StepContext& ctx) {
             pol.arrived = ctx.tick;
             s.events.push_back({ctx.tick, EventType::PolityWandered, pol.capital, static_cast<std::int64_t>(pol.id)});
         };
+        // Living, peopled polities, most people first.
+        std::vector<std::uint32_t> by_people;
+        for (std::uint32_t q = 1; q < np; ++q) {
+            if (s.polities[q].ended == kNever && people[q] > 0.0) by_people.push_back(q);
+        }
+        std::stable_sort(by_people.begin(), by_people.end(),
+                         [&](std::uint32_t a, std::uint32_t b) { return people[a] > people[b]; });
         for (std::uint32_t p = 1; p < np; ++p) {
             Polity& pol = s.polities[p];
             if (pol.ended != kNever || held[p].empty()) continue;
@@ -708,9 +740,12 @@ void MigrationSystem::step(StepContext& ctx) {
             if (capacity > 0.0) pressure = std::max(pressure, std::clamp((people[p] / capacity - 1.05) / 0.3, 0.0, 1.0));
             // A stronger neighbour: the largest realm seated within reach.
             double threat = 0.0;
-            for (std::uint32_t q = 1; q < np; ++q) {
-                if (q == p || s.polities[q].ended != kNever || people[q] <= threat) continue;
-                if (w.grid.distance_km(pol.capital, s.polities[q].capital) <= kWanderThreatKm) threat = people[q];
+            for (std::uint32_t q : by_people) {  // largest first: the first in reach is it
+                if (q == p || s.polities[q].ended != kNever) continue;
+                if (w.grid.distance_km(pol.capital, s.polities[q].capital) <= kWanderThreatKm) {
+                    threat = people[q];
+                    break;
+                }
             }
             pressure = std::max(pressure, std::clamp((threat / people[p] - kWanderThreat) / kWanderThreatSpan, 0.0, 1.0));
             // Pressed hard, any tribe may go; the most mobile also roam

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <vector>
 
+#include "histsim/parallel.hpp"
 #include "histsim/portable_math.hpp"
 #include "histsim/systems/polity.hpp"
 
@@ -55,6 +56,33 @@ void DiseaseSystem::step(StepContext& ctx) {
     std::vector<double> around_people, around_town;
     hinterland_people(w, s, around_people, around_town);
 
+    // Where it already circulates, the size of this year's epidemic, worked
+    // out per cell in parallel (the costly part); a disease that newly
+    // emerges below gets its own worked out there.
+    auto density_of = [&](CellId c) {
+        const double urban = s.urban.empty() ? 0.0 : s.urban[c];
+        return static_cast<double>(s.cell_population[c]) / w.grid.area_km2(c) * (1.0 + kUrbanCrowding * urban);
+    };
+    auto next_susceptible = [&](const DiseaseDef& def, double sus) {
+        sus += kSusceptibleInflow * (1.0 - sus);
+        if (def.immunity_years > 0.0) sus += (1.0 - sus) / def.immunity_years;
+        return std::min(1.0, sus);
+    };
+    std::vector<double> attack_of(n * nd, -1.0);  // -1: not worked out
+    parallel_for(n, [&](std::size_t c_begin, std::size_t c_end) {
+        for (std::size_t c = c_begin; c < c_end; ++c) {
+            if (s.cell_population[c] == 0) continue;
+            const double density = density_of(static_cast<CellId>(c));
+            for (std::size_t d = 0; d < nd; ++d) {
+                const DiseaseDef& def = content.diseases[d];
+                const std::size_t k = c * nd + d;
+                if (def.kind != DiseaseKind::Epidemic || !s.disease_present[k]) continue;
+                if (disease_suitability(w, def, static_cast<CellId>(c)) <= 0.0) continue;
+                attack_of[k] = outbreak_size(def.r0 * contact_factor(density), next_susceptible(def, s.susceptible[k]));
+            }
+        }
+    }, 64);
+
     for (CellId c = 0; c < n; ++c) {
         const std::size_t base = c * nd;
         if (s.cell_population[c] == 0) {
@@ -64,14 +92,12 @@ void DiseaseSystem::step(StepContext& ctx) {
             }
             continue;
         }
-        const double pop = static_cast<double>(s.cell_population[c]);
         // Thresholds count the people and towns of the hinterland (the cell
         // itself at level 5): a disease needs a community, not a map cell.
         const double community = around_people[c];
         const double community_town = around_town[c];
         // Towns pack people together: more contact than the cell average.
-        const double urban = s.urban.empty() ? 0.0 : s.urban[c];
-        const double density = pop / w.grid.area_km2(c) * (1.0 + kUrbanCrowding * urban);
+        const double density = density_of(c);
         const double farming = s.env.farming.empty() ? 0.0 : s.env.farming[c];
         const std::uint32_t known = s.domesticates.empty() ? 0 : s.domesticates[c];
         RngStream rng = ctx.rng(Stream::Disease, c);
@@ -85,11 +111,7 @@ void DiseaseSystem::step(StepContext& ctx) {
                 continue;
             }
             double& sus = s.susceptible[k];
-            if (def.kind == DiseaseKind::Epidemic) {
-                sus += kSusceptibleInflow * (1.0 - sus);
-                if (def.immunity_years > 0.0) sus += (1.0 - sus) / def.immunity_years;
-                sus = std::min(1.0, sus);
-            }
+            if (def.kind == DiseaseKind::Epidemic) sus = next_susceptible(def, sus);
 
             // Emergence: zoonoses where people keep the hosts, others in
             // their niche, both only among enough people.
@@ -131,7 +153,8 @@ void DiseaseSystem::step(StepContext& ctx) {
                     if (rng.uniform32() < w.per_step(kEndemicSpread * b)) next[j] = 1;
                 }
             } else {
-                const double attack = outbreak_size(def.r0 * contact_factor(density), sus);
+                const double attack =
+                    attack_of[k] >= 0.0 ? attack_of[k] : outbreak_size(def.r0 * contact_factor(density), sus);
                 burden[k] = attack;
                 if (def.immunity_years != 0.0) sus = std::max(0.0, sus - attack);
                 // Too few people to keep it going: it burns out here.
