@@ -107,6 +107,17 @@ inline constexpr double kLabelMinAreaKm2 = 400000.0;
 inline constexpr std::size_t kMaxLabels = 60;
 std::vector<MapLabel> polity_labels(const Simulation& sim);
 
+// Labels for a map mode. Modes that colour groups name them where they
+// are: language, language_family, culture and religion name each connected
+// stretch of land where a group is the main one (at least
+// kGroupLabelMinAreaKm2; a language spoken in two separate regions is named
+// in each); realms names realms (a power with its subjects, by its own
+// name). Every other mode gets polity_labels. Largest first, at most
+// kMaxGroupLabels.
+inline constexpr double kGroupLabelMinAreaKm2 = 150000.0;
+inline constexpr std::size_t kMaxGroupLabels = 80;
+std::vector<MapLabel> map_labels(const Simulation& sim, std::string_view mode_id);
+
 // Capitals to mark in the polity, stability and realm modes (empty for
 // other modes): in polity and stability, every living polity's capital,
 // larger for states; in realms, the seats of states, empires and nomad

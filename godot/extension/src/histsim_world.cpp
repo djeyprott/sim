@@ -713,6 +713,24 @@ Array HistSimWorld::get_polity_labels() const {
     return out;
 }
 
+Array HistSimWorld::get_map_labels(const String& mode) const {
+    const auto guard = hold();
+    Array out;
+    if (!sim_) return out;
+    for (const auto& l : histsim::view::map_labels(*sim_, to_std(mode))) {
+        Dictionary d;
+        d["name"] = to_godot(l.name);
+        d["u"] = l.u;
+        d["v"] = l.v;
+        d["area_km2"] = l.area_km2;
+        d["capital_u"] = l.capital_u;
+        d["capital_v"] = l.capital_v;
+        d["level"] = to_godot(l.level);
+        out.push_back(d);
+    }
+    return out;
+}
+
 Array HistSimWorld::get_timeline(const String& kind, int64_t polity, int64_t cell, int64_t max_entries) const {
     const auto guard = hold();
     Array out;
@@ -845,6 +863,7 @@ void HistSimWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_figure", "id"), &HistSimWorld::get_figure);
     ClassDB::bind_method(D_METHOD("get_notable_figures", "max"), &HistSimWorld::get_notable_figures);
     ClassDB::bind_method(D_METHOD("get_polity_labels"), &HistSimWorld::get_polity_labels);
+    ClassDB::bind_method(D_METHOD("get_map_labels", "mode"), &HistSimWorld::get_map_labels);
     ClassDB::bind_method(D_METHOD("get_timeline", "kind", "polity", "cell", "max_entries"), &HistSimWorld::get_timeline);
     ClassDB::bind_method(D_METHOD("get_cell_polity", "cell"), &HistSimWorld::get_cell_polity);
     ClassDB::bind_method(D_METHOD("get_cell_uv", "cell"), &HistSimWorld::get_cell_uv);

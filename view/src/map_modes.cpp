@@ -1506,6 +1506,111 @@ std::vector<MapLabel> polity_labels(const Simulation& sim) {
     return out;
 }
 
+namespace {
+
+// Where on the flat map (u, v) a point on the sphere falls.
+void sphere_uv(const Vec3& p, double& u, double& v) {
+    u = (std::atan2(p.y, p.x) * 180.0 / kPi + 180.0) / 360.0;
+    v = (90.0 - std::asin(std::clamp(p.z, -1.0, 1.0)) * 180.0 / kPi) / 180.0;
+}
+
+// The middle of some cells' land, or, if that falls outside them (a
+// crescent), their cell nearest it.
+Vec3 middle_of(const World& w, const std::vector<CellId>& cells) {
+    Vec3 m{0, 0, 0};
+    for (CellId c : cells) {
+        const double a = w.grid.area_km2(c);
+        const Vec3& v = w.grid.center(c);
+        m = {m.x + a * v.x, m.y + a * v.y, m.z + a * v.z};
+    }
+    const double len = std::sqrt(m.x * m.x + m.y * m.y + m.z * m.z);
+    if (len <= 0.0 || cells.empty()) return cells.empty() ? Vec3{0, 0, 1} : w.grid.center(cells.front());
+    const Vec3 at{m.x / len, m.y / len, m.z / len};
+    CellId nearest = cells.front();
+    double best = -2.0;
+    for (CellId c : cells) {
+        const Vec3& v = w.grid.center(c);
+        const double d = v.x * at.x + v.y * at.y + v.z * at.z;
+        if (d > best) best = d, nearest = c;
+    }
+    const double spacing_km = std::sqrt(w.grid.area_km2(nearest));
+    return std::acos(std::clamp(best, -1.0, 1.0)) * kPlanetRadiusKm > 1.5 * spacing_km ? w.grid.center(nearest) : at;
+}
+
+}  // namespace
+
+std::vector<MapLabel> map_labels(const Simulation& sim, std::string_view mode_id) {
+    const World& w = sim.world();
+    const SimState& s = sim.state();
+    const std::string id(map_mode(mode_id).id);
+    const std::size_t n = w.cell_count();
+    const bool peoples = id == "language" || id == "language_family" || id == "culture";
+    const bool faith = id == "religion";
+    const bool realms = id == "realms";
+    if (!peoples && !faith && !realms) return polity_labels(sim);
+    // The group each cell belongs to (0: none).
+    std::vector<std::uint32_t> key(n, 0);
+    for (CellId c = 0; c < n; ++c) {
+        if (s.cell_population[c] == 0) continue;
+        if (peoples) {
+            const MainPeople m = main_people(s, c);
+            key[c] = id == "culture" ? m.culture : id == "language" ? m.language : s.languages[m.language].family;
+        } else if (faith) {
+            key[c] = s.faith_of.size() == n ? s.faith_of[c] : 0;
+        } else {
+            key[c] = s.polity_of.size() == n ? top_overlord(s, s.polity_of[c]) : 0;
+        }
+    }
+    // Each connected stretch of a group's land.
+    std::vector<std::uint8_t> seen(n, 0);
+    std::vector<CellId> region, queue;
+    std::vector<MapLabel> out;
+    for (CellId start = 0; start < n; ++start) {
+        if (key[start] == 0 || seen[start]) continue;
+        region.clear();
+        queue.assign(1, start);
+        seen[start] = 1;
+        double area = 0.0;
+        for (std::size_t i = 0; i < queue.size(); ++i) {
+            const CellId c = queue[i];
+            region.push_back(c);
+            area += w.grid.area_km2(c);
+            for (CellId nb : w.grid.neighbors(c)) {
+                if (!seen[nb] && key[nb] == key[start]) {
+                    seen[nb] = 1;
+                    queue.push_back(nb);
+                }
+            }
+        }
+        if (area < kGroupLabelMinAreaKm2) continue;
+        const std::uint32_t k = key[start];
+        MapLabel l;
+        l.area_km2 = area;
+        l.capital_u = l.capital_v = -1.0;
+        if (id == "culture") {
+            l.name = k < s.cultures.size() ? s.cultures[k].name : "";
+        } else if (id == "language") {
+            l.name = k < s.languages.size() ? s.languages[k].name : "";
+        } else if (id == "language_family") {
+            l.name = k < s.languages.size() ? family_name(s, k) : "";
+        } else if (faith) {
+            l.name = k < s.religions.size() ? s.religions[k].name : "";
+        } else {
+            if (k >= s.polities.size()) continue;
+            l.name = s.polities[k].name;
+            l.level = polity_level(w, s, k);
+            l.polity = k;
+            sphere_uv(w.grid.center(s.polities[k].capital), l.capital_u, l.capital_v);
+        }
+        if (l.name.empty()) continue;
+        sphere_uv(middle_of(w, region), l.u, l.v);
+        out.push_back(std::move(l));
+    }
+    std::stable_sort(out.begin(), out.end(), [](const MapLabel& a, const MapLabel& b) { return a.area_km2 > b.area_km2; });
+    if (out.size() > kMaxGroupLabels) out.resize(kMaxGroupLabels);
+    return out;
+}
+
 std::vector<MapMarker> capital_markers(const Simulation& sim, std::string_view mode_id) {
     std::vector<MapMarker> out;
     const std::string id(mode_id);

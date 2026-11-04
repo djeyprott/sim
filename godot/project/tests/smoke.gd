@@ -128,6 +128,11 @@ func _check_selection_and_zoom() -> void:
 		failures.append("set_focus does not pick out a language's cells (and only in grouping modes)")
 	if typeof(main.world.get_polity_labels()) != TYPE_ARRAY:
 		failures.append("get_polity_labels did not return an array")
+	for mode in ["language", "language_family", "culture", "religion", "realms", "terrain"]:
+		if typeof(main.world.get_map_labels(mode)) != TYPE_ARRAY:
+			failures.append("get_map_labels(%s) did not return an array" % mode)
+	if main.world.get_map_labels("language").is_empty():
+		failures.append("the language mode names no languages")
 	# The timeline lists what happened and takes you there.
 	main._set_timeline(true)
 	if main.timeline_panel.list.item_count == 0:

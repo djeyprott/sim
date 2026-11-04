@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 #include <set>
+#include <string>
 
 #include "histsim/view/color.hpp"
 #include "histsim/view/map_modes.hpp"
@@ -169,4 +170,20 @@ TEST(view_a_kept_cell_brings_out_its_group) {
     CHECK(capital_markers(sim, "polity").empty());
     CHECK(capital_markers(sim, "terrain").empty());
     CHECK(!same_group_cells(sim, "polity", c, group));
+    // Group modes name their groups where they are (no polities needed);
+    // other modes fall back to polity names (none yet).
+    for (const char* mode : {"language", "language_family", "culture", "religion"}) {
+        const auto labels = map_labels(sim, mode);
+        const bool faiths_yet = s.faith_of.size() == sim.world().cell_count();  // none until the first year
+        CHECK(!labels.empty() || (std::string(mode) == "religion" && !faiths_yet));
+        for (std::size_t i = 0; i < labels.size(); ++i) {
+            CHECK(!labels[i].name.empty());
+            CHECK(labels[i].area_km2 >= kGroupLabelMinAreaKm2);
+            CHECK(labels[i].u >= 0.0 && labels[i].u <= 1.0 && labels[i].v >= 0.0 && labels[i].v <= 1.0);
+            if (i > 0) CHECK(labels[i - 1].area_km2 >= labels[i].area_km2);
+        }
+        CHECK(labels.size() <= kMaxGroupLabels);
+    }
+    CHECK(map_labels(sim, "terrain").empty());
+    CHECK(map_labels(sim, "realms").empty());
 }
