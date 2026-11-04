@@ -269,7 +269,7 @@ HistSimWorld::MapJob HistSimWorld::make_map_job(const std::string& mode, bool co
     job.coastlines = coastlines;
     job.rivers = rivers;
     const std::size_t n = sim_->world().cell_count();
-    if (borders && sim_->state().polity_of.size() == n) job.borders = sim_->state().polity_of;
+    if (borders && sim_->state().polity_of.size() == n) job.borders = histsim::view::border_regions(*sim_, mode);
     if (highlight_on_ && highlight_.size() == n) job.highlight = highlight_;
     if (focus_on_ && focus_.size() == n) {
         job.focus = focus_;

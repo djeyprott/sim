@@ -158,6 +158,8 @@ const ColorScale& bondage_scale() {  // plum, light to dark
     return s;
 }
 const Rgba kStateless = hex("#dcd9cf");
+const Rgba kCrownLand = hex("#e8b84a");
+const Rgba kSmallRealm = hex("#a9a59b");
 const ColorScale& trade_scale() {  // value carried a year, log: teal, light to dark
     static const ColorScale s({{10, hex("#e6f4f1")},
                                {100, hex("#a8dcd1")},
@@ -315,6 +317,7 @@ const std::vector<MapModeInfo> kModes = {
     {"realms", "Realms", "Polities with their vassals and tributaries (lighter), each realm its own color", "Power"},
     {"war", "War", "Wars, battles, conquests and nomad raids this year", "Power"},
     {"stability", "Stability", "How steady each polity is against famine, war, overreach and other pressures", "Power"},
+    {"provinces", "Provinces", "Provinces of the larger realms, by their governors' loyalty; the crown's own land in gold", "Power"},
 };
 
 // ---- Colors for languages and cultures.
@@ -705,6 +708,23 @@ void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rg
         } else if (id == "stability") {
             const std::uint32_t p = s.polity_of.empty() ? 0 : s.polity_of[c];
             out[c] = !inhabited ? kEmptyLand : (p == 0 ? kStateless : stability_scale()(s.polities[p].stability));
+        } else if (id == "provinces") {
+            const std::uint32_t p = s.polity_of.empty() ? 0 : s.polity_of[c];
+            const std::uint32_t v = s.province_of.size() == n ? s.province_of[c] : 0;
+            bool crown = false;
+            if (p != 0 && v == 0) {
+                for (const Province& pv : s.provinces) {
+                    if (pv.id != 0 && pv.polity == p && pv.ended == kNever) {
+                        crown = true;
+                        break;
+                    }
+                }
+            }
+            out[c] = !inhabited ? kEmptyLand
+                     : p == 0   ? kStateless
+                     : v != 0   ? stability_scale()(s.provinces[v].loyalty)
+                     : crown    ? kCrownLand
+                                : kSmallRealm;
         } else if (id == "war") {
             const std::uint8_t strife = s.strife.size() == n ? s.strife[c] : 0;
             if (!inhabited) {
@@ -875,6 +895,12 @@ Legend legend(std::string_view mode_id) {
         l.ramp = {{"0%", stability_scale()(0)}, {"30%", stability_scale()(0.3)}, {"50%", stability_scale()(0.5)},
                   {"70%", stability_scale()(0.7)}, {"100%", stability_scale()(1.0)}};
         l.swatches = {{"No ruler", kStateless}, {"Uninhabited", kEmptyLand}, {"Ocean", kOceanNeutral}};
+    } else if (id == "provinces") {
+        l.title = "Provinces by their governors' loyalty (below 40% they may break away)";
+        l.ramp = {{"0%", stability_scale()(0)}, {"40%", stability_scale()(0.4)}, {"60%", stability_scale()(0.6)},
+                  {"80%", stability_scale()(0.8)}, {"100%", stability_scale()(1.0)}};
+        l.swatches = {{"The crown's own land", kCrownLand}, {"Realm too small for provinces", kSmallRealm},
+                      {"No ruler", kStateless}, {"Uninhabited", kEmptyLand}, {"Ocean", kOceanNeutral}};
     } else if (id == "war") {
         l.title = "War this year";
         l.swatches = {{"Changed hands in war", kTaken}, {"Battles", kFighting}, {"Raided by nomads", kRaided},
@@ -1258,6 +1284,27 @@ std::vector<Row> describe_cell_rows(const Simulation& sim, CellId c,
                                           " since year " + with_commas(static_cast<long long>(d.founded / kTicksPerYear))});
             }
         }
+        // Its province, if the realm has them.
+        {
+            const std::uint32_t v = s.province_of.size() == w.cell_count() ? s.province_of[c] : 0;
+            if (v != 0 && v < s.provinces.size()) {
+                const Province& pv = s.provinces[v];
+                std::string who;
+                std::uint32_t gov = 0;
+                if (pv.governor != 0 && pv.governor < s.figures.size()) {
+                    gov = pv.governor;
+                    const Figure& g = s.figures[gov];
+                    who = ", governor " + g.name + fmt(" (ambition %.0f%%)", 100.0 * g.ambition);
+                }
+                f.push_back({"Province", pv.name + who + fmt("; loyalty %.0f%%", 100.0 * pv.loyalty) +
+                                             (pv.loyalty < PolitySystem::kRevoltBelow ? " (may break away)" : ""),
+                             gov});
+            } else {
+                bool has = false;
+                for (const Province& pv : s.provinces) has = has || (pv.id != 0 && pv.polity == ruler && pv.ended == kNever);
+                if (has) f.push_back({"Province", "the crown's own land, ruled from the capital"});
+            }
+        }
         if (pol.institutions != 0) {
             std::string list;
             for (std::size_t k = 0; k < kInstitutionCount; ++k) {
@@ -1539,6 +1586,17 @@ Vec3 middle_of(const World& w, const std::vector<CellId>& cells) {
 
 }  // namespace
 
+std::vector<std::uint32_t> border_regions(const Simulation& sim, std::string_view mode_id) {
+    const SimState& s = sim.state();
+    std::vector<std::uint32_t> key = s.polity_of;
+    if (map_mode(mode_id).id == "provinces" && s.province_of.size() == key.size()) {
+        for (std::size_t c = 0; c < key.size(); ++c) {
+            if (s.province_of[c] != 0) key[c] = 0x80000000u | s.province_of[c];
+        }
+    }
+    return key;
+}
+
 std::vector<MapLabel> map_labels(const Simulation& sim, std::string_view mode_id) {
     const World& w = sim.world();
     const SimState& s = sim.state();
@@ -1615,7 +1673,7 @@ std::vector<MapMarker> capital_markers(const Simulation& sim, std::string_view m
     std::vector<MapMarker> out;
     const std::string id(mode_id);
     const bool realms = id == "realms";
-    if (!realms && id != "polity" && id != "stability") return out;
+    if (!realms && id != "polity" && id != "stability" && id != "provinces") return out;
     const World& w = sim.world();
     const SimState& s = sim.state();
     for (std::uint32_t p = 1; p < s.polities.size(); ++p) {
@@ -1637,6 +1695,17 @@ std::vector<MapMarker> capital_markers(const Simulation& sim, std::string_view m
             m.radius = state ? 4.0 : 2.5;
         }
         out.push_back(m);
+    }
+    // Provinces: their seats, small.
+    if (id == "provinces") {
+        for (const Province& pv : s.provinces) {
+            if (pv.id == 0 || pv.ended != kNever || pv.seat >= w.cell_count()) continue;
+            MapMarker m;
+            m.cell = pv.seat;
+            m.radius = 2.0;
+            m.fill = hex("#f0efec");
+            out.push_back(m);
+        }
     }
     // Larger dots last, so they sit on top.
     std::stable_sort(out.begin(), out.end(), [](const MapMarker& a, const MapMarker& b) { return a.radius < b.radius; });

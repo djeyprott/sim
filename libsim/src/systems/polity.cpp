@@ -594,7 +594,7 @@ void PolitySystem::step(StepContext& ctx) {
                 const double target = kLoyaltyBase + kLoyaltyStability * pol.stability + kLoyaltyControl * control_of(id, pv.seat) +
                                       (same_people ? kLoyaltyPeople : 0.0) + (same_faith ? kLoyaltyFaith : 0.0) +
                                       kLoyaltyAmbition * (0.5 - gov.ambition);
-                pv.loyalty = pv.loyalty < 0.0 ? target : std::clamp(pv.loyalty + kLoyaltyRate * (target - pv.loyalty), 0.0, 1.0);
+                pv.loyalty = std::clamp(pv.loyalty < 0.0 ? target : pv.loyalty + kLoyaltyRate * (target - pv.loyalty), 0.0, 1.0);
             }
         }
         for (std::size_t id = 1; id < np; ++id) {

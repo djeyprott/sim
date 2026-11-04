@@ -295,3 +295,51 @@ TEST(polity_institutions_are_founded_and_inherited) {
     }
     CHECK(founded > 0);
 }
+
+// Provinces: their land is their realm's, their seats are held, their
+// governors are figures; provinces that broke away founded polities whose
+// first ruler was their governor.
+TEST(polity_provinces_governors_and_revolts) {
+    WorldParams p;
+    p.grid_level = 4;
+    Simulation sim = Simulation::create(p);
+    sim.step_years(5000);
+    const SimState& s = sim.state();
+    const World& w = sim.world();
+    CHECK_EQ(s.province_of.size(), w.cell_count());
+    std::size_t living = 0, revolts = 0;
+    for (const Province& pv : s.provinces) {
+        if (pv.id == 0) continue;
+        CHECK_EQ(pv.id, static_cast<std::uint32_t>(&pv - s.provinces.data()));
+        CHECK(pv.loyalty >= 0.0 && pv.loyalty <= 1.0);
+        CHECK(!pv.name.empty());
+        if (pv.ended == kNever) {
+            ++living;
+            CHECK(pv.polity != 0 && s.polities[pv.polity].ended == kNever);
+            CHECK_EQ(s.polity_of[pv.seat], pv.polity);
+            CHECK(pv.governor != 0 && pv.governor < s.figures.size());
+            CHECK(s.figures[pv.governor].roles & kRoleGovernor);
+        }
+        if (pv.became != 0) {
+            ++revolts;
+            CHECK(pv.ended != kNever);
+            CHECK(pv.became < s.polities.size());
+            const Polity& rebel = s.polities[pv.became];
+            CHECK_EQ(rebel.parent, pv.polity);
+            CHECK_EQ(rebel.founder, pv.governor);
+            // The governor reigned, unless he died before his first year.
+            if (rebel.ruler != 0 && rebel.founder != 0 && s.rulers[rebel.ruler].figure == rebel.founder) {
+                CHECK(s.figures[rebel.founder].roles & kRoleRuler);
+            }
+        }
+    }
+    for (CellId c = 0; c < w.cell_count(); ++c) {
+        const std::uint32_t v = s.province_of[c];
+        if (v == 0) continue;
+        CHECK(v < s.provinces.size());
+        CHECK_EQ(s.provinces[v].polity, s.polity_of[c]);
+        CHECK(s.provinces[v].ended == kNever);
+    }
+    CHECK(living > 0);
+    CHECK(revolts > 0);
+}
