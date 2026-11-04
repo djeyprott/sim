@@ -99,6 +99,11 @@ FigurePage figure_page(const Simulation& sim, std::uint32_t id) {
         sub = "Teacher of a faith";
     } else if (f.roles & kRoleInventor) {
         sub = "Inventor";
+    } else if (f.roles & kRoleGovernor) {
+        sub = "Governor";
+        for (const Province& pv : s.provinces) {
+            if (pv.governor == id) sub = "Governor of " + pv.name + (pv.polity != 0 ? " in " + polity_name(s, pv.polity) : std::string());
+        }
     } else if (f.roles & kRoleClaimant) {
         sub = "Claimant to the throne of " + polity_name(s, f.polity);
     } else if (f.roles & kRoleConsort) {
@@ -151,6 +156,12 @@ FigurePage figure_page(const Simulation& sim, std::uint32_t id) {
             page.life.push_back({"Invented", sim.world().content->techniques[inv.technique].name + ", " + year_text(inv.tick), 0,
                                  inv.cell});
         }
+    }
+    for (const Province& pv : s.provinces) {
+        if (pv.governor != id) continue;
+        std::string how = pv.became != 0 ? "broke away, founding " + polity_name(s, pv.became)
+                          : pv.ended == kNever ? "governing" : "the province ended";
+        page.life.push_back({"Governed", pv.name + " for " + polity_name(s, pv.polity) + "; " + how, 0, pv.seat});
     }
     for (const Religion& r : s.religions) {
         if (r.id != 0 && r.founder == id) {

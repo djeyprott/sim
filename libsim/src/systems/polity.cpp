@@ -24,6 +24,9 @@ constexpr std::uint32_t kCollapseEntity = 0x10000000u;
 constexpr std::uint32_t kOfficialsEntity = 0x70000000u;
 constexpr std::uint32_t kInstitutionEntity = 0x80000000u;
 constexpr std::uint32_t kRidersEntity = 0x90000000u;
+constexpr std::uint32_t kProvinceNameEntity = 0xA0000000u;
+constexpr std::uint32_t kRevoltEntity = 0xB0000000u;
+constexpr std::uint32_t kGovernorEntity = 0x10000000u;  // Stream::Figures
 
 std::size_t trait_index(const Content& c, const char* id) {
     for (std::size_t t = 0; t < c.traits.size(); ++t) {
@@ -495,6 +498,143 @@ void PolitySystem::step(StepContext& ctx) {
         }
     }
 
+    // ---- Provinces: seats, land, governors and loyalty; disloyal provinces
+    // break away.
+    if (s.provinces.empty()) s.provinces.emplace_back();
+    if (s.province_of.size() != n) s.province_of.assign(n, 0);
+    std::vector<std::uint8_t> provincial(np, 0);
+    {
+        std::vector<std::vector<CellId>> held(np);
+        for (CellId c = 0; c < n; ++c) {
+            const std::uint32_t q = s.polity_of[c];
+            if (q != 0 && q < np) held[q].push_back(c);
+        }
+        const std::size_t min_cells = std::max<std::size_t>(2, w.cells_for(kProvinceMinCells));
+        std::vector<std::vector<std::uint32_t>> seats_of(np);
+        // Provinces end with their realm, when their seat is lost (or becomes
+        // the capital), or when the realm is too small to have them.
+        for (Province& pv : s.provinces) {
+            if (pv.id == 0 || pv.ended != kNever) continue;
+            const bool gone = pv.polity >= np || s.polities[pv.polity].ended != kNever || s.polity_of[pv.seat] != pv.polity ||
+                              s.polities[pv.polity].capital == pv.seat || held[pv.polity].size() < min_cells ||
+                              !polity_has_writing(w, s, pv.polity);
+            if (gone) {
+                pv.ended = ctx.tick;
+            } else {
+                seats_of[pv.polity].push_back(pv.id);
+            }
+        }
+        auto town_score = [&](CellId c) {
+            const double people = static_cast<double>(s.cell_population[c]);
+            return (s.urban.empty() ? 0.0 : s.urban[c] * people) + kSeatRural * people;
+        };
+        std::vector<CellId> order;
+        for (std::size_t id = 1; id < np; ++id) {
+            Polity& pol = s.polities[id];
+            // Governed provinces need scribes: states only (chiefs rule
+            // through kin and lesser chiefs).
+            if (pol.ended != kNever || held[id].size() < min_cells || !polity_has_writing(w, s, static_cast<std::uint32_t>(id))) {
+                continue;
+            }
+            provincial[id] = 1;
+            // New seats at the largest towns far enough from the capital and
+            // from every seat.
+            order = held[id];
+            std::stable_sort(order.begin(), order.end(), [&](CellId a, CellId b) {
+                return town_score(a) > town_score(b) || (town_score(a) == town_score(b) && a < b);
+            });
+            for (CellId c : order) {
+                if (w.grid.distance_km(c, pol.capital) < kProvinceSpacingKm) continue;
+                bool near = false;
+                for (std::uint32_t v : seats_of[id]) near = near || w.grid.distance_km(c, s.provinces[v].seat) < kProvinceSpacingKm;
+                if (near) continue;
+                Province pv;
+                pv.id = static_cast<std::uint32_t>(s.provinces.size());
+                pv.polity = static_cast<std::uint32_t>(id);
+                pv.seat = c;
+                pv.founded = ctx.tick;
+                const std::uint32_t city = s.city_of[c];
+                if (city != 0) {
+                    pv.name = s.cities[city].name;
+                } else {
+                    const Cohort* lead = lead_cohort(s, c);
+                    RngStream nr = ctx.rng(Stream::Polity, kProvinceNameEntity | c);
+                    pv.name = coin_name(content, s.languages[lead->language], nr, [](const std::string&) { return false; });
+                }
+                pv.loyalty = -1.0;  // set below, at its target
+                seats_of[id].push_back(pv.id);
+                s.provinces.push_back(std::move(pv));
+            }
+            // Each cell to the nearest seat; the capital's land is the crown's.
+            for (CellId c : held[id]) {
+                double best = w.grid.distance_km(c, pol.capital);
+                std::uint32_t to = 0;
+                for (std::uint32_t v : seats_of[id]) {
+                    const double d = w.grid.distance_km(c, s.provinces[v].seat);
+                    if (d < best || (d == best && v < to)) best = d, to = v;
+                }
+                s.province_of[c] = to;
+            }
+        }
+        for (CellId c = 0; c < n; ++c) {
+            const std::uint32_t q = s.polity_of[c];
+            if (q == 0 || q >= np || !provincial[q]) s.province_of[c] = 0;
+        }
+        // Governors, loyalty and revolts.
+        for (std::size_t id = 1; id < np; ++id) {
+            if (!provincial[id]) continue;
+            for (std::uint32_t v : seats_of[id]) {
+                Province& pv = s.provinces[v];
+                if (pv.ended != kNever) continue;
+                if (pv.governor == 0 || !figure_alive(s.figures[pv.governor], ctx.tick)) {
+                    RngStream fr = ctx.rng(Stream::Figures, kGovernorEntity | v);
+                    pv.governor = record_person(s, content, pv.seat, ctx.tick, 30, 55, kRoleGovernor, fr);
+                    s.figures[pv.governor].polity = static_cast<std::uint32_t>(id);
+                }
+                const Polity& pol = s.polities[id];
+                const Figure& gov = s.figures[pv.governor];
+                const Cohort* lead = lead_cohort(s, pv.seat);
+                const bool same_people = lead != nullptr && s.cultures[lead->culture].root == s.cultures[pol.culture].root;
+                const bool same_faith = !s.faith_of.empty() && s.faith_of[pv.seat] == pol.religion;
+                const double target = kLoyaltyBase + kLoyaltyStability * pol.stability + kLoyaltyControl * control_of(id, pv.seat) +
+                                      (same_people ? kLoyaltyPeople : 0.0) + (same_faith ? kLoyaltyFaith : 0.0) +
+                                      kLoyaltyAmbition * (0.5 - gov.ambition);
+                pv.loyalty = std::clamp(pv.loyalty < 0.0 ? target : pv.loyalty + kLoyaltyRate * (target - pv.loyalty), 0.0, 1.0);
+            }
+        }
+        for (std::size_t id = 1; id < np; ++id) {
+            if (!provincial[id]) continue;
+            for (std::uint32_t v : seats_of[id]) {
+                Province& pv = s.provinces[v];
+                if (pv.ended != kNever || pv.loyalty >= kRevoltBelow || s.polities[id].ended != kNever) continue;
+                RngStream rng = ctx.rng(Stream::Polity, kRevoltEntity | v);
+                const double ambition = s.figures[pv.governor].ambition;
+                if (rng.uniform() >= kRevolt * (kRevoltBelow - pv.loyalty) / kRevoltBelow * (0.5 + ambition)) continue;
+                // The governor breaks away with the province and founds a house.
+                const std::uint32_t rebel = found(pv.seat, static_cast<std::uint32_t>(id), s.polities[id].nomadic);
+                s.polities[rebel].founder = pv.governor;
+                for (CellId c : held[id]) {
+                    if (s.province_of[c] == v && s.polity_of[c] == id) {
+                        s.polity_of[c] = rebel;
+                        s.province_of[c] = 0;
+                    }
+                }
+                pv.ended = ctx.tick;
+                pv.became = rebel;
+                s.events.push_back({ctx.tick, EventType::ProvinceRevolt, pv.seat, static_cast<std::int64_t>(v)});
+                start_war(w, s, ctx.tick, rebel, static_cast<std::uint32_t>(id), WarGoal::Independence);
+                // The realm is shaken, and the other governors take note.
+                Polity& realm = s.polities[id];
+                realm.stability = std::max(0.0, realm.stability - kRevoltShock);
+                for (std::uint32_t o : seats_of[id]) {
+                    if (o != v && s.provinces[o].ended == kNever) {
+                        s.provinces[o].loyalty = std::max(0.0, s.provinces[o].loyalty - kRevoltContagion);
+                    }
+                }
+            }
+        }
+    }
+
     // ---- Break-up of fragile polities, and succession disputes.
     std::size_t writing_k = 64, bureaucracy_k = 64;
     for (std::size_t k = 0; k < content.techniques.size() && k < 64; ++k) {
@@ -534,6 +674,41 @@ void PolitySystem::step(StepContext& ctx) {
         pol.fate_cause = cause;
         s.events.push_back({ctx.tick, EventType::PolityEnded, capital, static_cast<std::int64_t>(id)});
         for (CellId c : mine) s.polity_of[c] = 0;
+        // A realm with provinces breaks along them: each province not
+        // solidly loyal goes its own way under its governor; the loyal ones
+        // and the crown's land stay with the rump at the old capital.
+        if (provincial[id]) {
+            const std::uint32_t rump = found(capital, static_cast<std::uint32_t>(id), nomadic);
+            s.polities[rump].stability = kSuccessorStability;
+            std::vector<std::uint32_t> went(s.provinces.size(), 0);
+            for (CellId c : mine) {
+                const std::uint32_t v = s.province_of[c];
+                Province* pv = v != 0 && v < s.provinces.size() && s.provinces[v].polity == id && s.provinces[v].ended == kNever
+                                   ? &s.provinces[v]
+                                   : nullptr;
+                if (pv == nullptr || pv->loyalty >= kStayLoyal) {
+                    s.polity_of[c] = rump;
+                    continue;
+                }
+                if (went[v] == 0) {
+                    went[v] = found(pv->seat, static_cast<std::uint32_t>(id), nomadic);
+                    s.polities[went[v]].stability = kSuccessorStability;
+                    s.polities[went[v]].founder = s.provinces[v].governor;
+                }
+                s.polity_of[c] = went[v];
+                s.province_of[c] = 0;
+            }
+            for (Province& pv : s.provinces) {
+                if (pv.id == 0 || pv.polity != id || pv.ended != kNever) continue;
+                if (went[pv.id] != 0) {
+                    pv.ended = ctx.tick;
+                    pv.became = went[pv.id];
+                } else {
+                    pv.polity = rump;  // a loyal province serves the rump
+                }
+            }
+            continue;
+        }
         // A small chiefdom dissolves into its villages; a large one breaks
         // into smaller chiefdoms around its largest villages.
         if (!state && mine.size() < std::max<std::size_t>(2, w.cells_for(kSplitChiefdomCells))) continue;
@@ -601,10 +776,11 @@ void PolitySystem::step(StepContext& ctx) {
         }
     }
 
-    // ---- Secession of provinces held too loosely, and civil war.
+    // ---- Secession of land held too loosely, and civil war (realms with
+    // provinces lose land by provincial revolts instead).
     for (std::size_t id = 1; id < np; ++id) {
         Polity& pol = s.polities[id];
-        if (pol.ended != kNever) continue;
+        if (pol.ended != kNever || provincial[id]) continue;
         RngStream rng = ctx.rng(Stream::Polity, kCivilWarEntity | static_cast<std::uint32_t>(id));
         std::vector<CellId> mine;
         for (CellId c : cells[id]) {
@@ -1007,6 +1183,27 @@ void RulerSystem::step(StepContext& ctx) {
         if (pol.ruler == 0) {
             // A new realm: its first ruler founds a house.
             const std::uint32_t r = crown(id, 0, 25 + static_cast<int>(rng.uniform() * 20.0), rng);
+            // A governor who broke away founds the house himself.
+            const std::uint32_t gov = pol.founder < s.figures.size() ? pol.founder : 0;
+            if (gov != 0 && figure_alive(s.figures[gov], tick)) {
+                Ruler& ru = s.rulers[r];
+                Figure& f = s.figures[gov];
+                ru.name = f.name;
+                ru.number = 1;
+                ru.born = f.born;
+                ru.ability = f.ability;
+                ru.martial = f.martial;
+                found_house(id, r);
+                f.ruler = r;
+                f.roles |= kRoleRuler | kRoleFounder;
+                f.dynasty = s.rulers[r].dynasty;
+                f.polity = id;
+                f.died = kNever;  // RulerSystem decides when a ruler dies
+                f.goal = figure_goal(f);
+                s.rulers[r].figure = gov;
+                pol.ruler = r;
+                continue;
+            }
             found_house(id, r);
             pol.ruler = r;
             person_of_reign(r, kRoleFounder, 0, 0);

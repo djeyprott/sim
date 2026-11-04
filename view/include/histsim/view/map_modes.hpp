@@ -118,6 +118,10 @@ inline constexpr double kGroupLabelMinAreaKm2 = 150000.0;
 inline constexpr std::size_t kMaxGroupLabels = 80;
 std::vector<MapLabel> map_labels(const Simulation& sim, std::string_view mode_id);
 
+// The regions whose borders the map draws: polities, and in the provinces
+// mode their provinces too.
+std::vector<std::uint32_t> border_regions(const Simulation& sim, std::string_view mode_id);
+
 // Capitals to mark in the polity, stability and realm modes (empty for
 // other modes): in polity and stability, every living polity's capital,
 // larger for states; in realms, the seats of states, empires and nomad
