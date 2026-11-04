@@ -318,6 +318,7 @@ const std::vector<MapModeInfo> kModes = {
     {"war", "War", "Wars, battles, conquests and nomad raids this year", "Power"},
     {"stability", "Stability", "How steady each polity is against famine, war, overreach and other pressures", "Power"},
     {"provinces", "Provinces", "Provinces of the larger realms, by their governors' loyalty; the crown's own land in gold", "Power"},
+    {"unrest", "Unrest", "Unrest of the people of each state's provinces and crown land: hunger, land hunger, war, plague, tribute, foreign rule", "Power"},
 };
 
 // ---- Colors for languages and cultures.
@@ -708,6 +709,12 @@ void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rg
         } else if (id == "stability") {
             const std::uint32_t p = s.polity_of.empty() ? 0 : s.polity_of[c];
             out[c] = !inhabited ? kEmptyLand : (p == 0 ? kStateless : stability_scale()(s.polities[p].stability));
+        } else if (id == "unrest") {
+            const std::uint32_t p = s.polity_of.empty() ? 0 : s.polity_of[c];
+            const std::uint32_t v = s.province_of.size() == n ? s.province_of[c] : 0;
+            const bool state = p != 0 && polity_has_writing(w, s, p);
+            const double u = v != 0 ? s.provinces[v].unrest : (p != 0 ? s.polities[p].unrest : 0.0);
+            out[c] = !inhabited ? kEmptyLand : p == 0 ? kStateless : !state ? kSmallRealm : stability_scale()(1.0 - u);
         } else if (id == "provinces") {
             const std::uint32_t p = s.polity_of.empty() ? 0 : s.polity_of[c];
             const std::uint32_t v = s.province_of.size() == n ? s.province_of[c] : 0;
@@ -895,6 +902,12 @@ Legend legend(std::string_view mode_id) {
         l.ramp = {{"0%", stability_scale()(0)}, {"30%", stability_scale()(0.3)}, {"50%", stability_scale()(0.5)},
                   {"70%", stability_scale()(0.7)}, {"100%", stability_scale()(1.0)}};
         l.swatches = {{"No ruler", kStateless}, {"Uninhabited", kEmptyLand}, {"Ocean", kOceanNeutral}};
+    } else if (id == "unrest") {
+        l.title = "Unrest of the people (above 30% they may rise)";
+        l.ramp = {{"0%", stability_scale()(1.0)}, {"30%", stability_scale()(0.7)}, {"50%", stability_scale()(0.5)},
+                  {"70%", stability_scale()(0.3)}, {"100%", stability_scale()(0.0)}};
+        l.swatches = {{"Chiefdom (no state)", kSmallRealm}, {"No ruler", kStateless}, {"Uninhabited", kEmptyLand},
+                      {"Ocean", kOceanNeutral}};
     } else if (id == "provinces") {
         l.title = "Provinces by their governors' loyalty (below 40% they may break away)";
         l.ramp = {{"0%", stability_scale()(0)}, {"40%", stability_scale()(0.4)}, {"60%", stability_scale()(0.6)},
@@ -1299,10 +1312,15 @@ std::vector<Row> describe_cell_rows(const Simulation& sim, CellId c,
                 f.push_back({"Province", pv.name + who + fmt("; loyalty %.0f%%", 100.0 * pv.loyalty) +
                                              (pv.loyalty < PolitySystem::kRevoltBelow ? " (may break away)" : ""),
                              gov});
+                f.push_back({"Unrest", fmt("%.0f%%", 100.0 * pv.unrest) + (pv.unrest > PolitySystem::kRiseAbove ? " (the people may rise)" : "")});
             } else {
                 bool has = false;
                 for (const Province& pv : s.provinces) has = has || (pv.id != 0 && pv.polity == ruler && pv.ended == kNever);
                 if (has) f.push_back({"Province", "the crown's own land, ruled from the capital"});
+                if (polity_has_writing(w, s, ruler)) {
+                    const double u = s.polities[ruler].unrest;
+                    f.push_back({"Unrest", fmt("%.0f%%", 100.0 * u) + (u > PolitySystem::kRiseAbove ? " (the people may rise)" : "")});
+                }
             }
         }
         if (pol.institutions != 0) {
@@ -1589,7 +1607,8 @@ Vec3 middle_of(const World& w, const std::vector<CellId>& cells) {
 std::vector<std::uint32_t> border_regions(const Simulation& sim, std::string_view mode_id) {
     const SimState& s = sim.state();
     std::vector<std::uint32_t> key = s.polity_of;
-    if (map_mode(mode_id).id == "provinces" && s.province_of.size() == key.size()) {
+    const std::string border_mode = map_mode(mode_id).id;
+    if ((border_mode == "provinces" || border_mode == "unrest") && s.province_of.size() == key.size()) {
         for (std::size_t c = 0; c < key.size(); ++c) {
             if (s.province_of[c] != 0) key[c] = 0x80000000u | s.province_of[c];
         }

@@ -319,6 +319,8 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(p.trek_to);
         ar.u32(p.trek_record);
         ar.u32(p.founder);
+        ar.f64(p.unrest);
+        ar.u32(p.rebel);
     });
     doubles(ar, s.stocks);
     doubles(ar, s.prices);
@@ -397,11 +399,23 @@ void serialize(Ar& ar, SimState& s) {
         str(ar, v.name);
         ar.u32(v.governor);
         ar.f64(v.loyalty);
+        ar.f64(v.unrest);
         ar.i64(v.founded);
         ar.i64(v.ended);
         ar.u32(v.became);
     });
     vec(ar, s.province_of, [&](std::uint32_t& v) { ar.u32(v); });
+    vec(ar, s.uprisings, [&](Uprising& u) {
+        ar.i64(u.tick);
+        ar.u32(u.polity);
+        ar.u32(u.province);
+        ar.u32(u.cell);
+        ar.u32(u.leader);
+        u8(ar, u.outcome);
+        ar.i64(u.rebels);
+        ar.i64(u.dead);
+        ar.u32(u.became);
+    });
     vec(ar, s.figures, [&](Figure& f) {
         ar.u32(f.id);
         str(ar, f.name);

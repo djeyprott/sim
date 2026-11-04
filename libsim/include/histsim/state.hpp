@@ -241,6 +241,8 @@ struct Polity {
     CellId trek_to = kInvalidCell;  // where it is going, while on the move
     std::uint32_t trek_record = 0;  // its movement in SimState::migrations (index + 1)
     std::uint32_t founder = 0;      // a figure who founds its first house (a governor who broke away), 0 if none
+    double unrest = 0.0;            // 0-1: of the people of the crown's own land (states)
+    std::uint32_t rebel = 0;        // a rebel leader who has overthrown the dynasty and takes the throne next
 };
 
 // A province of a large polity: the land nearest one of its towns, held for
@@ -255,9 +257,29 @@ struct Province {
     std::string name;
     std::uint32_t governor = 0;  // a figure (SimState::figures)
     double loyalty = 0.7;        // 0-1
+    double unrest = 0.0;         // 0-1: of its people
     Tick founded = 0;
     Tick ended = kNever;
     std::uint32_t became = 0;    // the polity it became, if it broke away
+};
+
+// A rising of the people of a province (or of the crown's land) against
+// their rulers (PolitySystem).
+enum class UprisingOutcome : std::uint8_t {
+    Crushed = 0,
+    BrokeAway = 1,   // the province became a polity of its own under the leader
+    Overthrew = 2,   // the dynasty fell; the leader took the throne
+};
+struct Uprising {
+    Tick tick = 0;
+    std::uint32_t polity = 0;
+    std::uint32_t province = 0;  // 0: the crown's own land
+    CellId cell = kInvalidCell;  // where it began (the seat)
+    std::uint32_t leader = 0;    // a figure
+    UprisingOutcome outcome = UprisingOutcome::Crushed;
+    std::int64_t rebels = 0;
+    std::int64_t dead = 0;
+    std::uint32_t became = 0;    // the polity it founded, if it broke away
 };
 
 // Institutions a polity can build (bits of Polity::institutions). Append;
@@ -293,6 +315,7 @@ enum FigureRole : std::uint16_t {
     kRoleProphet = 64,    // taught a missionary faith
     kRoleFounder = 128,   // founded a realm and a house
     kRoleGovernor = 256,  // governed a province
+    kRoleRebel = 512,     // led a peasant uprising
 };
 
 // What a figure most wants: set by its traits and roles.
@@ -474,6 +497,7 @@ enum class EventType : std::uint32_t {
     InstitutionLost = 31,     // cell = capital; value = polity id x 16 + Institution
     SuccessionDisputed = 32,  // a rival claimed the throne; cell = capital; value = the claimant's figure id
     ProvinceRevolt = 33,      // a province broke away with its governor; cell = its seat; value = province id
+    PeasantUprising = 34,     // the people rose; cell = where; value = index into SimState::uprisings
 };
 
 struct Event {
@@ -654,6 +678,7 @@ struct SimState {
     std::vector<Figure> figures;  // index = id; figures[0] is no one
     std::vector<Province> provinces;          // index = id; provinces[0] is no one (the crown's own land)
     std::vector<std::uint32_t> province_of;   // per cell: its province (0: the crown's, or no province)
+    std::vector<Uprising> uprisings;
 
     // Religions (entry 0 a placeholder) and each cell's faith (0 = none yet).
     std::vector<Religion> religions;

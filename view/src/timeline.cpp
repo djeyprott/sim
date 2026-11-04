@@ -65,6 +65,7 @@ const char* event_kind(EventType type) {
         case EventType::Usurpation:
         case EventType::SuccessionDisputed:
         case EventType::ProvinceRevolt:
+        case EventType::PeasantUprising:
         case EventType::InstitutionFounded:
         case EventType::InstitutionLost: return "realms";
         case EventType::WarBegan:
@@ -241,6 +242,24 @@ std::string describe_event(const Simulation& sim, const Event& e) {
                        (age < RulerSystem::kAdultAge ? ", ruled for by a regent" : "");
             }
             return "";
+        case EventType::PeasantUprising:
+            if (index < s.uprisings.size()) {
+                const Uprising& u = s.uprisings[index];
+                const std::string where = u.province != 0 && u.province < s.provinces.size()
+                                              ? " in " + s.provinces[u.province].name
+                                              : " in the heart of the realm";
+                const std::string leader = u.leader != 0 && u.leader < s.figures.size() ? " under " + s.figures[u.leader].name : "";
+                std::string how;
+                switch (u.outcome) {
+                    case UprisingOutcome::Crushed: how = ", and are crushed (" + commas(u.dead) + " dead)"; break;
+                    case UprisingOutcome::BrokeAway:
+                        how = " and break away" + (u.became != 0 ? " as " + polity_name(s, u.became) : std::string());
+                        break;
+                    case UprisingOutcome::Overthrew: how = " and overthrow the dynasty: their leader takes the throne"; break;
+                }
+                return commas(u.rebels) + " peasants rise against " + polity_name(s, u.polity) + where + leader + how;
+            }
+            return "";
         case EventType::ProvinceRevolt:
             if (index < s.provinces.size()) {
                 const Province& pv = s.provinces[index];
@@ -290,6 +309,7 @@ std::uint32_t event_figure(const SimState& s, const Event& e) {
         case EventType::Usurpation: f = index < s.rulers.size() ? s.rulers[index].figure : 0; break;
         case EventType::SuccessionDisputed: f = static_cast<std::uint32_t>(index); break;
         case EventType::ProvinceRevolt: f = index < s.provinces.size() ? s.provinces[index].governor : 0; break;
+        case EventType::PeasantUprising: f = index < s.uprisings.size() ? s.uprisings[index].leader : 0; break;
         case EventType::ReligionFounded: f = index < s.religions.size() ? s.religions[index].founder : 0; break;
         case EventType::Invention:
             for (const Invention& inv : s.inventions) {
@@ -331,6 +351,8 @@ bool event_involves(const SimState& s, const Event& e, std::uint32_t p) {
         case EventType::SuccessionDisputed: return index < s.figures.size() && s.figures[index].polity == p;
         case EventType::ProvinceRevolt:
             return index < s.provinces.size() && (s.provinces[index].polity == p || s.provinces[index].became == p);
+        case EventType::PeasantUprising:
+            return index < s.uprisings.size() && (s.uprisings[index].polity == p || s.uprisings[index].became == p);
         case EventType::InstitutionFounded:
         case EventType::InstitutionLost: return v / 16 == p;
         default: return false;

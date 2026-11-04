@@ -173,6 +173,10 @@ std::uint32_t top_overlord(const SimState& state, std::uint32_t polity);
 bool allied(const SimState& state, std::uint32_t a, std::uint32_t b);
 std::uint32_t war_between(const SimState& state, std::uint32_t a, std::uint32_t b);
 
+// Kill `share` of the people of a cell (counted as deaths in strife).
+// Returns how many died.
+std::int64_t kill_in_strife(SimState& state, CellId cell, double share, RngStream& rng);
+
 // Start a war (leaders first on each side; allies and overlords are added).
 // Returns its id.
 std::uint32_t start_war(const World& world, SimState& state, Tick tick, std::uint32_t attacker,
