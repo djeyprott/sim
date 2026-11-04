@@ -240,6 +240,24 @@ struct Polity {
     bool contested = false;         // a disputed succession this year threatens to break it up
     CellId trek_to = kInvalidCell;  // where it is going, while on the move
     std::uint32_t trek_record = 0;  // its movement in SimState::migrations (index + 1)
+    std::uint32_t founder = 0;      // a figure who founds its first house (a governor who broke away), 0 if none
+};
+
+// A province of a large polity: the land nearest one of its towns, held for
+// the ruler by a governor whose loyalty rises and falls with the realm's
+// fortunes (PolitySystem). The land nearest the capital is the crown's own
+// (province 0). A disloyal province breaks away with its governor; when a
+// realm collapses, its disloyal provinces go their own ways.
+struct Province {
+    std::uint32_t id = 0;
+    std::uint32_t polity = 0;
+    CellId seat = kInvalidCell;
+    std::string name;
+    std::uint32_t governor = 0;  // a figure (SimState::figures)
+    double loyalty = 0.7;        // 0-1
+    Tick founded = 0;
+    Tick ended = kNever;
+    std::uint32_t became = 0;    // the polity it became, if it broke away
 };
 
 // Institutions a polity can build (bits of Polity::institutions). Append;
@@ -274,6 +292,7 @@ enum FigureRole : std::uint16_t {
     kRoleInventor = 32,
     kRoleProphet = 64,    // taught a missionary faith
     kRoleFounder = 128,   // founded a realm and a house
+    kRoleGovernor = 256,  // governed a province
 };
 
 // What a figure most wants: set by its traits and roles.
@@ -454,6 +473,7 @@ enum class EventType : std::uint32_t {
     InstitutionFounded = 30,  // cell = capital; value = polity id x 16 + Institution
     InstitutionLost = 31,     // cell = capital; value = polity id x 16 + Institution
     SuccessionDisputed = 32,  // a rival claimed the throne; cell = capital; value = the claimant's figure id
+    ProvinceRevolt = 33,      // a province broke away with its governor; cell = its seat; value = province id
 };
 
 struct Event {
@@ -632,6 +652,8 @@ struct SimState {
     std::vector<Ruler> rulers;
     std::vector<Dynasty> dynasties;
     std::vector<Figure> figures;  // index = id; figures[0] is no one
+    std::vector<Province> provinces;          // index = id; provinces[0] is no one (the crown's own land)
+    std::vector<std::uint32_t> province_of;   // per cell: its province (0: the crown's, or no province)
 
     // Religions (entry 0 a placeholder) and each cell's faith (0 = none yet).
     std::vector<Religion> religions;

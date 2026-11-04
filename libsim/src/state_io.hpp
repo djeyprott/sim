@@ -318,6 +318,7 @@ void serialize(Ar& ar, SimState& s) {
         flag(ar, p.contested);
         ar.u32(p.trek_to);
         ar.u32(p.trek_record);
+        ar.u32(p.founder);
     });
     doubles(ar, s.stocks);
     doubles(ar, s.prices);
@@ -389,6 +390,18 @@ void serialize(Ar& ar, SimState& s) {
         ar.i64(d.founded);
         ar.i64(d.ended);
     });
+    vec(ar, s.provinces, [&](Province& v) {
+        ar.u32(v.id);
+        ar.u32(v.polity);
+        ar.u32(v.seat);
+        str(ar, v.name);
+        ar.u32(v.governor);
+        ar.f64(v.loyalty);
+        ar.i64(v.founded);
+        ar.i64(v.ended);
+        ar.u32(v.became);
+    });
+    vec(ar, s.province_of, [&](std::uint32_t& v) { ar.u32(v); });
     vec(ar, s.figures, [&](Figure& f) {
         ar.u32(f.id);
         str(ar, f.name);

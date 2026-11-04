@@ -64,6 +64,7 @@ const char* event_kind(EventType type) {
         case EventType::Succession:
         case EventType::Usurpation:
         case EventType::SuccessionDisputed:
+        case EventType::ProvinceRevolt:
         case EventType::InstitutionFounded:
         case EventType::InstitutionLost: return "realms";
         case EventType::WarBegan:
@@ -240,6 +241,14 @@ std::string describe_event(const Simulation& sim, const Event& e) {
                        (age < RulerSystem::kAdultAge ? ", ruled for by a regent" : "");
             }
             return "";
+        case EventType::ProvinceRevolt:
+            if (index < s.provinces.size()) {
+                const Province& pv = s.provinces[index];
+                const std::string who = pv.governor != 0 && pv.governor < s.figures.size() ? s.figures[pv.governor].name : "Its governor";
+                return who + ", governor of " + pv.name + ", breaks away from " + polity_name(s, pv.polity) +
+                       (pv.became != 0 ? " as " + polity_name(s, pv.became) : std::string());
+            }
+            return "";
         case EventType::SuccessionDisputed:
             if (index < s.figures.size()) {
                 const Figure& f = s.figures[index];
@@ -280,6 +289,7 @@ std::uint32_t event_figure(const SimState& s, const Event& e) {
         case EventType::Succession:
         case EventType::Usurpation: f = index < s.rulers.size() ? s.rulers[index].figure : 0; break;
         case EventType::SuccessionDisputed: f = static_cast<std::uint32_t>(index); break;
+        case EventType::ProvinceRevolt: f = index < s.provinces.size() ? s.provinces[index].governor : 0; break;
         case EventType::ReligionFounded: f = index < s.religions.size() ? s.religions[index].founder : 0; break;
         case EventType::Invention:
             for (const Invention& inv : s.inventions) {
@@ -319,6 +329,8 @@ bool event_involves(const SimState& s, const Event& e, std::uint32_t p) {
         case EventType::Succession:
         case EventType::Usurpation: return index < s.rulers.size() && s.rulers[index].polity == p;
         case EventType::SuccessionDisputed: return index < s.figures.size() && s.figures[index].polity == p;
+        case EventType::ProvinceRevolt:
+            return index < s.provinces.size() && (s.provinces[index].polity == p || s.provinces[index].became == p);
         case EventType::InstitutionFounded:
         case EventType::InstitutionLost: return v / 16 == p;
         default: return false;

@@ -225,6 +225,38 @@ public:
     // A seat in a fallen state reaches at least kProvinceReachKm: it held a
     // province.
     static constexpr double kProvinceReachKm = 200.0;
+    // Provinces. A polity of at least kProvinceMinCells (level-5) cells is
+    // divided into provinces seated at its largest towns at least
+    // kProvinceSpacingKm from the capital and from each other (ranked by
+    // townspeople + kSeatRural x people); each cell belongs to the nearest
+    // seat, the capital's being the crown's own. Each province has a governor
+    // (a figure); its loyalty moves kLoyaltyRate of the way a year toward
+    //   kLoyaltyBase + kLoyaltyStability x stability + kLoyaltyControl x
+    //   control at its seat + kLoyaltyPeople (its people are the rulers')
+    //   + kLoyaltyFaith (and their faith) + kLoyaltyAmbition x (0.5 -
+    //   governor's ambition).
+    // Below kRevoltBelow, it breaks away with chance kRevolt x (kRevoltBelow -
+    // loyalty) / kRevoltBelow x (0.5 + ambition) a year, the governor
+    // founding a house, and fights for independence; the realm loses
+    // kRevoltShock stability and every other province kRevoltContagion
+    // loyalty. When a provincial realm breaks up, provinces below
+    // kStayLoyal go their own ways with their governors; the rest stay with
+    // the rump. Provincial realms lose land this way instead of by cell
+    // secession and civil war.
+    static constexpr std::size_t kProvinceMinCells = 4;
+    static constexpr double kProvinceSpacingKm = 500.0;
+    static constexpr double kLoyaltyRate = 0.1;
+    static constexpr double kLoyaltyBase = 0.1;
+    static constexpr double kLoyaltyStability = 0.5;
+    static constexpr double kLoyaltyControl = 0.25;
+    static constexpr double kLoyaltyPeople = 0.1;
+    static constexpr double kLoyaltyFaith = 0.05;
+    static constexpr double kLoyaltyAmbition = 0.3;
+    static constexpr double kRevoltBelow = 0.4;
+    static constexpr double kRevolt = 0.05;
+    static constexpr double kRevoltShock = 0.05;
+    static constexpr double kRevoltContagion = 0.05;
+    static constexpr double kStayLoyal = 0.6;
     static constexpr double kSuccessorStability = 0.5;
     // Nomad confederations form on open pasture (pasture quality at least
     // kNomadPasture: grassland, shrubland, savanna) where herds give at least
