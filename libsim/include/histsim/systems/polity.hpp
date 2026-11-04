@@ -213,7 +213,7 @@ public:
     // know writing and x kSeatBureaucracy with scribes; strongest first, each
     // not already held (control at least kMinControl) by a stronger seat
     // becomes the seat of a successor that takes the cells it holds best, as
-    // far as its own administration reaches. Seats with writing are successor
+    // far as its own administration reaches (a province at least, in a state). Seats with writing are successor
     // states, the others chiefdoms; cells no seat holds fall back to
     // villages. A chiefdom of at least kSplitChiefdomCells (level-5) cells
     // breaks the same way into smaller chiefdoms; a smaller one dissolves.
@@ -222,6 +222,9 @@ public:
     static constexpr double kSeatWriting = 4.0;
     static constexpr double kSeatBureaucracy = 2.0;
     static constexpr std::size_t kSplitChiefdomCells = 3;
+    // A seat in a fallen state reaches at least kProvinceReachKm: it held a
+    // province.
+    static constexpr double kProvinceReachKm = 200.0;
     static constexpr double kSuccessorStability = 0.5;
     // Nomad confederations form on open pasture (pasture quality at least
     // kNomadPasture: grassland, shrubland, savanna) where herds give at least

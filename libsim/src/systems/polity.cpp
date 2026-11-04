@@ -562,7 +562,10 @@ void PolitySystem::step(StepContext& ctx) {
             const double town = s.urban.empty() ? 0.0 : s.urban[c] * people;
             const double score = (town + kSeatRural * people) * hierarchy * (literate ? kSeatWriting : 1.0) *
                                  (scribes ? kSeatBureaucracy : 1.0);
-            candidates.push_back({c, score, polity_reach_km(w, s, c) * (nomadic ? kNomadReach : 1.0)});
+            // A seat in a fallen state held a province under it: it keeps at
+            // least a province's reach (its governor's, or a local dynasty's).
+            const double own = polity_reach_km(w, s, c);
+            candidates.push_back({c, score, (state ? std::max(own, kProvinceReachKm) : own) * (nomadic ? kNomadReach : 1.0)});
         }
         std::stable_sort(candidates.begin(), candidates.end(), [](const Seat& a, const Seat& b) {
             return a.score > b.score || (a.score == b.score && a.cell < b.cell);
