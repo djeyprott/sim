@@ -372,6 +372,7 @@ TEST(polity_peasant_uprisings) {
         }
     }
     CHECK(crushed > 0);
+    CHECK(crushed + won <= s.uprisings.size());
     for (const Polity& q : s.polities) CHECK(q.unrest >= 0.0 && q.unrest <= 1.0);
     for (const Province& v : s.provinces) CHECK(v.unrest >= 0.0 && v.unrest <= 1.0);
     CHECK_EQ(s.ledger.initial_population + s.ledger.births - s.ledger.deaths + s.ledger.added, s.total_population());
