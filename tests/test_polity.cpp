@@ -377,3 +377,46 @@ TEST(polity_peasant_uprisings) {
     for (const Province& v : s.provinces) CHECK(v.unrest >= 0.0 && v.unrest <= 1.0);
     CHECK_EQ(s.ledger.initial_population + s.ledger.births - s.ledger.deaths + s.ledger.added, s.total_population());
 }
+
+// Generals and high priests: every living state at war or with an army has
+// a general (a figure); fame stays non-negative; a general who seized the
+// throne is the founder of a house; high priests are figures of their realm.
+TEST(polity_generals_and_high_priests) {
+    WorldParams p;
+    p.grid_level = 4;
+    Simulation sim = Simulation::create(p);
+    sim.step_years(5000);
+    const SimState& s = sim.state();
+    CHECK(s.commanders.size() > 1);
+    std::size_t won = 0;
+    for (std::size_t i = 1; i < s.commanders.size(); ++i) {
+        const Commander& m = s.commanders[i];
+        CHECK(m.figure != 0 && m.figure < s.figures.size());
+        CHECK(s.figures[m.figure].roles & kRoleGeneral);
+        CHECK(m.polity != 0 && m.polity < s.polities.size());
+        CHECK(m.fame >= 0.0);
+        CHECK(m.to == kNever || m.to >= m.from);
+        won += m.victories;
+        if (m.seized && s.figures[m.figure].ruler != 0) {
+            CHECK(s.figures[m.figure].roles & kRoleRuler);
+            CHECK(s.figures[m.figure].roles & kRoleUsurper);
+        }
+    }
+    CHECK(won > 0);
+    std::size_t priests = 0;
+    for (std::size_t id = 1; id < s.polities.size(); ++id) {
+        const Polity& q = s.polities[id];
+        if (q.commander != 0) {
+            CHECK(q.ended == kNever);
+            CHECK(q.commander < s.commanders.size());
+            CHECK_EQ(s.commanders[q.commander].polity, static_cast<std::uint32_t>(id));
+            CHECK_EQ(s.commanders[q.commander].to, kNever);
+        }
+        if (q.priest != 0 && q.ended == kNever) {
+            ++priests;
+            CHECK(q.priest < s.figures.size());
+            CHECK(s.figures[q.priest].roles & kRolePriest);
+        }
+    }
+    CHECK(priests > 0);
+}

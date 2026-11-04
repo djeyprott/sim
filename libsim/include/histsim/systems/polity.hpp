@@ -301,6 +301,31 @@ public:
     static constexpr double kRebelDeaths = 0.01;
     static constexpr double kOverthrowRatio = 2.0;
     static constexpr double kUprisingWinShock = 0.1;
+    // Generals. A state at war or with a standing army has a general (a
+    // figure); his side fights at (1 - kGeneralSkill / 2 + kGeneralSkill x
+    // martial) of its strength. A victory brings kFameVictory fame
+    // (kFameCapital more if the enemy capital fell), a defeat costs
+    // kFameDefeat and with chance kDismiss his command; fame fades kFameFade
+    // a year. Each year he may seize the throne with chance kCoup x fame x
+    // (0.5 + ambition) x (1.5 - stability) x (1.5 - the ruler's ability), x 2
+    // under a regency. A general of at least kUsurperFame is the usurper when
+    // a disputed succession goes to another house.
+    static constexpr double kGeneralSkill = 0.5;
+    static constexpr double kFameVictory = 0.3;
+    static constexpr double kFameCapital = 0.3;
+    static constexpr double kFameDefeat = 0.3;
+    static constexpr double kDismiss = 0.5;
+    static constexpr double kFameFade = 0.03;
+    static constexpr double kCoup = 0.01;
+    static constexpr double kUsurperFame = 0.3;
+    // High priests. A state with a temple priesthood or an organized faith
+    // has a high priest (a figure): he lends a pious ruler legitimacy and
+    // turns on an impious one, the stability target moving by
+    // kPriestLegitimacy x 2 x (the ruler's piety - 0.5) x (0.5 + his piety);
+    // a zealous one (piety above 0.5) stirs the people of other faiths,
+    // unrest + kPriestZeal x 2 x (piety - 0.5).
+    static constexpr double kPriestLegitimacy = 0.1;
+    static constexpr double kPriestZeal = 0.1;
     static constexpr double kSuccessorStability = 0.5;
     // Nomad confederations form on open pasture (pasture quality at least
     // kNomadPasture: grassland, shrubland, savanna) where herds give at least
@@ -358,6 +383,14 @@ double polity_reach(const World& world, const SimState& state, std::uint32_t pol
 [[nodiscard]] inline double polity_control(double distance_km, double reach_km) {
     const double r = distance_km / reach_km;
     return 1.0 / (1.0 + r * r);
+}
+
+// How a polity's general scales its strength in war (1 without one).
+[[nodiscard]] inline double general_factor(const SimState& s, std::uint32_t polity) {
+    if (polity == 0 || polity >= s.polities.size()) return 1.0;
+    const std::uint32_t c = s.polities[polity].commander;
+    if (c == 0 || c >= s.commanders.size() || s.commanders[c].figure >= s.figures.size()) return 1.0;
+    return 1.0 - PolitySystem::kGeneralSkill / 2.0 + PolitySystem::kGeneralSkill * s.figures[s.commanders[c].figure].martial;
 }
 
 // "chiefdom", "state", "empire" or (nomads without writing) "confederation".

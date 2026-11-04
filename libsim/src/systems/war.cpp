@@ -430,7 +430,8 @@ void WarSystem::step(StepContext& ctx) {
         auto side_power = [&](const std::vector<std::uint32_t>& v, bool levy) {
             double total = 0.0;
             for (std::size_t i = 0; i < v.size(); ++i) {
-                total += (i == 0 ? 1.0 : kAllyShare) * (levy ? armies.levy[v[i]] : power[v[i]]);
+                // The leader's general leads the side.
+                total += (i == 0 ? general_factor(s, v[i]) : kAllyShare) * (levy ? armies.levy[v[i]] : power[v[i]]);
             }
             return total;
         };
@@ -567,6 +568,24 @@ void WarSystem::step(StepContext& ctx) {
         const std::uint32_t winner = outcome == WarOutcome::AttackersWon ? lead_a : lead_d;
         const std::uint32_t loser = outcome == WarOutcome::AttackersWon ? lead_d : lead_a;
         if (outcome != WarOutcome::Stalemate) {
+            // The generals: fame for the victor, blame for the vanquished.
+            auto general_of = [&](std::uint32_t p) -> Commander* {
+                const std::uint32_t c = s.polities[p].commander;
+                return c != 0 && c < s.commanders.size() ? &s.commanders[c] : nullptr;
+            };
+            if (Commander* m = general_of(winner)) {
+                ++m->victories;
+                m->fame += PolitySystem::kFameVictory + (capital_fell ? PolitySystem::kFameCapital : 0.0);
+            }
+            if (Commander* m = general_of(loser)) {
+                ++m->defeats;
+                m->fame = std::max(0.0, m->fame - PolitySystem::kFameDefeat);
+                RngStream blame = ctx.rng(Stream::War, kWarEntity | 0x04000000u | war.id);
+                if (blame.uniform() < PolitySystem::kDismiss) {
+                    m->to = tick;
+                    s.polities[loser].commander = 0;
+                }
+            }
             s.polities[loser].shock += kShockDefeat;
             s.polities[winner].shock = std::max(0.0, s.polities[winner].shock - kVictoryRelief);
             if (war.goal == WarGoal::Independence) {
