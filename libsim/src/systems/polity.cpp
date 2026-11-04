@@ -562,7 +562,10 @@ void PolitySystem::step(StepContext& ctx) {
             const double town = s.urban.empty() ? 0.0 : s.urban[c] * people;
             const double score = (town + kSeatRural * people) * hierarchy * (literate ? kSeatWriting : 1.0) *
                                  (scribes ? kSeatBureaucracy : 1.0);
-            candidates.push_back({c, score, polity_reach_km(w, s, c) * (nomadic ? kNomadReach : 1.0)});
+            // A seat in a fallen state held a province under it: it keeps at
+            // least a province's reach (its governor's, or a local dynasty's).
+            const double own = polity_reach_km(w, s, c);
+            candidates.push_back({c, score, (state ? std::max(own, kProvinceReachKm) : own) * (nomadic ? kNomadReach : 1.0)});
         }
         std::stable_sort(candidates.begin(), candidates.end(), [](const Seat& a, const Seat& b) {
             return a.score > b.score || (a.score == b.score && a.cell < b.cell);
@@ -582,15 +585,26 @@ void PolitySystem::step(StepContext& ctx) {
         for (const Seat& cand : candidates) {
             if (held_by(cand.cell) == seats.size()) seats.push_back(cand);
         }
+        std::vector<std::uint32_t> heirs;  // the rump, then the successors
         if (state) {
             const std::uint32_t heir = found(capital, static_cast<std::uint32_t>(id), nomadic);
             s.polities[heir].stability = kSuccessorStability;
             for (CellId c : core) s.polity_of[c] = heir;
+            heirs.push_back(heir);
         }
         std::vector<std::uint32_t> successor(seats.size());
         for (std::size_t i = 0; i < seats.size(); ++i) {
             successor[i] = found(seats[i].cell, static_cast<std::uint32_t>(id), nomadic);
             s.polities[successor[i]].stability = kSuccessorStability;
+            heirs.push_back(successor[i]);
+        }
+        // The heirs of a fallen realm are spent: they keep the peace with one
+        // another for a while.
+        for (std::size_t a = 0; a < heirs.size(); ++a) {
+            for (std::size_t b = a + 1; b < heirs.size(); ++b) {
+                s.truces.push_back({std::min(heirs[a], heirs[b]), std::max(heirs[a], heirs[b]),
+                                    ctx.tick + kSuccessorTruceYears * kTicksPerYear});
+            }
         }
         for (CellId c : rest) {
             const std::size_t i = held_by(c);
