@@ -106,8 +106,9 @@ FigurePage figure_page(const Simulation& sim, std::uint32_t id) {
         for (std::size_t c = 1; c < s.commanders.size(); ++c) {
             const Commander& m = s.commanders[c];
             if (m.figure != id) continue;
-            sub = "General of " + polity_name(s, m.polity) + ", " + year_text(m.from) +
-                  (m.to == kNever ? "" : "–" + std::to_string(m.to / kTicksPerYear)) + "; " + std::to_string(m.victories) +
+            sub = "General of " + polity_name(s, m.polity) +
+                  (m.to == kNever ? " since " + year_text(m.from)
+                                  : ", " + year_text(m.from) + "–" + std::to_string(m.to / kTicksPerYear)) + "; " + std::to_string(m.victories) +
                   (m.victories == 1 ? " victory, " : " victories, ") + std::to_string(m.defeats) +
                   (m.defeats == 1 ? " defeat" : " defeats") + (m.to != kNever && !m.seized && m.to < now ? " (dismissed or retired)" : "");
         }

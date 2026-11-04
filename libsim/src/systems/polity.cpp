@@ -700,9 +700,7 @@ void PolitySystem::step(StepContext& ctx) {
             const double chance = kCoup * m.fame * (0.5 + general.ambition) * (1.5 - pol.stability) * (1.5 - king.ability) * regency;
             RngStream rng = ctx.rng(Stream::Polity, kCoupEntity | static_cast<std::uint32_t>(id));
             if (rng.uniform() >= chance) continue;
-            m.seized = true;
-            pol.rebel = m.figure;  // takes the throne next year (RulerSystem)
-            retire(pol);
+            pol.rebel = m.figure;  // takes the throne next year (RulerSystem), if he lives
         }
     }
 
@@ -1425,6 +1423,12 @@ void RulerSystem::step(StepContext& ctx) {
                 s.rulers[r].figure = leader;
                 pol.ruler = r;
                 end_house_if_gone(fallen_house);
+                // A general's coup: he leaves the army for the throne.
+                if (pol.commander != 0 && pol.commander < s.commanders.size() && s.commanders[pol.commander].figure == leader) {
+                    s.commanders[pol.commander].seized = true;
+                    s.commanders[pol.commander].to = tick;
+                    pol.commander = 0;
+                }
                 s.events.push_back({tick, EventType::Usurpation, pol.capital, static_cast<std::int64_t>(r)});
                 continue;
             }
