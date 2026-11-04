@@ -207,12 +207,21 @@ public:
     static constexpr double kChiefdomSuccession = 0.0005;
     static constexpr double kStateSuccession = 0.0002;
     // When a state breaks up, its core (cells it controls at least kCoreControl)
-    // stays together under the old capital; elsewhere, towns of enough
-    // farming, density and hierarchy become seats of successor polities that
-    // take the cells within kSuccessorKm; the rest is left without a ruler.
-    // A chiefdom (no writing) simply dissolves.
+    // stays together under the old capital. Elsewhere, places with the
+    // farming, density and hierarchy to found a polity are ranked by
+    // (townspeople + kSeatRural x people) x hierarchy, x kSeatWriting if they
+    // know writing and x kSeatBureaucracy with scribes; strongest first, each
+    // not already held (control at least kMinControl) by a stronger seat
+    // becomes the seat of a successor that takes the cells it holds best, as
+    // far as its own administration reaches. Seats with writing are successor
+    // states, the others chiefdoms; cells no seat holds fall back to
+    // villages. A chiefdom of at least kSplitChiefdomCells (level-5) cells
+    // breaks the same way into smaller chiefdoms; a smaller one dissolves.
     static constexpr double kCoreControl = 0.5;
-    static constexpr double kSuccessorKm = 250.0;
+    static constexpr double kSeatRural = 0.05;
+    static constexpr double kSeatWriting = 4.0;
+    static constexpr double kSeatBureaucracy = 2.0;
+    static constexpr std::size_t kSplitChiefdomCells = 3;
     static constexpr double kSuccessorStability = 0.5;
     // Nomad confederations form on open pasture (pasture quality at least
     // kNomadPasture: grassland, shrubland, savanna) where herds give at least

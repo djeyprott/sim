@@ -496,6 +496,11 @@ void PolitySystem::step(StepContext& ctx) {
     }
 
     // ---- Break-up of fragile polities, and succession disputes.
+    std::size_t writing_k = 64, bureaucracy_k = 64;
+    for (std::size_t k = 0; k < content.techniques.size() && k < 64; ++k) {
+        if (content.techniques[k].id == "writing") writing_k = k;
+        if (content.techniques[k].id == "bureaucracy") bureaucracy_k = k;
+    }
     for (std::size_t id = 1; id < np; ++id) {
         if (s.polities[id].ended != kNever) continue;
         const bool state = polity_has_writing(w, s, static_cast<std::uint32_t>(id));
@@ -529,38 +534,67 @@ void PolitySystem::step(StepContext& ctx) {
         pol.fate_cause = cause;
         s.events.push_back({ctx.tick, EventType::PolityEnded, capital, static_cast<std::int64_t>(id)});
         for (CellId c : mine) s.polity_of[c] = 0;
-        if (!state) continue;  // a chiefdom dissolves into its villages
-        // A state leaves a core under its old capital and successors where
-        // towns can hold a following.
+        // A small chiefdom dissolves into its villages; a large one breaks
+        // into smaller chiefdoms around its largest villages.
+        if (!state && mine.size() < std::max<std::size_t>(2, w.cells_for(kSplitChiefdomCells))) continue;
+        // A state leaves a core under its old capital. Elsewhere the realm
+        // breaks into successors by how advanced each place is: the most
+        // urban and literate seats choose first and hold as far as their own
+        // administration reaches (a great city with scribes a province, a
+        // market town its valley), lesser places with farming and chiefs
+        // become chiefdoms, and the rest fall back to villages.
         std::vector<CellId> core, rest;
-        for (CellId c : mine) (control_of(id, c) >= kCoreControl || c == capital ? core : rest).push_back(c);
-        std::vector<CellId> seats;
-        std::stable_sort(rest.begin(), rest.end(),
-                         [&](CellId a, CellId b) { return s.cell_population[a] > s.cell_population[b]; });
+        for (CellId c : mine) (state && (control_of(id, c) >= kCoreControl || c == capital) ? core : rest).push_back(c);
+        struct Seat {
+            CellId cell;
+            double score, reach;
+        };
+        std::vector<Seat> candidates;
         for (CellId c : rest) {
             const double farming = s.env.farming.empty() ? 0.0 : s.env.farming[c];
-            const double density = static_cast<double>(s.cell_population[c]) / w.grid.area_km2(c);
-            if (farming < kMinFarming || density < kMinDensity || cell_trait(s, c, i_hierarchy) < kMinHierarchy) continue;
-            bool near = w.grid.distance_km(c, capital) < kSuccessorKm;
-            for (CellId seat : seats) near = near || w.grid.distance_km(c, seat) < kSuccessorKm;
-            if (!near) seats.push_back(c);
+            const double people = static_cast<double>(s.cell_population[c]);
+            const double density = people / w.grid.area_km2(c);
+            const double hierarchy = cell_trait(s, c, i_hierarchy);
+            if (farming < kMinFarming || density < kMinDensity || hierarchy < kMinHierarchy) continue;
+            const std::uint64_t known = techniques_in(s, c);
+            const bool literate = writing_k < 64 && ((known >> writing_k) & 1u);
+            const bool scribes = bureaucracy_k < 64 && ((known >> bureaucracy_k) & 1u);
+            const double town = s.urban.empty() ? 0.0 : s.urban[c] * people;
+            const double score = (town + kSeatRural * people) * hierarchy * (literate ? kSeatWriting : 1.0) *
+                                 (scribes ? kSeatBureaucracy : 1.0);
+            candidates.push_back({c, score, polity_reach_km(w, s, c) * (nomadic ? kNomadReach : 1.0)});
         }
-        const std::uint32_t heir = found(capital, static_cast<std::uint32_t>(id), nomadic);
-        s.polities[heir].stability = kSuccessorStability;
-        for (CellId c : core) s.polity_of[c] = heir;
+        std::stable_sort(candidates.begin(), candidates.end(), [](const Seat& a, const Seat& b) {
+            return a.score > b.score || (a.score == b.score && a.cell < b.cell);
+        });
+        // Greedily, strongest first: a place another seat already holds
+        // (control at least kMinControl) follows that seat.
+        std::vector<Seat> seats;
+        auto held_by = [&](CellId c) {
+            std::size_t best = seats.size();
+            double most = 0.0;
+            for (std::size_t i = 0; i < seats.size(); ++i) {
+                const double ctl = polity_control(w.grid.distance_km(seats[i].cell, c), seats[i].reach);
+                if (ctl > most) most = ctl, best = i;
+            }
+            return most >= kMinControl ? best : seats.size();
+        };
+        for (const Seat& cand : candidates) {
+            if (held_by(cand.cell) == seats.size()) seats.push_back(cand);
+        }
+        if (state) {
+            const std::uint32_t heir = found(capital, static_cast<std::uint32_t>(id), nomadic);
+            s.polities[heir].stability = kSuccessorStability;
+            for (CellId c : core) s.polity_of[c] = heir;
+        }
         std::vector<std::uint32_t> successor(seats.size());
         for (std::size_t i = 0; i < seats.size(); ++i) {
-            successor[i] = found(seats[i], static_cast<std::uint32_t>(id), nomadic);
+            successor[i] = found(seats[i].cell, static_cast<std::uint32_t>(id), nomadic);
             s.polities[successor[i]].stability = kSuccessorStability;
         }
         for (CellId c : rest) {
-            double best = kSuccessorKm;
-            std::uint32_t to = 0;
-            for (std::size_t i = 0; i < seats.size(); ++i) {
-                const double d = w.grid.distance_km(c, seats[i]);
-                if (d < best || (d == best && successor[i] < to)) best = d, to = successor[i];
-            }
-            if (to != 0) s.polity_of[c] = to;
+            const std::size_t i = held_by(c);
+            if (i < seats.size()) s.polity_of[c] = successor[i];
         }
     }
 

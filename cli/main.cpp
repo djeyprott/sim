@@ -121,9 +121,9 @@ struct Options {
                  "                 colonists and folk migrations every 500 years, the largest\n"
                  "                 movements with the chains they set off, and how the language\n"
                  "                 families' lands changed\n"
-                 "  histsim gate [--seeds N] [--level L] [--years Y]\n"
+                 "  histsim gate [--seeds N] [--seed FIRST] [--level L] [--years Y]\n"
                  "                 the M3 gate: the largest polity era by era against history,\n"
-                 "                 over seeds 1..N (default 3, 11,000 years each)\n"
+                 "                 over N seeds from FIRST (default 3 from 1, 11,000 years each)\n"
                  "  histsim timeline [--seed N] [--level L] [--years Y]\n"
                  "                 the last 60 events of the run, in words\n"
                  "  histsim figures [--seed N] [--level L] [--years Y]\n"
@@ -1145,7 +1145,7 @@ int gate(const Options& o) {
     for (std::int64_t k = 0; k < n; ++k) {
         threads.emplace_back([&, k] {
             histsim::WorldParams p = o.params;
-            p.seed = static_cast<std::uint64_t>(k + 1);
+            p.seed = o.params.seed + static_cast<std::uint64_t>(k);  // seeds --seed (default 1) onward
             Simulation sim = Simulation::create(p);
             Run& r = runs[static_cast<std::size_t>(k)];
             // Every 25 years: the largest polity's kind.
@@ -1258,7 +1258,7 @@ int gate(const Options& o) {
             std::snprintf(buf, sizeof buf, " %8s", y >= 0 ? std::to_string(y).c_str() : "-");
             inv += buf;
         }
-        std::printf("  %4lld  year %5lld  %16s%s%s  %11s%s   (largest early: %.2f Mkm^2, a %s)\n", static_cast<long long>(k + 1),
+        std::printf("  %4lld  year %5lld  %16s%s%s  %11s%s   (largest early: %.2f Mkm^2, a %s)\n", static_cast<long long>(o.params.seed) + static_cast<long long>(k),
                     static_cast<long long>(r.first_crop), "", towns.c_str(), pre.c_str(),
                     r.first_state >= 0 ? std::to_string(r.first_state).c_str() : "none", inv.c_str(), r.early,
                     r.early_kind.c_str());
