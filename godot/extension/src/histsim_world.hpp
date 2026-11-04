@@ -134,6 +134,10 @@ public:
     bool set_focus(const godot::String& mode, int64_t cell);
     // Names to write over the map: [{name, u, v, area_km2, level}, ...].
     godot::Array get_polity_labels() const;
+    // Names for a map mode: languages, families, cultures, faiths or realms
+    // where they are, in the modes that colour them; polities otherwise.
+    // Same entries as get_polity_labels (level "" and capital_u -1 for groups).
+    godot::Array get_map_labels(const godot::String& mode) const;
     // Timeline entries, newest first: [{year, kind, text, cell}, ...] of a
     // kind ("" all), about a polity (0 any), at a cell (-1 anywhere).
     godot::Array get_timeline(const godot::String& kind, int64_t polity, int64_t cell, int64_t max_entries) const;

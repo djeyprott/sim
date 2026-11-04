@@ -63,7 +63,11 @@ A map mode (view/src/map_modes.cpp) reads one value per cell and maps it to a
 color, with a legend. Magnitudes use one hue from light to dark; signed
 quantities (temperature) use a blue-red diverging scale with a neutral
 midpoint; ocean and empty land are neutral grays so they never read as data.
-Every mode added there shows up in the viewer and `histsim map` automatically.
+Every mode added there shows up in the viewer and `histsim map` automatically. Names are written over the map by mode (`map_labels`): the language,
+language family, culture and religion modes name each connected stretch of
+land where a group is the main one (150,000 km² or more; a group in two
+separate regions is named in each), the realms mode names each realm (a power
+and its subjects); every other mode names states, empires and large realms.
 
 ### Systems
 

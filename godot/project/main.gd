@@ -234,7 +234,7 @@ func _prepare_map() -> void:
 	render_cooldown = RENDER_INTERVAL
 	if timeline_panel.visible:
 		timeline_panel.refresh(world, selected_cell)
-	var labels: Array = world.get_polity_labels() if names_check.button_pressed else []
+	var labels: Array = world.get_map_labels(mode_id) if names_check.button_pressed else []
 	flat_labels.set_labels(labels)
 	_labels_now = labels
 	for l in copy_labels:
@@ -1228,7 +1228,7 @@ func _build_side_panel() -> Control:
 		render_cooldown = 0.0)
 	names_check = CheckBox.new()
 	names_check.text = "Names"
-	names_check.tooltip_text = "Names of states, empires and other large realms"
+	names_check.tooltip_text = "Names over the map: languages, language families, cultures, faiths or realms in those modes; states, empires and other large realms in the others"
 	names_check.button_pressed = true
 	names_check.toggled.connect(func(_on: bool) -> void:
 		map_dirty = true
