@@ -83,8 +83,13 @@ public:
     // season are worked out again, so a cooling drives wheat south and
     // shortens the summers, and a warming opens the north and parches the
     // dry margins.
+    // Local varieties are bred for the swings of the climate they grow in:
+    // only the part of a lasting change beyond kCropToleranceC (or
+    // kCropRainTolerance of the rain) changes what grows.
     static constexpr double kCropShiftStepC = 0.25;
     static constexpr double kCropRainStep = 0.025;
+    static constexpr double kCropToleranceC = 1.0;
+    static constexpr double kCropRainTolerance = 0.1;
     // Mixed crops, famine foods and kin make good the harvest buffer's share
     // of a shortfall against what people are used to, but at most this much
     // of a normal harvest: enough for a bad year, not for a climate shock
@@ -126,8 +131,8 @@ double pasture_quality(Biome biome);
     return total > 0.0 ? (p.crops > 0.0 ? 0.5 * p.herds : p.herds) / total : 0.0;
 }
 
-// This year's harvest relative to a normal year (the climate people are
-// used to), from rainfall and warmth; mixed crops, granaries and kin make
+// This year's harvest relative to a normal year (the climate the crops are
+// bred for: Environment::crop_shift_c), from rainfall and warmth; mixed crops, granaries and kin make
 // good part of a shortfall (at most kMaxMadeGood of a normal harvest).
 double harvest_factor(const World& world, const SimState& state, CellId cell);
 

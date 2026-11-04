@@ -111,11 +111,12 @@ double raisable(const World& w, const SimState& s, CellId c, std::size_t sp) {
 
 double harvest_factor(const World& w, const SimState& s, CellId c) {
     if (!w.is_land[c]) return 0.0;
-    // Against the climate people are used to: a lasting change is felt in
-    // what grows (farm_parts), a sudden one in the harvest.
-    const bool normals = s.env.normal_shift_c.size() == w.cell_count();
-    const double usual_rain = w.precipitation_mm[c] * (normals ? s.env.normal_rain[c] : 1.0);
-    const double usual_temp = w.temperature_c[c] + (normals ? s.env.normal_shift_c[c] : 0.0);
+    // Against the climate the crops are bred for (the world's own, moved by
+    // a lasting change beyond the varieties' tolerance): a lasting change is
+    // felt in what grows (farm_parts), a sudden one in the harvest.
+    const bool bred = s.env.crop_shift_c.size() == w.cell_count() && s.env.crop_shift_c[c] < 1.0e8;
+    const double usual_rain = w.precipitation_mm[c] * (bred ? s.env.crop_rain[c] : 1.0);
+    const double usual_temp = w.temperature_c[c] + (bred ? s.env.crop_shift_c[c] : 0.0);
     const double rain = std::clamp(s.env.precipitation_mm[c] / std::max(1.0, usual_rain), 0.4, 1.15);
     const double warmth = std::max(0.3, 1.0 - 0.12 * std::fabs(s.env.temperature_c[c] - usual_temp));
     // Below a normal year, part of the shortfall is made up by mixing crops
@@ -154,8 +155,12 @@ void FarmingSystem::step(StepContext& ctx) {
         parallel_for(n, [&](std::size_t c_begin, std::size_t c_end) {
         for (CellId c = static_cast<CellId>(c_begin); c < c_end; ++c) {
             if (!w.is_land[c]) continue;
-            const double shift = normals ? kCropShiftStepC * std::floor(s.env.normal_shift_c[c] / kCropShiftStepC + 0.5) : 0.0;
-            const double rain = normals ? kCropRainStep * std::floor(s.env.normal_rain[c] / kCropRainStep + 0.5) : 1.0;
+            auto beyond = [](double x, double tolerance) { return x > tolerance ? x - tolerance : (x < -tolerance ? x + tolerance : 0.0); };
+            const double shift =
+                normals ? kCropShiftStepC * std::floor(beyond(s.env.normal_shift_c[c], kCropToleranceC) / kCropShiftStepC + 0.5) : 0.0;
+            const double rain =
+                normals ? 1.0 + kCropRainStep * std::floor(beyond(s.env.normal_rain[c] - 1.0, kCropRainTolerance) / kCropRainStep + 0.5)
+                        : 1.0;
             if (shift == s.env.crop_shift_c[c] && rain == s.env.crop_rain[c]) continue;
             s.env.crop_shift_c[c] = shift;
             s.env.crop_rain[c] = rain;
