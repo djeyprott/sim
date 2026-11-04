@@ -326,7 +326,9 @@ TEST(polity_provinces_governors_and_revolts) {
             CHECK(pv.became < s.polities.size());
             const Polity& rebel = s.polities[pv.became];
             CHECK_EQ(rebel.parent, pv.polity);
-            CHECK_EQ(rebel.founder, pv.governor);
+            // Founded by its governor, or by the leader of a peasant uprising.
+            CHECK(rebel.founder == pv.governor ||
+                  (rebel.founder != 0 && (s.figures[rebel.founder].roles & kRoleRebel)));
             // The governor reigned, unless he died before his first year.
             if (rebel.ruler != 0 && rebel.founder != 0 && s.rulers[rebel.ruler].figure == rebel.founder) {
                 CHECK(s.figures[rebel.founder].roles & kRoleRuler);
@@ -342,4 +344,35 @@ TEST(polity_provinces_governors_and_revolts) {
     }
     CHECK(living > 0);
     CHECK(revolts > 0);
+}
+
+// Peasant uprisings: each has a leader (a figure) and an outcome; a
+// province that broke away is a polity founded by the leader; unrest
+// stays in 0-1; the dead are counted.
+TEST(polity_peasant_uprisings) {
+    WorldParams p;
+    p.grid_level = 4;
+    Simulation sim = Simulation::create(p);
+    sim.step_years(5000);
+    const SimState& s = sim.state();
+    CHECK(!s.uprisings.empty());
+    std::size_t crushed = 0, won = 0;
+    for (const Uprising& u : s.uprisings) {
+        CHECK(u.polity != 0 && u.polity < s.polities.size());
+        CHECK(u.leader != 0 && u.leader < s.figures.size());
+        CHECK(s.figures[u.leader].roles & kRoleRebel);
+        CHECK(u.rebels > 0);
+        CHECK(u.dead >= 0);
+        if (u.outcome == UprisingOutcome::Crushed) ++crushed;
+        if (u.outcome == UprisingOutcome::BrokeAway) {
+            ++won;
+            CHECK(u.became != 0 && u.became < s.polities.size());
+            CHECK_EQ(s.polities[u.became].founder, u.leader);
+            CHECK_EQ(s.polities[u.became].parent, u.polity);
+        }
+    }
+    CHECK(crushed > 0);
+    for (const Polity& q : s.polities) CHECK(q.unrest >= 0.0 && q.unrest <= 1.0);
+    for (const Province& v : s.provinces) CHECK(v.unrest >= 0.0 && v.unrest <= 1.0);
+    CHECK_EQ(s.ledger.initial_population + s.ledger.births - s.ledger.deaths + s.ledger.added, s.total_population());
 }

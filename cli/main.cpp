@@ -100,8 +100,8 @@ struct Options {
                  "                 crowding temperature rainfall rain_season growing soil\n"
                  "                 species capacity game temp_anomaly median_age language\n"
                  "                 language_family culture farming domesticates disease\n"
-                 "                 technology polity towns realms war stability provinces trade\n"
-                 "                 resources\n"
+                 "                 technology polity towns realms war stability provinces unrest\n"
+                 "                 trade resources\n"
                  "                 (polity borders are drawn on all, trade routes on trade\n"
                  "                 and resources, the last 50 years' folk migrations on\n"
                  "                 population, language, language_family and culture)\n"
@@ -1066,17 +1066,18 @@ int figures(const Options& o) {
     apply_due_now(sim, o, true);
     advance(sim, o.years, o, true);
     const histsim::SimState& s = sim.state();
-    std::size_t living = 0, by_role[9] = {};
+    std::size_t living = 0, by_role[10] = {};
     for (const histsim::Figure& f : s.figures) {
         if (f.id == 0) continue;
         living += histsim::figure_alive(f, s.tick) ? 1 : 0;
-        for (int b = 0; b < 9; ++b) by_role[b] += (f.roles >> b) & 1u;
+        for (int b = 0; b < 10; ++b) by_role[b] += (f.roles >> b) & 1u;
     }
-    static const char* const kRoleNames[9] = {"rulers", "consorts", "royal children", "claimants",
-                                              "usurpers", "inventors", "teachers of faiths", "founders of realms", "governors"};
+    static const char* const kRoleNames[10] = {"rulers", "consorts", "royal children", "claimants",
+                                              "usurpers", "inventors", "teachers of faiths", "founders of realms", "governors",
+                                               "rebel leaders"};
     std::printf("%zu figures recorded after %lld years (%zu alive):\n", s.figures.empty() ? 0 : s.figures.size() - 1,
                 static_cast<long long>(sim.year()), living);
-    for (int b = 0; b < 9; ++b) std::printf("  %7zu %s\n", by_role[b], kRoleNames[b]);
+    for (int b = 0; b < 10; ++b) std::printf("  %7zu %s\n", by_role[b], kRoleNames[b]);
     std::printf("\nNotable figures now:\n");
     for (std::uint32_t id : histsim::view::notable_figures(sim, 16)) {
         const auto page = histsim::view::figure_page(sim, id);

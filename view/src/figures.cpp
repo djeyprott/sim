@@ -99,6 +99,8 @@ FigurePage figure_page(const Simulation& sim, std::uint32_t id) {
         sub = "Teacher of a faith";
     } else if (f.roles & kRoleInventor) {
         sub = "Inventor";
+    } else if ((f.roles & kRoleRebel) && !(f.roles & kRoleRuler)) {
+        sub = "Leader of a peasant uprising";
     } else if (f.roles & kRoleGovernor) {
         sub = "Governor";
         for (const Province& pv : s.provinces) {
@@ -156,6 +158,17 @@ FigurePage figure_page(const Simulation& sim, std::uint32_t id) {
             page.life.push_back({"Invented", sim.world().content->techniques[inv.technique].name + ", " + year_text(inv.tick), 0,
                                  inv.cell});
         }
+    }
+    for (const Uprising& u : s.uprisings) {
+        if (u.leader != id) continue;
+        const std::string where = u.province != 0 && u.province < s.provinces.size() ? s.provinces[u.province].name
+                                                                                     : "the crown's land";
+        const char* how = u.outcome == UprisingOutcome::Crushed     ? "crushed"
+                          : u.outcome == UprisingOutcome::BrokeAway ? "the province broke away"
+                                                                    : "overthrew the dynasty";
+        page.life.push_back({"Rose", std::to_string(u.rebels) + " peasants against " + polity_name(s, u.polity) + " in " + where +
+                                         ", " + year_text(u.tick) + "; " + how,
+                             0, u.cell});
     }
     for (const Province& pv : s.provinces) {
         if (pv.governor != id) continue;
