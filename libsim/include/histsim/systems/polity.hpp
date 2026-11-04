@@ -225,8 +225,8 @@ public:
     // A seat in a fallen state reaches at least kProvinceReachKm: it held a
     // province.
     static constexpr double kProvinceReachKm = 200.0;
-    // Provinces. A polity of at least kProvinceMinCells (level-5) cells is
-    // divided into provinces seated at its largest towns at least
+    // Provinces. A state (a polity with writing) of at least
+    // kProvinceMinCells (level-5) cells is divided into provinces seated at its largest towns at least
     // kProvinceSpacingKm from the capital and from each other (ranked by
     // townspeople + kSeatRural x people); each cell belongs to the nearest
     // seat, the capital's being the crown's own. Each province has a governor

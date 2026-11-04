@@ -516,7 +516,8 @@ void PolitySystem::step(StepContext& ctx) {
         for (Province& pv : s.provinces) {
             if (pv.id == 0 || pv.ended != kNever) continue;
             const bool gone = pv.polity >= np || s.polities[pv.polity].ended != kNever || s.polity_of[pv.seat] != pv.polity ||
-                              s.polities[pv.polity].capital == pv.seat || held[pv.polity].size() < min_cells;
+                              s.polities[pv.polity].capital == pv.seat || held[pv.polity].size() < min_cells ||
+                              !polity_has_writing(w, s, pv.polity);
             if (gone) {
                 pv.ended = ctx.tick;
             } else {
@@ -530,7 +531,11 @@ void PolitySystem::step(StepContext& ctx) {
         std::vector<CellId> order;
         for (std::size_t id = 1; id < np; ++id) {
             Polity& pol = s.polities[id];
-            if (pol.ended != kNever || held[id].size() < min_cells) continue;
+            // Governed provinces need scribes: states only (chiefs rule
+            // through kin and lesser chiefs).
+            if (pol.ended != kNever || held[id].size() < min_cells || !polity_has_writing(w, s, static_cast<std::uint32_t>(id))) {
+                continue;
+            }
             provincial[id] = 1;
             // New seats at the largest towns far enough from the capital and
             // from every seat.
