@@ -27,6 +27,8 @@ constexpr std::uint32_t kRidersEntity = 0x90000000u;
 constexpr std::uint32_t kProvinceNameEntity = 0xA0000000u;
 constexpr std::uint32_t kRevoltEntity = 0xB0000000u;
 constexpr std::uint32_t kGovernorEntity = 0x10000000u;  // Stream::Figures
+constexpr std::uint32_t kUprisingEntity = 0xC0000000u;
+constexpr std::uint32_t kRebelEntity = 0x08000000u;     // Stream::Figures
 
 std::size_t trait_index(const Content& c, const char* id) {
     for (std::size_t t = 0; t < c.traits.size(); ++t) {
@@ -635,6 +637,120 @@ void PolitySystem::step(StepContext& ctx) {
         }
     }
 
+    // ---- Peasant uprisings: unrest in each province and in the crown's land
+    // of every state; the people may rise.
+    {
+        std::vector<std::uint8_t> at_war(np, 0);
+        for (const War& war : s.wars) {
+            if (war.id == 0 || war.ended != kNever) continue;
+            for (std::uint32_t a : war.attackers) if (a < np) at_war[a] = 1;
+            for (std::uint32_t d : war.defenders) if (d < np) at_war[d] = 1;
+        }
+        std::vector<std::vector<CellId>> held(np);
+        for (CellId c = 0; c < n; ++c) {
+            const std::uint32_t q = s.polity_of[c];
+            if (q != 0 && q < np) held[q].push_back(c);
+        }
+        for (std::size_t id = 1; id < np; ++id) {
+            Polity& pol0 = s.polities[id];
+            if (pol0.ended != kNever || held[id].empty() || !polity_has_writing(w, s, static_cast<std::uint32_t>(id))) {
+                pol0.unrest = 0.0;
+                continue;
+            }
+            // The regions: the crown's land (key 0) and each province.
+            std::vector<std::pair<std::uint32_t, std::vector<CellId>>> regions;
+            regions.emplace_back(0u, std::vector<CellId>{});
+            for (CellId c : held[id]) {
+                const std::uint32_t v = s.province_of.size() == n ? s.province_of[c] : 0;
+                std::size_t r = 0;
+                while (r < regions.size() && regions[r].first != v) ++r;
+                if (r == regions.size()) regions.emplace_back(v, std::vector<CellId>{});
+                regions[r].second.push_back(c);
+            }
+            for (auto& [v, region] : regions) {
+                if (region.empty()) continue;
+                Polity& pol = s.polities[id];
+                const bool crown = v == 0;
+                Province* pv = crown ? nullptr : &s.provinces[v];
+                const CellId seat = crown ? pol.capital : pv->seat;
+                // What they suffer.
+                double people = 0.0, unfed = 0.0, fed = 0.0;
+                for (CellId c : region) {
+                    const double p = static_cast<double>(s.cell_population[c]);
+                    people += p;
+                    fed += s.env.capacity[c];
+                    unfed += std::max(0.0, p - s.env.capacity[c]);
+                }
+                if (people <= 0.0) continue;
+                const double crowding = fed > 0.0 ? std::clamp((people / fed - kCrowdedFrom) / kCrowdedSpan, 0.0, 1.0) : 1.0;
+                const Cohort* lead = lead_cohort(s, seat);
+                const bool foreign = lead != nullptr && s.cultures[lead->culture].root != s.cultures[pol.culture].root;
+                const bool other_faith = !s.faith_of.empty() && s.faith_of[seat] != pol.religion;
+                const Figure* head = crown ? reigning_person(s, static_cast<std::uint32_t>(id))
+                                           : (pv->governor != 0 ? &s.figures[pv->governor] : nullptr);
+                const double ability = head != nullptr ? head->ability : 0.5;
+                const double target = std::clamp(
+                    kUnrestHunger * unfed / people + kUnrestCrowding * crowding +
+                        (at_war[id] ? kUnrestAtWar : 0.0) + kUnrestWar * std::min(1.0, pol.shock) +
+                        kUnrestPlague * pol.pressure[static_cast<std::size_t>(Pressure::Epidemic)] +
+                        (pol.bond == Bond::Tributary ? kUnrestTribute : 0.0) + (foreign ? kUnrestForeign : 0.0) +
+                        (other_faith ? kUnrestFaith : 0.0) + kUnrestInept * (0.5 - ability),
+                    0.0, 1.0);
+                double& unrest = crown ? pol.unrest : pv->unrest;
+                unrest += kUnrestRate * (target - unrest);
+                if (unrest <= kRiseAbove || pol.rebel != 0) continue;
+                RngStream rng = ctx.rng(Stream::Polity, kUprisingEntity | (static_cast<std::uint32_t>(id) << 8) | (v & 0xffu));
+                if (rng.uniform() >= kRise * (unrest - kRiseAbove) / (1.0 - kRiseAbove)) continue;
+                // They rise. Rebels against the realm's force there.
+                const double rebels = people * unrest * kRebelShare;
+                const double force = kGarrison * strength[id] * control_of(id, seat) * (0.5 + pol.stability) *
+                                     (has_institution(pol.institutions, Institution::Army) ? kArmyGarrison : 1.0);
+                Uprising u;
+                u.tick = ctx.tick;
+                u.polity = static_cast<std::uint32_t>(id);
+                u.province = v;
+                u.cell = seat;
+                u.rebels = static_cast<std::int64_t>(rebels);
+                RngStream fr = ctx.rng(Stream::Figures, kRebelEntity | static_cast<std::uint32_t>(s.uprisings.size() & 0x07ffffffu));
+                u.leader = record_person(s, content, seat, ctx.tick, 20, 45, kRoleRebel, fr);
+                s.figures[u.leader].polity = static_cast<std::uint32_t>(id);
+                const bool crushed = rng.uniform() < force / (force + rebels);
+                const double die = crushed ? kCrushDeaths : kRebelDeaths;
+                for (CellId c : region) u.dead += kill_in_strife(s, c, die, rng);
+                if (crushed) {
+                    u.outcome = UprisingOutcome::Crushed;
+                    unrest *= kCrushCalm;
+                    pol.stability = std::max(0.0, pol.stability - kUprisingShock);
+                } else if (crown || rebels > kOverthrowRatio * force) {
+                    // The dynasty falls; the leader takes the throne next year.
+                    u.outcome = UprisingOutcome::Overthrew;
+                    pol.rebel = u.leader;
+                    unrest *= kCrushCalm;
+                    pol.stability = std::max(0.0, pol.stability - kUprisingWinShock);
+                } else {
+                    // The province goes its own way under the leader.
+                    u.outcome = UprisingOutcome::BrokeAway;
+                    const bool nomadic = pol.nomadic;
+                    const std::uint32_t free = found(seat, static_cast<std::uint32_t>(id), nomadic);
+                    s.polities[free].founder = u.leader;
+                    for (CellId c : region) {
+                        if (s.polity_of[c] != id) continue;
+                        s.polity_of[c] = free;
+                        if (s.province_of.size() == n) s.province_of[c] = 0;
+                    }
+                    s.provinces[v].ended = ctx.tick;
+                    s.provinces[v].became = free;
+                    u.became = free;
+                    start_war(w, s, ctx.tick, free, static_cast<std::uint32_t>(id), WarGoal::Independence);
+                    Polity& realm = s.polities[id];
+                    realm.stability = std::max(0.0, realm.stability - kUprisingWinShock);
+                }
+                s.uprisings.push_back(u);
+                s.events.push_back({ctx.tick, EventType::PeasantUprising, seat, static_cast<std::int64_t>(s.uprisings.size() - 1)});
+            }
+        }
+    }
+
     // ---- Break-up of fragile polities, and succession disputes.
     std::size_t writing_k = 64, bureaucracy_k = 64;
     for (std::size_t k = 0; k < content.techniques.size() && k < 64; ++k) {
@@ -1208,6 +1324,37 @@ void RulerSystem::step(StepContext& ctx) {
             pol.ruler = r;
             person_of_reign(r, kRoleFounder, 0, 0);
             continue;
+        }
+        // A rebel leader whose people overthrew the dynasty takes the throne.
+        if (pol.rebel != 0) {
+            const std::uint32_t leader = pol.rebel < s.figures.size() ? pol.rebel : 0;
+            pol.rebel = 0;
+            if (leader != 0 && figure_alive(s.figures[leader], tick)) {
+                Ruler& fallen = s.rulers[pol.ruler];
+                fallen.end = ReignEnd::Usurped;
+                fallen.reign_end = tick;
+                const std::uint32_t fallen_house = fallen.dynasty;
+                outlive_reign(fallen);
+                const std::uint32_t r = crown(id, 0, 30, rng);
+                Ruler& ru = s.rulers[r];
+                Figure& f = s.figures[leader];
+                ru.name = f.name;
+                ru.number = 1;
+                ru.born = f.born;
+                ru.ability = f.ability;
+                ru.martial = f.martial;
+                found_house(id, r);
+                f.ruler = r;
+                f.roles |= kRoleRuler | kRoleFounder | kRoleUsurper;
+                f.dynasty = s.rulers[r].dynasty;
+                f.died = kNever;
+                f.goal = figure_goal(f);
+                s.rulers[r].figure = leader;
+                pol.ruler = r;
+                end_house_if_gone(fallen_house);
+                s.events.push_back({tick, EventType::Usurpation, pol.capital, static_cast<std::int64_t>(r)});
+                continue;
+            }
         }
         Ruler& old = s.rulers[pol.ruler];
         const int age = ruler_age(old, tick);

@@ -848,4 +848,6 @@ void WarSystem::step(StepContext& ctx) {
     }
 }
 
+std::int64_t kill_in_strife(SimState& s, CellId c, double share, RngStream& rng) { return kill(s, c, share, false, rng); }
+
 }  // namespace histsim

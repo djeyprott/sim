@@ -257,6 +257,50 @@ public:
     static constexpr double kRevoltShock = 0.05;
     static constexpr double kRevoltContagion = 0.05;
     static constexpr double kStayLoyal = 0.6;
+    // Peasant uprisings, in states. Each province, and the crown's own land,
+    // has an unrest that moves kUnrestRate of the way a year toward
+    //   kUnrestHunger x (share of its people beyond what its land feeds) +
+    //   kUnrestCrowding x (people / what the land feeds - kCrowdedFrom) /
+    //   kCrowdedSpan (0-1: land hunger, as the land fills up) +
+    //   kUnrestAtWar (at war) + kUnrestWar x the recent toll of war (shock) +
+    //   kUnrestPlague x epidemic pressure +
+    //   kUnrestTribute (tribute paid to an overlord) + kUnrestForeign
+    //   (rulers of another people) + kUnrestFaith (and faith) +
+    //   kUnrestInept x (0.5 - its governor's, or on the crown's land the
+    //   ruler's, ability).
+    // Above kRiseAbove, the people rise with chance kRise x (unrest -
+    // kRiseAbove) / (1 - kRiseAbove) a year, kRebelShare x unrest of them
+    // taking up arms against a force of kGarrison x the realm's strength x
+    // the control at the seat x (0.5 + stability) (x kArmyGarrison with a
+    // standing army). Crushed (chance force / (force + rebels)), kCrushDeaths
+    // of the region's people die, unrest falls by kCrushCalm and the realm
+    // loses kUprisingShock stability. Victorious, kRebelDeaths die; a
+    // province breaks away under the rebel leader, and on the crown's land,
+    // or with kOverthrowRatio times the force, the dynasty falls and the
+    // leader takes the throne; the realm loses kUprisingWinShock stability.
+    static constexpr double kUnrestRate = 0.2;
+    static constexpr double kUnrestHunger = 1.0;
+    static constexpr double kUnrestWar = 0.3;
+    static constexpr double kUnrestCrowding = 0.3;
+    static constexpr double kCrowdedFrom = 0.85;
+    static constexpr double kCrowdedSpan = 0.3;
+    static constexpr double kUnrestAtWar = 0.1;
+    static constexpr double kUnrestPlague = 0.3;
+    static constexpr double kUnrestTribute = 0.15;
+    static constexpr double kUnrestForeign = 0.15;
+    static constexpr double kUnrestFaith = 0.1;
+    static constexpr double kUnrestInept = 0.2;
+    static constexpr double kRiseAbove = 0.3;
+    static constexpr double kRise = 0.08;
+    static constexpr double kRebelShare = 0.15;
+    static constexpr double kGarrison = 0.1;
+    static constexpr double kArmyGarrison = 1.5;
+    static constexpr double kCrushDeaths = 0.02;
+    static constexpr double kCrushCalm = 0.5;
+    static constexpr double kUprisingShock = 0.03;
+    static constexpr double kRebelDeaths = 0.01;
+    static constexpr double kOverthrowRatio = 2.0;
+    static constexpr double kUprisingWinShock = 0.1;
     static constexpr double kSuccessorStability = 0.5;
     // Nomad confederations form on open pasture (pasture quality at least
     // kNomadPasture: grassland, shrubland, savanna) where herds give at least
