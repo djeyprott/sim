@@ -32,6 +32,14 @@ Tick draw_death(Tick born, Tick now, RngStream& rng);
 std::uint32_t record_person(SimState& s, const Content& content, CellId home, Tick now, int min_age, int max_age,
                             std::uint16_t roles, RngStream& rng, const std::string& name = {});
 
+// The person ruling a polity now, or null.
+const Figure* reigning_person(const SimState& s, std::uint32_t polity);
+
+// How a ruler's trait scales a chance: 0.5 + trait (1 on average, from 0.5
+// to 1.5), or 1 without a ruler. Traits are uniform, so rates stay the same
+// overall and only differ from reign to reign.
+inline double trait_factor(const Figure* f, double Figure::*trait) { return f != nullptr ? 0.5 + f->*trait : 1.0; }
+
 // What a figure most wants, from its roles and traits.
 FigureGoal figure_goal(const Figure& f);
 

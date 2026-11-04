@@ -423,20 +423,32 @@ piety, ambition; a ruler's ability and martial are its reign's) and a goal
 drawn from them (conquest, a prosperous realm, faith, power, knowledge or
 the family's future).
 
-Figures are a record consistent with the mechanics, not a new mechanic yet:
-they draw from their own random stream (`Stream::Figures`), so a run with
-them is the same as one without in everything else (only the saved state and
-its hash grow). A ruler's family is filled in when the ruler dies: the heir
-the succession rules chose becomes one of the children (born when the ruler
-was 20–35, or, for a ruler who died a child, a younger sibling or a
-kinsman), with a spouse and up to three siblings besides. Lives are drawn
-from the life table when a figure is recorded (times 0.8: they eat well), so
-nothing is updated year by year; a ruler's death is RulerSystem's. Chiefs'
-families are not recorded: thousands of chiefdoms rise and fall, and their
-kin would swamp the record (at level 5 about 43,000 figures by year 7,000,
-one per reign or so, adding a quarter to a snapshot). Next: traits and goals
-nudging rulers' choices, marriages between houses, and generals and
-merchants leading the armies and caravans to come.
+Figures are recorded from their own random stream (`Stream::Figures`), so
+recording them changes nothing else. A ruler's family is filled in when the
+ruler dies: the heir the succession rules chose becomes one of the children
+(born when the ruler was 20–35, or, for a ruler who died a child, a younger
+sibling or a kinsman), with a spouse and up to three siblings besides. Lives
+are drawn from the life table when a figure is recorded (times 0.8: they eat
+well), so nothing is updated year by year; a ruler's death is RulerSystem's.
+Chiefs' families are recorded only when their succession is disputed:
+thousands of chiefdoms rise and fall, and their kin would swamp the record
+(at level 5 about 43,000 figures by year 7,000, one per reign or so, adding a
+quarter to a snapshot).
+
+What rulers are like steers what their realms do. Each trait scales a chance
+by 0.5 + trait (from 0.5 to 1.5, 1 on average, so overall rates and the M3
+calibration hold and only reigns differ): ambition the chance of declaring
+war (beside martial, which did so before); piety the founding of a temple
+priesthood and the pull of the rulers' faith on their subjects; ability the
+founding of councils and law codes (beside steadying the realm, as before);
+martial the founding of a standing army. In a disputed succession the
+claimant is the heir's most ambitious grown sibling (else a kinsman), and the
+chance that the claim tears the realm apart is scaled by the claimant's
+ambition. Over 6,000 years at level 4, the most ambitious rulers start about
+1.5 times as many wars per year of reign as the least, the most pious found
+temples 2.4 times as often, and claimants who broke realms average 0.62 in
+ambition against 0.5 for all. Next: marriages between houses, and generals
+and merchants leading the armies and caravans to come.
 
 `histsim figures` counts them and lists the most notable now (the rulers of
 the largest realms, teachers of faiths, the latest inventors); `histsim

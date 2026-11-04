@@ -246,7 +246,9 @@ void ReligionSystem::step(StepContext& ctx) {
             const std::uint32_t g = s.polities[ruler].religion;
             if (g != 0 && g != f && !kinds[s.religions[g].kind].ethnic) {
                 const double control = polity_control(w.grid.distance_km(s.polities[ruler].capital, c), reach[ruler]);
-                add(g, kRulerPull * control * people * kinds[s.religions[g].kind].appeal);
+                // A pious ruler presses the faith harder.
+                add(g, kRulerPull * control * people * kinds[s.religions[g].kind].appeal *
+                           trait_factor(reigning_person(s, ruler), &Figure::piety));
             }
         }
         if (pulls.empty()) continue;

@@ -481,7 +481,13 @@ void PolitySystem::step(StepContext& ctx) {
                         break;
                     case Institution::Count: break;
                 }
-                if (qualifies && rng.uniform() < Institutions::kFound) {
+                // The ruler's leanings: a pious one builds up the priesthood,
+                // an able one councils and laws, a martial one an army.
+                const Figure* king = reigning_person(s, static_cast<std::uint32_t>(id));
+                const double leaning = inst == Institution::Temple ? trait_factor(king, &Figure::piety)
+                                       : inst == Institution::Army ? trait_factor(king, &Figure::martial)
+                                                                   : trait_factor(king, &Figure::ability);
+                if (qualifies && rng.uniform() < Institutions::kFound * leaning) {
                     pol.institutions |= bit;
                     s.events.push_back({ctx.tick, EventType::InstitutionFounded, pol.capital, tag});
                 }
@@ -991,29 +997,29 @@ void RulerSystem::step(StepContext& ctx) {
                                (has_institution(pol.institutions, Institution::Council) ? Institutions::kCouncilDispute : 1.0);
         const double disputed = std::min(1.0, kDispute * (1.5 - pol.stability) * (child ? 2.0 : 1.0) * settled);
         if (rng.uniform() < disputed) {
-            // Disputed: the realm may break apart; else another house wins.
+            // Disputed. The claimant: the heir's most ambitious grown sibling,
+            // else a kinsman. The more ambitious the claimant, the likelier
+            // the realm breaks apart over the claim; else another house wins.
+            const Tick heir_born = tick - static_cast<Tick>(heir_age) * kTicksPerYear;
+            const auto kids = grown(old_figure) ? family_of(old_figure, heir_born, fr) : std::vector<std::uint32_t>{};
+            std::uint32_t claimant = 0;
+            for (std::uint32_t k : kids) {
+                const Figure& c = s.figures[k];
+                if (!figure_alive(c, tick) || figure_age(c, tick) < kAdultAge) continue;
+                if (claimant == 0 || c.ambition > s.figures[claimant].ambition) claimant = k;
+            }
+            Figure kinsman = new_person(fr, pol, tick - static_cast<Tick>((25.0 + fr.uniform() * 25.0) * kTicksPerYear),
+                                        false, old_house, 0);
+            kinsman.died = draw_death(kinsman.born, tick, fr);
+            const double ambition = claimant != 0 ? s.figures[claimant].ambition : kinsman.ambition;
             const double breakup = polity_has_writing(w, s, id) ? kBreakupState : kBreakupChiefdom;
-            if (rng.uniform() < breakup) {
+            if (rng.uniform() < breakup * (0.5 + ambition)) {
                 pol.contested = true;
                 const std::uint32_t heir = crown(id, old_house, heir_age, rng);
                 pol.ruler = heir;
-                // The heir's eldest grown sibling, or a kinsman, claims the throne.
-                const auto kids = grown(old_figure) ? family_of(old_figure, s.rulers[heir].born, fr) : std::vector<std::uint32_t>{};
                 const auto [father, mother] = parents_of_heir(old_figure, s.rulers[heir].born);
                 person_of_reign(heir, kRoleRoyalKin, father, mother);
-                std::uint32_t claimant = 0;
-                for (std::uint32_t k : kids) {
-                    if (figure_alive(s.figures[k], tick) && figure_age(s.figures[k], tick) >= kAdultAge) {
-                        claimant = k;
-                        break;
-                    }
-                }
-                if (claimant == 0) {
-                    Figure f = new_person(fr, pol, tick - static_cast<Tick>((25.0 + fr.uniform() * 25.0) * kTicksPerYear),
-                                          false, old_house, 0);
-                    f.died = draw_death(f.born, tick, fr);
-                    claimant = add_figure(s, std::move(f));
-                }
+                if (claimant == 0) claimant = add_figure(s, std::move(kinsman));
                 s.figures[claimant].roles |= kRoleClaimant;
                 s.figures[claimant].goal = figure_goal(s.figures[claimant]);
                 s.events.push_back({tick, EventType::SuccessionDisputed, pol.capital, static_cast<std::int64_t>(claimant)});
@@ -1023,7 +1029,6 @@ void RulerSystem::step(StepContext& ctx) {
             found_house(id, usurper);
             pol.ruler = usurper;
             end_house_if_gone(old_house);
-            if (grown(old_figure) && polity_has_writing(w, s, id)) family_of(old_figure, kNever, fr);
             person_of_reign(usurper, kRoleUsurper | kRoleFounder, 0, 0);
             s.events.push_back({tick, EventType::Usurpation, pol.capital, static_cast<std::int64_t>(usurper)});
             continue;
