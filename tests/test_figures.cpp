@@ -105,6 +105,26 @@ TEST(figures_claimants_inventors_and_prophets) {
     }
 }
 
+// Rulers' traits scale their realms' chances: the reigning person is found,
+// and the factor runs from 0.5 to 1.5 (1 without a ruler).
+TEST(figures_rulers_traits_scale_chances) {
+    const SimState& s = run().state();
+    std::size_t found = 0;
+    for (std::uint32_t id = 1; id < s.polities.size(); ++id) {
+        const Polity& p = s.polities[id];
+        const Figure* f = reigning_person(s, id);
+        if (p.ended != kNever || p.ruler == 0) continue;
+        CHECK(f != nullptr);
+        if (f == nullptr) continue;
+        CHECK_EQ(f->ruler, p.ruler);
+        const double k = trait_factor(f, &Figure::ambition);
+        CHECK(k >= 0.5 && k <= 1.5);
+        ++found;
+    }
+    CHECK(found > 3);
+    CHECK_EQ(trait_factor(nullptr, &Figure::piety), 1.0);
+}
+
 TEST(figures_are_saved_and_restored) {
     const Simulation& sim = run();
     const std::string path = "figures_roundtrip.hsim";

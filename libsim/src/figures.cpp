@@ -57,6 +57,14 @@ std::uint32_t record_person(SimState& s, const Content& content, CellId home, Ti
     return add_figure(s, std::move(f));
 }
 
+const Figure* reigning_person(const SimState& s, std::uint32_t polity) {
+    if (polity == 0 || polity >= s.polities.size()) return nullptr;
+    const std::uint32_t r = s.polities[polity].ruler;
+    if (r == 0 || r >= s.rulers.size()) return nullptr;
+    const std::uint32_t f = s.rulers[r].figure;
+    return f != 0 && f < s.figures.size() ? &s.figures[f] : nullptr;
+}
+
 FigureGoal figure_goal(const Figure& f) {
     if (f.roles & kRoleProphet) return FigureGoal::Faith;
     if (f.roles & kRoleInventor) return FigureGoal::Knowledge;

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <vector>
 
+#include "histsim/figures.hpp"
 #include "histsim/systems/bondage.hpp"
 #include "histsim/systems/polity.hpp"
 #include "histsim/systems/technology.hpp"
@@ -734,10 +735,12 @@ void WarSystem::step(StepContext& ctx) {
             }
             const double ratio = defence > 0.0 ? power[id] / defence : 0.0;
             if (ratio < kDeclareRatio) continue;
-            // A martial ruler is readier for war, a peaceable one less so.
+            // A martial ruler is readier for war, a peaceable one less so; an
+            // ambitious one more again.
             const std::uint32_t king = s.polities[id].ruler;
             const double martial = king != 0 && king < s.rulers.size() ? s.rulers[king].martial : 0.5;
-            if (rng.uniform() < kDeclare * (0.5 + warfare) * (0.5 + martial) * std::min(2.0, ratio - 1.0)) {
+            const double ambition = trait_factor(reigning_person(s, id), &Figure::ambition);
+            if (rng.uniform() < kDeclare * (0.5 + warfare) * (0.5 + martial) * ambition * std::min(2.0, ratio - 1.0)) {
                 start_war(w, s, tick, id, b, p.nomadic && !q.nomadic ? WarGoal::Tribute : WarGoal::Conquest);
                 busy[id] = busy[b] = 1;
                 break;
