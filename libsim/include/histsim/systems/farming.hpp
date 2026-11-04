@@ -90,11 +90,6 @@ public:
     static constexpr double kCropRainStep = 0.025;
     static constexpr double kCropToleranceC = 1.0;
     static constexpr double kCropRainTolerance = 0.1;
-    // Mixed crops, famine foods and kin make good the harvest buffer's share
-    // of a shortfall against what people are used to, but at most this much
-    // of a normal harvest: enough for a bad year, not for a climate shock
-    // (and a lasting change changes the crops instead).
-    static constexpr double kMaxMadeGood = 0.2;
 };
 
 // Farmers' effects on demography and migration.
@@ -133,7 +128,7 @@ double pasture_quality(Biome biome);
 
 // This year's harvest relative to a normal year (the climate the crops are
 // bred for: Environment::crop_shift_c), from rainfall and warmth; mixed crops, granaries and kin make
-// good part of a shortfall (at most kMaxMadeGood of a normal harvest).
+// good part of a shortfall (the harvest buffer of their techniques).
 double harvest_factor(const World& world, const SimState& state, CellId cell);
 
 }  // namespace histsim

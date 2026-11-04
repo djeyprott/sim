@@ -125,7 +125,7 @@ double harvest_factor(const World& w, const SimState& s, CellId c) {
     const double f = rain * warmth;
     if (f >= 1.0) return f;
     const double buffer = technique_effects(w, c, techniques_in(s, c)).harvest_buffer;
-    return f + std::min(FarmingSystem::kMaxMadeGood, (1.0 - f) * buffer);
+    return 1.0 - (1.0 - f) * (1.0 - buffer);
 }
 
 void FarmingSystem::step(StepContext& ctx) {
