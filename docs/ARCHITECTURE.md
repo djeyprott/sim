@@ -408,6 +408,44 @@ with their subjects and allies (nomads starred); the realms map shows nomad
 confederations in browns, and the war map marks cells raided in the last 20
 years.
 
+### Historical figures
+
+Beside the many counted in cohorts, a few people are followed by name
+(`SimState::figures`), after the historical figures of Dwarf Fortress's
+legends: every ruler; for states (polities with writing), the ruler's spouse
+and the children who outlived infancy; the rival who claims a throne in a
+disputed succession (the heir's eldest grown sibling, or a kinsman); usurpers;
+the inventor of each independent invention; and the teacher of each
+missionary faith ("Teaching of X" is X's). Each figure has a name in its
+people's language, a sex, birth and death, parents, spouse, house, realm,
+culture, language and home cell, its roles, four traits (ability, martial,
+piety, ambition; a ruler's ability and martial are its reign's) and a goal
+drawn from them (conquest, a prosperous realm, faith, power, knowledge or
+the family's future).
+
+Figures are a record consistent with the mechanics, not a new mechanic yet:
+they draw from their own random stream (`Stream::Figures`), so a run with
+them is the same as one without in everything else (only the saved state and
+its hash grow). A ruler's family is filled in when the ruler dies: the heir
+the succession rules chose becomes one of the children (born when the ruler
+was 20–35, or, for a ruler who died a child, a younger sibling or a
+kinsman), with a spouse and up to three siblings besides. Lives are drawn
+from the life table when a figure is recorded (times 0.8: they eat well), so
+nothing is updated year by year; a ruler's death is RulerSystem's. Chiefs'
+families are not recorded: thousands of chiefdoms rise and fall, and their
+kin would swamp the record (at level 5 about 43,000 figures by year 7,000,
+one per reign or so, adding a quarter to a snapshot). Next: traits and goals
+nudging rulers' choices, marriages between houses, and generals and
+merchants leading the armies and caravans to come.
+
+`histsim figures` counts them and lists the most notable now (the rulers of
+the largest realms, teachers of faiths, the latest inventors); `histsim
+figure --id N` prints one life, family and deeds (wars, conquests,
+institutions and conversions in the reign). In the viewer, the People button
+(P) opens the same pages, a ruler's name in the inspector and timeline
+entries about a person link to theirs, and pages link to relatives and
+places.
+
 ### Interventions
 
 `Simulation::apply(Command)` changes a running world: a volcanic eruption, a

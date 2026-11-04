@@ -106,7 +106,8 @@ public:
     godot::Ref<godot::Image> render_map(const godot::String& mode, bool coastlines, bool rivers = true,
                                         bool borders = false, bool routes = false, bool migrations = false);
     int64_t cell_at(int64_t x, int64_t y) const;
-    // Array of [label, value] pairs (PackedStringArray each).
+    // Array of [label, value, section, figure] rows (PackedStringArray each;
+    // figure: the id of a person the row names, "0" if none).
     godot::Array describe_cell(int64_t cell) const;
     // Names of the wild species native to a cell.
     godot::PackedStringArray get_native_species(int64_t cell) const;
@@ -136,6 +137,12 @@ public:
     // Timeline entries, newest first: [{year, kind, text, cell}, ...] of a
     // kind ("" all), about a polity (0 any), at a cell (-1 anywhere).
     godot::Array get_timeline(const godot::String& kind, int64_t polity, int64_t cell, int64_t max_entries) const;
+    // A historical figure's page: {id, title, subtitle, life, family, deeds},
+    // the last three arrays of {label, text, figure, cell} (figure: a person
+    // to link to, 0 none; cell -1 none). Empty for an unknown id.
+    godot::Dictionary get_figure(int64_t id) const;
+    // The figures most worth reading about now: [{id, title, subtitle}, ...].
+    godot::Array get_notable_figures(int64_t max) const;
     // The polity ruling a cell (0 none).
     int64_t get_cell_polity(int64_t cell) const;
     // Where a cell is on the flat map, 0-1 across and down.

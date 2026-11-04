@@ -10,7 +10,8 @@ extends SceneTree
 ## eruption and a plague halfway through, and the panel is shown with that
 ## tool previewing its area ("" for none). A sixth argument "keep" keeps the
 ## hovered cell, as a click would. With HISTSIM_SHOT_WORLD=earth in the
-## environment the run is on Earth.
+## environment the run is on Earth. With HISTSIM_SHOT_PEOPLE=1 the people
+## panel shows the notable figure with the fullest page.
 
 var main: Control
 var frames := 0
@@ -70,6 +71,16 @@ func _process(_delta: float) -> bool:
 			main._set_god_mode(true)
 			main.god_panel.set_tool(god_tool)
 			main._update_preview(main.hover_cell)
+	if frames == 8 and OS.get_environment("HISTSIM_SHOT_PEOPLE") == "1":
+		var best := 0
+		var most := -1
+		for f in main.world.get_notable_figures(16):
+			var page: Dictionary = main.world.get_figure(f["id"])
+			var size: int = page["family"].size() + page["deeds"].size()
+			if size > most:
+				most = size
+				best = f["id"]
+		main._show_figure(best)
 	if frames == 14:
 		var image := root.get_texture().get_image()
 		var err := image.save_png(out_path)

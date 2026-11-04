@@ -1057,6 +1057,7 @@ namespace {
 constexpr std::size_t kHistoryRows = 6;  // lines of history in the inspector
 struct Row {
     std::string label, value;
+    std::uint32_t figure = 0;  // a person the row names (SimState::figures)
 };
 // The rows of describe_cell; `mark(name)` starts a section at the next row.
 std::vector<Row> describe_cell_rows(const Simulation& sim, CellId c,
@@ -1247,7 +1248,8 @@ std::vector<Row> describe_cell_rows(const Simulation& sim, CellId c,
             f.push_back({"Ruler", ruler_name(r) + (house.empty() ? "" : " of the " + house) + ", aged " + std::to_string(age) +
                                       (ways.empty() ? "" : " (" + ways + ")") + ", since year " +
                                       with_commas(static_cast<long long>(r.reign_start / kTicksPerYear)) +
-                                      (age < RulerSystem::kAdultAge ? "; a regent rules" : "")});
+                                      (age < RulerSystem::kAdultAge ? "; a regent rules" : ""),
+                         r.figure < s.figures.size() ? r.figure : 0u});
             if (r.dynasty < s.dynasties.size()) {
                 std::size_t reigns = 0;
                 for (const Ruler& o : s.rulers) reigns += o.dynasty == r.dynasty ? 1 : 0;
@@ -1606,7 +1608,7 @@ std::vector<CellField> describe_cell(const Simulation& sim, CellId c) {
     std::string section;
     for (std::size_t i = 0; i < rows.size(); ++i) {
         while (m < marks.size() && marks[m].first <= i) section = marks[m++].second;
-        f.push_back({rows[i].label, rows[i].value, section});
+        f.push_back({rows[i].label, rows[i].value, section, rows[i].figure});
     }
     return f;
 }

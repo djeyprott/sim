@@ -131,9 +131,9 @@ FigurePage figure_page(const Simulation& sim, std::uint32_t id) {
                                                            (f.dynasty < s.dynasties.size() ? s.dynasties[f.dynasty].name
                                                                                            : std::string("house"))
                                                      : "inherited the throne";
-        if (age < RulerSystem::kAdultAge && !(f.roles & kRoleFounder)) how += " as a child, ruled for by a regent";
-        page.life.push_back({"Reign", how + " at " + std::to_string(age) + "; " + reign_end_text(reign->end), 0,
-                             s.polities[reign->polity].capital});
+        how += " at " + std::to_string(age);
+        if (age < RulerSystem::kAdultAge && !(f.roles & kRoleFounder)) how += ", a regent ruling for the child";
+        page.life.push_back({"Reign", how + "; " + reign_end_text(reign->end), 0, s.polities[reign->polity].capital});
         // Who came before and after on that throne.
         for (std::size_t r = 1; r < s.rulers.size(); ++r) {
             const Ruler& o = s.rulers[r];

@@ -5,6 +5,7 @@ extends PanelContainer
 ## go to where it happened.
 
 signal entry_chosen(cell: int)
+signal figure_chosen(figure: int)
 
 const KINDS := [["", "Everything"], ["realms", "Realms"], ["war", "War"], ["peoples", "Peoples"],
 	["faith", "Faith"], ["nature", "Nature"], ["discovery", "Discoveries"]]
@@ -47,9 +48,11 @@ func _ready() -> void:
 	list.focus_mode = Control.FOCUS_NONE
 	list.add_theme_font_size_override("font_size", 12)
 	list.item_clicked.connect(func(index: int, _at: Vector2, _button: int) -> void:
-		var cell: int = list.get_item_metadata(index)
-		if cell >= 0:
-			entry_chosen.emit(cell))
+		var meta: Array = list.get_item_metadata(index)
+		if meta[0] >= 0:
+			entry_chosen.emit(meta[0])
+		if meta[1] > 0:
+			figure_chosen.emit(meta[1]))
 	box.add_child(list)
 	note = Label.new()
 	note.add_theme_font_size_override("font_size", 11)
@@ -75,10 +78,10 @@ func refresh(world: Object, kept_cell: int) -> void:
 		return
 	for e in world.get_timeline(kind, polity, -1, MAX_ENTRIES):
 		var index := list.add_item("Year %s   %s" % [_commas(e["year"]), e["text"]])
-		list.set_item_metadata(index, e["cell"])
+		list.set_item_metadata(index, [e["cell"], e.get("figure", 0)])
 		list.set_item_tooltip(index, e["text"])
-	note.text = ("The latest %d entries. Click one to go there." % MAX_ENTRIES) if list.item_count >= MAX_ENTRIES \
-		else ("%d entries. Click one to go there." % list.item_count if list.item_count > 0 else "Nothing yet.")
+	note.text = ("The latest %d entries. Click one to go there (and to the person it names)." % MAX_ENTRIES) if list.item_count >= MAX_ENTRIES \
+		else ("%d entries. Click one to go there (and to the person it names)." % list.item_count if list.item_count > 0 else "Nothing yet.")
 
 
 func _commas(n: int) -> String:
