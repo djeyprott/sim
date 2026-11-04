@@ -1324,13 +1324,17 @@ void RulerSystem::step(StepContext& ctx) {
     auto parents_of_heir = [&](std::uint32_t fid, Tick heir_born) -> std::pair<std::uint32_t, std::uint32_t> {
         if (fid == 0) return {0u, 0u};
         const Figure& me = s.figures[fid];
-        if (me.born + 16 * kTicksPerYear <= heir_born) return me.female ? std::pair{me.spouse, fid} : std::pair{fid, me.spouse};
         auto could = [&](std::uint32_t p, bool mother) {
             if (p == 0) return false;
             const Figure& q = s.figures[p];
             return q.born + 16 * kTicksPerYear <= heir_born && (!mother || q.born + 48 * kTicksPerYear >= heir_born) &&
                    (q.died == kNever || q.died > heir_born - (mother ? 0 : kTicksPerYear));
         };
+        if (me.born + 16 * kTicksPerYear <= heir_born) {
+            // The ruler's child; by the spouse if the spouse was old enough.
+            const std::uint32_t other = could(me.spouse, !me.female) ? me.spouse : 0;
+            return me.female ? std::pair{other, fid} : std::pair{fid, other};
+        }
         if (could(me.father, false) && could(me.mother, true)) return {me.father, me.mother};
         return {0u, 0u};
     };
