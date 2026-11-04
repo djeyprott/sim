@@ -321,6 +321,8 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(p.founder);
         ar.f64(p.unrest);
         ar.u32(p.rebel);
+        ar.u32(p.commander);
+        ar.u32(p.priest);
     });
     doubles(ar, s.stocks);
     doubles(ar, s.prices);
@@ -405,6 +407,16 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(v.became);
     });
     vec(ar, s.province_of, [&](std::uint32_t& v) { ar.u32(v); });
+    vec(ar, s.commanders, [&](Commander& m) {
+        ar.u32(m.figure);
+        ar.u32(m.polity);
+        ar.i64(m.from);
+        ar.i64(m.to);
+        ar.u32(m.victories);
+        ar.u32(m.defeats);
+        ar.f64(m.fame);
+        flag(ar, m.seized);
+    });
     vec(ar, s.uprisings, [&](Uprising& u) {
         ar.i64(u.tick);
         ar.u32(u.polity);

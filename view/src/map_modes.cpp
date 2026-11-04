@@ -7,6 +7,7 @@
 #include <map>
 #include <stdexcept>
 
+#include "histsim/figures.hpp"
 #include "histsim/language.hpp"
 #include "histsim/view/timeline.hpp"
 #include "histsim/systems/bondage.hpp"
@@ -1296,6 +1297,23 @@ std::vector<Row> describe_cell_rows(const Simulation& sim, CellId c,
                 f.push_back({"House", d.name + ": " + std::to_string(reigns) + (reigns == 1 ? " ruler" : " rulers") +
                                           " since year " + with_commas(static_cast<long long>(d.founded / kTicksPerYear))});
             }
+        }
+        // Its general and high priest.
+        if (pol.commander != 0 && pol.commander < s.commanders.size()) {
+            const Commander& gm = s.commanders[pol.commander];
+            if (gm.figure < s.figures.size()) {
+                const Figure& g = s.figures[gm.figure];
+                f.push_back({"General", g.name + ", aged " + std::to_string(figure_age(g, s.tick)) + "; " +
+                                            std::to_string(gm.victories) + " won, " + std::to_string(gm.defeats) + " lost" +
+                                            fmt("; fame %.0f%%", 100.0 * gm.fame) + fmt(", ambition %.0f%%", 100.0 * g.ambition),
+                             gm.figure});
+            }
+        }
+        if (pol.priest != 0 && pol.priest < s.figures.size()) {
+            const Figure& pr = s.figures[pol.priest];
+            f.push_back({"High priest", pr.name + ", aged " + std::to_string(figure_age(pr, s.tick)) +
+                                            fmt("; piety %.0f%%", 100.0 * pr.piety),
+                         pol.priest});
         }
         // Its province, if the realm has them.
         {

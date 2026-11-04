@@ -29,6 +29,9 @@ constexpr std::uint32_t kRevoltEntity = 0xB0000000u;
 constexpr std::uint32_t kGovernorEntity = 0x10000000u;  // Stream::Figures
 constexpr std::uint32_t kUprisingEntity = 0xC0000000u;
 constexpr std::uint32_t kRebelEntity = 0x08000000u;     // Stream::Figures
+constexpr std::uint32_t kGeneralEntity = 0x04000000u;   // Stream::Figures
+constexpr std::uint32_t kPriestEntity = 0x02000000u;    // Stream::Figures
+constexpr std::uint32_t kCoupEntity = 0xD0000000u;
 
 std::size_t trait_index(const Content& c, const char* id) {
     for (std::size_t t = 0; t < c.traits.size(); ++t) {
@@ -428,6 +431,10 @@ void PolitySystem::step(StepContext& ctx) {
         if (pol.ruler != 0 && pol.ruler < s.rulers.size()) {
             const Ruler& r = s.rulers[pol.ruler];
             target += RulerSystem::kAbilityWeight * (r.ability - 0.5) * 2.0;
+            // The high priest blesses a pious ruler and turns on an impious one.
+            if (pol.priest != 0 && pol.priest < s.figures.size() && r.figure != 0 && r.figure < s.figures.size()) {
+                target += kPriestLegitimacy * 2.0 * (s.figures[r.figure].piety - 0.5) * (0.5 + s.figures[pol.priest].piety);
+            }
             if (ruler_age(r, ctx.tick) < RulerSystem::kAdultAge) target -= RulerSystem::kRegencyPenalty;
         }
         if (marching) target += kMarchCohesion;
@@ -637,6 +644,68 @@ void PolitySystem::step(StepContext& ctx) {
         }
     }
 
+    // ---- Generals and high priests: appointed, famed and fallen; coups.
+    {
+        if (s.commanders.empty()) s.commanders.emplace_back();
+        std::vector<std::uint8_t> warring(np, 0);
+        for (const War& war : s.wars) {
+            if (war.id == 0 || war.ended != kNever) continue;
+            for (std::uint32_t a : war.attackers) if (a < np) warring[a] = 1;
+            for (std::uint32_t d : war.defenders) if (d < np) warring[d] = 1;
+        }
+        auto retire = [&](Polity& pol) {
+            if (pol.commander != 0 && pol.commander < s.commanders.size()) s.commanders[pol.commander].to = ctx.tick;
+            pol.commander = 0;
+        };
+        for (std::size_t id = 1; id < np; ++id) {
+            Polity& pol = s.polities[id];
+            const bool state = pol.ended == kNever && polity_has_writing(w, s, static_cast<std::uint32_t>(id));
+            // The general: while at war or keeping a standing army.
+            const bool needs_general = state && (warring[id] || has_institution(pol.institutions, Institution::Army));
+            if (pol.commander != 0) {
+                Commander& m = s.commanders[pol.commander];
+                if (!needs_general || !figure_alive(s.figures[m.figure], ctx.tick)) {
+                    retire(pol);
+                } else {
+                    m.fame *= 1.0 - kFameFade;
+                }
+            }
+            if (needs_general && pol.commander == 0) {
+                Commander m;
+                RngStream fr = ctx.rng(Stream::Figures, kGeneralEntity | static_cast<std::uint32_t>(s.commanders.size() & 0x03ffffffu));
+                m.figure = record_person(s, content, pol.capital, ctx.tick, 30, 55, kRoleGeneral, fr);
+                s.figures[m.figure].polity = static_cast<std::uint32_t>(id);
+                m.polity = static_cast<std::uint32_t>(id);
+                m.from = ctx.tick;
+                pol.commander = static_cast<std::uint32_t>(s.commanders.size());
+                s.commanders.push_back(m);
+            }
+            // The high priest: where there is a priesthood or an organized faith.
+            const bool needs_priest = state && (has_institution(pol.institutions, Institution::Temple) ||
+                                                religion_organized(w, s, pol.religion));
+            if (!needs_priest) {
+                pol.priest = 0;
+            } else if (pol.priest == 0 || pol.priest >= s.figures.size() || !figure_alive(s.figures[pol.priest], ctx.tick)) {
+                RngStream fr = ctx.rng(Stream::Figures, kPriestEntity | static_cast<std::uint32_t>(id & 0x01ffffffu));
+                pol.priest = record_person(s, content, pol.capital, ctx.tick, 35, 60, kRolePriest, fr);
+                s.figures[pol.priest].polity = static_cast<std::uint32_t>(id);
+            }
+            // A famous, ambitious general may seize the throne of a shaky realm.
+            if (pol.commander == 0 || pol.rebel != 0 || pol.ruler == 0 || pol.ruler >= s.rulers.size()) continue;
+            Commander& m = s.commanders[pol.commander];
+            if (m.fame <= 0.0) continue;
+            const Figure& general = s.figures[m.figure];
+            const Ruler& king = s.rulers[pol.ruler];
+            const double regency = ruler_age(king, ctx.tick) < RulerSystem::kAdultAge ? 2.0 : 1.0;
+            const double chance = kCoup * m.fame * (0.5 + general.ambition) * (1.5 - pol.stability) * (1.5 - king.ability) * regency;
+            RngStream rng = ctx.rng(Stream::Polity, kCoupEntity | static_cast<std::uint32_t>(id));
+            if (rng.uniform() >= chance) continue;
+            m.seized = true;
+            pol.rebel = m.figure;  // takes the throne next year (RulerSystem)
+            retire(pol);
+        }
+    }
+
     // ---- Peasant uprisings: unrest in each province and in the crown's land
     // of every state; the people may rise.
     {
@@ -689,12 +758,16 @@ void PolitySystem::step(StepContext& ctx) {
                 const Figure* head = crown ? reigning_person(s, static_cast<std::uint32_t>(id))
                                            : (pv->governor != 0 ? &s.figures[pv->governor] : nullptr);
                 const double ability = head != nullptr ? head->ability : 0.5;
+                // A zealous high priest stirs the people of other faiths.
+                const double zeal = pol.priest != 0 && pol.priest < s.figures.size()
+                                        ? kPriestZeal * std::max(0.0, 2.0 * (s.figures[pol.priest].piety - 0.5))
+                                        : 0.0;
                 const double target = std::clamp(
                     kUnrestHunger * unfed / people + kUnrestCrowding * crowding +
                         (at_war[id] ? kUnrestAtWar : 0.0) + kUnrestWar * std::min(1.0, pol.shock) +
                         kUnrestPlague * pol.pressure[static_cast<std::size_t>(Pressure::Epidemic)] +
                         (pol.bond == Bond::Tributary ? kUnrestTribute : 0.0) + (foreign ? kUnrestForeign : 0.0) +
-                        (other_faith ? kUnrestFaith : 0.0) + kUnrestInept * (0.5 - ability),
+                        (other_faith ? kUnrestFaith + zeal : 0.0) + kUnrestInept * (0.5 - ability),
                     0.0, 1.0);
                 double& unrest = crown ? pol.unrest : pv->unrest;
                 unrest += kUnrestRate * (target - unrest);
@@ -1416,10 +1489,38 @@ void RulerSystem::step(StepContext& ctx) {
                 continue;
             }
             const std::uint32_t usurper = crown(id, 0, 25 + static_cast<int>(rng.uniform() * 25.0), rng);
+            // A famous general is the man who takes it.
+            const std::uint32_t mc = pol.commander < s.commanders.size() ? pol.commander : 0;
+            const std::uint32_t general = mc != 0 && s.commanders[mc].fame >= PolitySystem::kUsurperFame &&
+                                                  figure_alive(s.figures[s.commanders[mc].figure], tick)
+                                              ? s.commanders[mc].figure
+                                              : 0;
+            if (general != 0) {
+                Ruler& ru = s.rulers[usurper];
+                Figure& f = s.figures[general];
+                ru.name = f.name;
+                ru.number = 1;
+                ru.born = f.born;
+                ru.ability = f.ability;
+                ru.martial = f.martial;
+            }
             found_house(id, usurper);
             pol.ruler = usurper;
             end_house_if_gone(old_house);
-            person_of_reign(usurper, kRoleUsurper | kRoleFounder, 0, 0);
+            if (general != 0) {
+                Figure& f = s.figures[general];
+                f.ruler = usurper;
+                f.roles |= kRoleRuler | kRoleFounder | kRoleUsurper;
+                f.dynasty = s.rulers[usurper].dynasty;
+                f.died = kNever;
+                f.goal = figure_goal(f);
+                s.rulers[usurper].figure = general;
+                s.commanders[mc].seized = true;
+                s.commanders[mc].to = tick;
+                pol.commander = 0;
+            } else {
+                person_of_reign(usurper, kRoleUsurper | kRoleFounder, 0, 0);
+            }
             s.events.push_back({tick, EventType::Usurpation, pol.capital, static_cast<std::int64_t>(usurper)});
             continue;
         }

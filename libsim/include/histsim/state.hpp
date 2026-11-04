@@ -242,7 +242,22 @@ struct Polity {
     std::uint32_t trek_record = 0;  // its movement in SimState::migrations (index + 1)
     std::uint32_t founder = 0;      // a figure who founds its first house (a governor who broke away), 0 if none
     double unrest = 0.0;            // 0-1: of the people of the crown's own land (states)
-    std::uint32_t rebel = 0;        // a rebel leader who has overthrown the dynasty and takes the throne next
+    std::uint32_t rebel = 0;        // a figure who takes the throne next: a rebel leader who overthrew the dynasty, or a general's coup
+    std::uint32_t commander = 0;    // its general (index into SimState::commanders), 0 if none
+    std::uint32_t priest = 0;       // its high priest (a figure), 0 if none
+};
+
+// A general's command of a polity's armies (PolitySystem appoints, WarSystem
+// counts the victories and defeats). Fame rises with victories and falls
+// with defeats; a famous, ambitious general may seize the throne.
+struct Commander {
+    std::uint32_t figure = 0;
+    std::uint32_t polity = 0;
+    Tick from = 0;
+    Tick to = kNever;
+    std::uint32_t victories = 0, defeats = 0;
+    double fame = 0.0;  // 0 and up
+    bool seized = false;  // ended by seizing the throne
 };
 
 // A province of a large polity: the land nearest one of its towns, held for
@@ -316,6 +331,8 @@ enum FigureRole : std::uint16_t {
     kRoleFounder = 128,   // founded a realm and a house
     kRoleGovernor = 256,  // governed a province
     kRoleRebel = 512,     // led a peasant uprising
+    kRoleGeneral = 1024,  // commanded a polity's armies
+    kRolePriest = 2048,   // high priest of a realm's faith
 };
 
 // What a figure most wants: set by its traits and roles.
@@ -679,6 +696,7 @@ struct SimState {
     std::vector<Province> provinces;          // index = id; provinces[0] is no one (the crown's own land)
     std::vector<std::uint32_t> province_of;   // per cell: its province (0: the crown's, or no province)
     std::vector<Uprising> uprisings;
+    std::vector<Commander> commanders;  // index = id; commanders[0] is no one
 
     // Religions (entry 0 a placeholder) and each cell's faith (0 = none yet).
     std::vector<Religion> religions;

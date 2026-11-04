@@ -1066,18 +1066,18 @@ int figures(const Options& o) {
     apply_due_now(sim, o, true);
     advance(sim, o.years, o, true);
     const histsim::SimState& s = sim.state();
-    std::size_t living = 0, by_role[10] = {};
+    std::size_t living = 0, by_role[12] = {};
     for (const histsim::Figure& f : s.figures) {
         if (f.id == 0) continue;
         living += histsim::figure_alive(f, s.tick) ? 1 : 0;
-        for (int b = 0; b < 10; ++b) by_role[b] += (f.roles >> b) & 1u;
+        for (int b = 0; b < 12; ++b) by_role[b] += (f.roles >> b) & 1u;
     }
-    static const char* const kRoleNames[10] = {"rulers", "consorts", "royal children", "claimants",
+    static const char* const kRoleNames[12] = {"rulers", "consorts", "royal children", "claimants",
                                               "usurpers", "inventors", "teachers of faiths", "founders of realms", "governors",
-                                               "rebel leaders"};
+                                               "rebel leaders", "generals", "high priests"};
     std::printf("%zu figures recorded after %lld years (%zu alive):\n", s.figures.empty() ? 0 : s.figures.size() - 1,
                 static_cast<long long>(sim.year()), living);
-    for (int b = 0; b < 10; ++b) std::printf("  %7zu %s\n", by_role[b], kRoleNames[b]);
+    for (int b = 0; b < 12; ++b) std::printf("  %7zu %s\n", by_role[b], kRoleNames[b]);
     std::printf("\nNotable figures now:\n");
     for (std::uint32_t id : histsim::view::notable_figures(sim, 16)) {
         const auto page = histsim::view::figure_page(sim, id);

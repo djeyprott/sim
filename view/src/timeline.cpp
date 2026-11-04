@@ -235,7 +235,12 @@ std::string describe_event(const Simulation& sim, const Event& e) {
                 const int age = static_cast<int>((r.reign_start - r.born) / kTicksPerYear);
                 const std::string realm = polity_name(s, r.polity);
                 if (e.type == EventType::Usurpation) {
-                    return ruler_name(r) + " seizes the throne of " + realm + ", founding the " +
+                    const std::uint32_t fig = r.figure < s.figures.size() ? r.figure : 0;
+                    const std::uint32_t roles = fig != 0 ? s.figures[fig].roles : 0;
+                    const std::string who = (roles & kRoleGeneral)  ? "General "
+                                            : (roles & kRoleRebel) ? "The rebel leader "
+                                                                   : "";
+                    return who + ruler_name(r) + " seizes the throne of " + realm + ", founding the " +
                            (r.dynasty < s.dynasties.size() ? s.dynasties[r.dynasty].name : std::string("new house"));
                 }
                 return ruler_name(r) + " succeeds to the throne of " + realm + " at " + std::to_string(age) +
