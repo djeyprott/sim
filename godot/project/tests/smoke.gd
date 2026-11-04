@@ -75,6 +75,16 @@ func _process(_delta: float) -> bool:
 		main._quickload()
 	# Layout: the map must not move or resize when the inspector grows (a
 	# cell with many rows and a scroll bar, then one with few).
+	if frames == 38:
+		main._set_people(true)
+		if not main.figure_panel.visible or main.figure_panel.text.text == "":
+			failures.append("the people panel does not open with the notable figures")
+		var notable: Array = main.world.get_notable_figures(4)
+		if notable.size() > 0:
+			main._show_figure(notable[0]["id"])
+			if main.figure_panel.title_label.text != notable[0]["title"]:
+				failures.append("a figure page does not show its title")
+		main._set_people(false)
 	if frames == 40:
 		main._set_playing(false)
 		main.god_panel.set_tool("inspect")
@@ -282,6 +292,19 @@ func _check_api() -> void:
 	var stopped_at: int = w2.get_year()
 	OS.delay_msec(50)
 	_expect(w2.get_year() == stopped_at and w2.get_queued_years() == 0, "clear_queue stops the background run")
+
+	# Historical figures: pages for the notable, with links that resolve.
+	w2.step_years(1500)
+	var notable: Array = w2.get_notable_figures(8)
+	_expect(notable.size() > 0, "notable figures listed")
+	if notable.size() > 0:
+		var page: Dictionary = w2.get_figure(notable[0]["id"])
+		_expect(page.get("title", "") != "" and page["life"].size() > 0, "a figure page has a title and a life")
+		for section in ["life", "family", "deeds"]:
+			for line in page[section]:
+				if int(line["figure"]) > 0:
+					_expect(not w2.get_figure(line["figure"]).is_empty(), "figure links resolve")
+	_expect(w2.get_figure(99999999).is_empty(), "an unknown figure gives an empty page")
 
 
 func _check_scene() -> void:

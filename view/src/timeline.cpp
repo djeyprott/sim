@@ -63,6 +63,7 @@ const char* event_kind(EventType type) {
         case EventType::PolityWandered:
         case EventType::Succession:
         case EventType::Usurpation:
+        case EventType::SuccessionDisputed:
         case EventType::InstitutionFounded:
         case EventType::InstitutionLost: return "realms";
         case EventType::WarBegan:
@@ -141,7 +142,8 @@ std::string describe_event(const Simulation& sim, const Event& e) {
             std::string who;
             for (const Invention& inv : s.inventions) {
                 if (inv.tick == e.tick && inv.cell == e.cell && inv.technique == index && inv.culture < s.cultures.size()) {
-                    who = " by the " + s.cultures[inv.culture].name;
+                    who = " by " + (inv.figure != 0 && inv.figure < s.figures.size() ? s.figures[inv.figure].name + " of " : "") +
+                          "the " + s.cultures[inv.culture].name;
                 }
             }
             return content.techniques[index].name + " invented" + who + place(sim, e.cell);
@@ -196,7 +198,13 @@ std::string describe_event(const Simulation& sim, const Event& e) {
             }
             return "";
         case EventType::ReligionFounded:
-            return index < s.religions.size() ? "The " + s.religions[index].name + " arises" + place(sim, e.cell) : "";
+            if (index < s.religions.size()) {
+                const Religion& r = s.religions[index];
+                const std::string by =
+                    r.founder != 0 && r.founder < s.figures.size() ? ", taught by " + s.figures[r.founder].name : "";
+                return "The " + r.name + " arises" + place(sim, e.cell) + by;
+            }
+            return "";
         case EventType::Schism:
             if (index < s.religions.size() && s.religions[index].parent < s.religions.size()) {
                 return "The " + s.religions[index].name + " splits from the " + s.religions[s.religions[index].parent].name;
@@ -232,8 +240,55 @@ std::string describe_event(const Simulation& sim, const Event& e) {
                        (age < RulerSystem::kAdultAge ? ", ruled for by a regent" : "");
             }
             return "";
+        case EventType::SuccessionDisputed:
+            if (index < s.figures.size()) {
+                const Figure& f = s.figures[index];
+                // The heir crowned that year.
+                std::string heir;
+                for (std::size_t r = s.rulers.size(); r-- > 1;) {
+                    if (s.rulers[r].polity == f.polity && s.rulers[r].reign_start == e.tick) {
+                        heir = ruler_name(s.rulers[r]);
+                        break;
+                    }
+                }
+                std::string kin = "a kinsman";
+                if (!heir.empty()) {
+                    for (std::size_t r = s.rulers.size(); r-- > 1;) {
+                        const Ruler& ru = s.rulers[r];
+                        if (ru.polity != f.polity || ru.reign_start != e.tick || ru.figure >= s.figures.size()) continue;
+                        const Figure& h = s.figures[ru.figure];
+                        if (f.father != 0 && (f.father == h.father || f.mother == h.mother)) {
+                            kin = f.born < h.born ? (f.female ? "elder sister" : "elder brother")
+                                                  : (f.female ? "younger sister" : "younger brother");
+                            kin = "the heir's " + kin;
+                        }
+                        break;
+                    }
+                }
+                return f.name + ", " + kin + ", claims the throne of " + polity_name(s, f.polity) +
+                       (heir.empty() ? "" : " against " + heir);
+            }
+            return "";
     }
     return "";
+}
+
+std::uint32_t event_figure(const SimState& s, const Event& e) {
+    const auto index = static_cast<std::size_t>(e.value < 0 ? 0 : e.value);
+    std::uint32_t f = 0;
+    switch (e.type) {
+        case EventType::Succession:
+        case EventType::Usurpation: f = index < s.rulers.size() ? s.rulers[index].figure : 0; break;
+        case EventType::SuccessionDisputed: f = static_cast<std::uint32_t>(index); break;
+        case EventType::ReligionFounded: f = index < s.religions.size() ? s.religions[index].founder : 0; break;
+        case EventType::Invention:
+            for (const Invention& inv : s.inventions) {
+                if (inv.tick == e.tick && inv.cell == e.cell && inv.technique == index) f = inv.figure;
+            }
+            break;
+        default: break;
+    }
+    return f < s.figures.size() ? f : 0;
 }
 
 bool event_involves(const SimState& s, const Event& e, std::uint32_t p) {
@@ -263,6 +318,7 @@ bool event_involves(const SimState& s, const Event& e, std::uint32_t p) {
         case EventType::ReligionFounded: return index < s.religions.size() && s.religions[index].polity == p;
         case EventType::Succession:
         case EventType::Usurpation: return index < s.rulers.size() && s.rulers[index].polity == p;
+        case EventType::SuccessionDisputed: return index < s.figures.size() && s.figures[index].polity == p;
         case EventType::InstitutionFounded:
         case EventType::InstitutionLost: return v / 16 == p;
         default: return false;
@@ -283,7 +339,7 @@ std::vector<TimelineEntry> timeline(const Simulation& sim, std::string_view kind
         if (polity != 0 && !event_involves(s, e, polity)) continue;
         std::string text = describe_event(sim, e);
         if (text.empty()) continue;
-        out.push_back({e.tick / kTicksPerYear, k, std::move(text), e.cell});
+        out.push_back({e.tick / kTicksPerYear, k, std::move(text), e.cell, event_figure(s, e)});
     }
     return out;
 }

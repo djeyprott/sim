@@ -19,6 +19,7 @@ add_library(histsim
     "${CMAKE_CURRENT_BINARY_DIR}/generated/content_data.cpp"
     "${CMAKE_CURRENT_BINARY_DIR}/generated/earth_data.cpp"
     src/content.cpp
+    src/figures.cpp
     src/grid.cpp
     src/interventions.cpp
     src/json.cpp

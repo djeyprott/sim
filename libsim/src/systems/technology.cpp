@@ -5,6 +5,7 @@
 #include <cmath>
 #include <vector>
 
+#include "histsim/figures.hpp"
 #include "histsim/parallel.hpp"
 #include "histsim/systems/culture.hpp"
 #include "histsim/systems/polity.hpp"
@@ -14,6 +15,7 @@ namespace histsim {
 namespace {
 
 constexpr std::uint32_t kLearnEntity = 0x40000000u;
+constexpr std::uint32_t kInventorEntity = 0x40000000u;  // Stream::Figures
 
 bool is_forest(Biome b) {
     return b == Biome::BorealForest || b == Biome::TemperateForest || b == Biome::WarmTemperateForest ||
@@ -213,7 +215,11 @@ void TechnologySystem::step(StepContext& ctx) {
                 if (prior.technique == inv.technique && w.grid.distance_km(prior.cell, inv.cell) < kOriginKm) origin = false;
             }
             if (!origin) continue;
-            s.inventions.push_back(inv);
+            // The inventor, recorded by name (own random stream).
+            RngStream fr = ctx.rng(Stream::Figures, kInventorEntity | static_cast<std::uint32_t>(s.inventions.size()));
+            Invention named = inv;
+            named.figure = record_person(s, content, inv.cell, ctx.tick, 20, 55, kRoleInventor, fr);
+            s.inventions.push_back(named);
             s.events.push_back({ctx.tick, EventType::Invention, inv.cell, static_cast<std::int64_t>(inv.technique)});
         }
     }

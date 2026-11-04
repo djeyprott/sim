@@ -1,5 +1,7 @@
 #include "histsim_world.hpp"
 
+#include "histsim/view/figures.hpp"
+
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/color.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
@@ -578,6 +580,7 @@ Array HistSimWorld::describe_cell(int64_t cell) const {
         pair.push_back(to_godot(f.label));
         pair.push_back(to_godot(f.value));
         pair.push_back(to_godot(f.section));
+        pair.push_back(String::num_int64(f.figure));
         out.push_back(pair);
     }
     return out;
@@ -722,6 +725,49 @@ Array HistSimWorld::get_timeline(const String& kind, int64_t polity, int64_t cel
         d["kind"] = to_godot(e.kind);
         d["text"] = to_godot(e.text);
         d["cell"] = e.cell == histsim::kInvalidCell ? int64_t{-1} : static_cast<int64_t>(e.cell);
+        d["figure"] = static_cast<int64_t>(e.figure);
+        out.push_back(d);
+    }
+    return out;
+}
+
+Dictionary HistSimWorld::get_figure(int64_t id) const {
+    const auto guard = hold();
+    Dictionary d;
+    if (!sim_ || id <= 0) return d;
+    const histsim::view::FigurePage page = histsim::view::figure_page(*sim_, static_cast<std::uint32_t>(id));
+    if (page.id == 0) return d;
+    auto lines = [](const std::vector<histsim::view::FigureLine>& v) {
+        Array out;
+        for (const auto& l : v) {
+            Dictionary e;
+            e["label"] = to_godot(l.label);
+            e["text"] = to_godot(l.text);
+            e["figure"] = static_cast<int64_t>(l.figure);
+            e["cell"] = l.cell == histsim::kInvalidCell ? int64_t{-1} : static_cast<int64_t>(l.cell);
+            out.push_back(e);
+        }
+        return out;
+    };
+    d["id"] = static_cast<int64_t>(page.id);
+    d["title"] = to_godot(page.title);
+    d["subtitle"] = to_godot(page.subtitle);
+    d["life"] = lines(page.life);
+    d["family"] = lines(page.family);
+    d["deeds"] = lines(page.deeds);
+    return d;
+}
+
+Array HistSimWorld::get_notable_figures(int64_t max) const {
+    const auto guard = hold();
+    Array out;
+    if (!sim_ || max <= 0) return out;
+    for (std::uint32_t id : histsim::view::notable_figures(*sim_, static_cast<std::size_t>(max))) {
+        const histsim::view::FigurePage page = histsim::view::figure_page(*sim_, id);
+        Dictionary d;
+        d["id"] = static_cast<int64_t>(id);
+        d["title"] = to_godot(page.title);
+        d["subtitle"] = to_godot(page.subtitle);
         out.push_back(d);
     }
     return out;
@@ -796,6 +842,8 @@ void HistSimWorld::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_bond_spans"), &HistSimWorld::get_bond_spans);
     ClassDB::bind_method(D_METHOD("set_highlight", "cell", "radius_km"), &HistSimWorld::set_highlight);
     ClassDB::bind_method(D_METHOD("set_focus", "mode", "cell"), &HistSimWorld::set_focus);
+    ClassDB::bind_method(D_METHOD("get_figure", "id"), &HistSimWorld::get_figure);
+    ClassDB::bind_method(D_METHOD("get_notable_figures", "max"), &HistSimWorld::get_notable_figures);
     ClassDB::bind_method(D_METHOD("get_polity_labels"), &HistSimWorld::get_polity_labels);
     ClassDB::bind_method(D_METHOD("get_timeline", "kind", "polity", "cell", "max_entries"), &HistSimWorld::get_timeline);
     ClassDB::bind_method(D_METHOD("get_cell_polity", "cell"), &HistSimWorld::get_cell_polity);

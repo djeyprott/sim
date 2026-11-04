@@ -3,6 +3,7 @@
 # here feeds simulation state, so the determinism rules do not apply.
 add_library(histsim_view
     src/color.cpp
+    src/figures.cpp
     src/map_modes.cpp
     src/timeline.cpp
     src/png.cpp

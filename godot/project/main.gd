@@ -109,6 +109,8 @@ var god_panel: GodPanel
 var god_button: Button
 var timeline_button: Button
 var timeline_panel: TimelinePanel
+var figure_panel: FigurePanel
+var people_button: Button
 
 
 func _ready() -> void:
@@ -143,6 +145,8 @@ func _after_world_change() -> void:
 	selected_cell = -1
 	highlight_cell = -1
 	world.set_highlight(-1, 0.0)
+	figure_panel.clear()
+	people_button.button_pressed = false
 	god_panel.show_forcing(world.get_imposed_forcing())
 	god_panel.set_diseases(world.get_disease_names())
 	_clear_cell_info()
@@ -364,6 +368,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_update_summary()
 	elif key == KEY_T:
 		_set_timeline(not timeline_panel.visible)
+	elif key == KEY_P:
+		_set_people(not figure_panel.visible)
 	elif key == KEY_G:
 		_set_view(not showing_globe)
 	elif key == KEY_F2:
@@ -558,6 +564,22 @@ func _reset_map_view() -> void:
 
 
 # ---------------------------------------------------------------- god mode
+
+# The figures panel: the notable figures, or a page about one person.
+func _set_people(on: bool) -> void:
+	people_button.set_pressed_no_signal(on)
+	if on:
+		figure_panel.show_notable(world)
+	else:
+		figure_panel.visible = false
+
+
+func _show_figure(id: int) -> void:
+	if id <= 0:
+		return
+	figure_panel.show_figure(world, id)
+	people_button.set_pressed_no_signal(true)
+
 
 func _set_timeline(on: bool) -> void:
 	timeline_panel.visible = on
@@ -789,11 +811,27 @@ func _inspector_section(section: String, rows: Array) -> Control:
 		key.custom_minimum_size.x = CELL_KEY_WIDTH
 		key.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 		grid.add_child(key)
-		var value := Label.new()
-		value.text = row[1]
-		value.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		grid.add_child(value)
+		var figure: int = int(row[3]) if row.size() > 3 else 0
+		if figure > 0:
+			# A person: a click on the name opens their page.
+			var link := Label.new()
+			link.text = row[1]
+			link.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			link.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			link.add_theme_color_override("font_color", Color("#9ec5f0"))
+			link.tooltip_text = "Click to read about this person"
+			link.mouse_filter = Control.MOUSE_FILTER_STOP
+			link.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+			link.gui_input.connect(func(event: InputEvent) -> void:
+				if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+					_show_figure(figure))
+			grid.add_child(link)
+		else:
+			var value := Label.new()
+			value.text = row[1]
+			value.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			grid.add_child(value)
 	box.add_child(grid)
 	header.pressed.connect(func() -> void:
 		var now_folded := grid.visible
@@ -876,6 +914,13 @@ func _build_ui() -> void:
 	timeline_button.focus_mode = Control.FOCUS_NONE
 	timeline_button.toggled.connect(_set_timeline)
 	view_bar.add_child(timeline_button)
+	people_button = Button.new()
+	people_button.text = "People"
+	people_button.tooltip_text = "P. Historical figures: rulers, claimants, inventors, teachers of faiths. Click a ruler's name in the inspector or a timeline entry to read about them."
+	people_button.toggle_mode = true
+	people_button.focus_mode = Control.FOCUS_NONE
+	people_button.toggled.connect(_set_people)
+	view_bar.add_child(people_button)
 	view_bar.add_child(VSeparator.new())
 	population_label = Label.new()
 	population_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -927,7 +972,18 @@ func _build_ui() -> void:
 	timeline_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	timeline_panel.position = Vector2(8, -8)
 	timeline_panel.entry_chosen.connect(_go_to_cell)
+	timeline_panel.figure_chosen.connect(_show_figure)
 	stack.add_child(timeline_panel)
+
+	figure_panel = FigurePanel.new()
+	figure_panel.visible = false
+	figure_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	figure_panel.position = Vector2(8, 8)
+	figure_panel.cell_chosen.connect(_go_to_cell)
+	figure_panel.visibility_changed.connect(func() -> void:
+		if people_button != null:
+			people_button.set_pressed_no_signal(figure_panel.visible))
+	stack.add_child(figure_panel)
 
 	god_panel = GodPanel.new()
 	god_panel.visible = false
@@ -1217,7 +1273,7 @@ func _build_side_panel() -> Control:
 	panel.add_child(species_label)
 
 	panel.add_child(HSeparator.new())
-	var keys := _label("Space play/pause  ·  T timeline  ·  Tab map groups  ·  1-9, 0 map modes  ·  . step a year  ·  G globe  ·  F2 god mode  ·  F5/F9 quicksave/load")
+	var keys := _label("Space play/pause  ·  T timeline  ·  P people  ·  Tab map groups  ·  1-9, 0 map modes  ·  . step a year  ·  G globe  ·  F2 god mode  ·  F5/F9 quicksave/load")
 	keys.add_theme_font_size_override("font_size", 11)
 	keys.add_theme_color_override("font_color", Color(0.54, 0.53, 0.51))
 	keys.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

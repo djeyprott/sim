@@ -64,6 +64,7 @@ struct CellField {
     std::string label;
     std::string value;
     std::string section;  // "Place", "People", "Language", ...: rows group under it
+    std::uint32_t figure = 0;  // a person the row names, to link to (0: none)
 };
 std::vector<CellField> describe_cell(const Simulation& sim, CellId cell);
 

@@ -278,6 +278,7 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(v.cell);
         ar.u32(v.technique);
         ar.u32(v.culture);
+        ar.u32(v.figure);
     });
     doubles(ar, s.urban);
     vec(ar, s.city_of, [&](std::uint32_t& v) { ar.u32(v); });
@@ -363,6 +364,7 @@ void serialize(Ar& ar, SimState& s) {
         ar.i64(r.extinct);
         ar.u32(r.origin);
         ar.u32(r.polity);
+        ar.u32(r.founder);
     });
     vec(ar, s.faith_of, [&](std::uint32_t& v) { ar.u32(v); });
     vec(ar, s.rulers, [&](Ruler& r) {
@@ -377,6 +379,7 @@ void serialize(Ar& ar, SimState& s) {
         u8(ar, r.end);
         ar.f64(r.ability);
         ar.f64(r.martial);
+        ar.u32(r.figure);
     });
     vec(ar, s.dynasties, [&](Dynasty& d) {
         ar.u32(d.id);
@@ -385,6 +388,32 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(d.founder);
         ar.i64(d.founded);
         ar.i64(d.ended);
+    });
+    vec(ar, s.figures, [&](Figure& f) {
+        ar.u32(f.id);
+        str(ar, f.name);
+        flag(ar, f.female);
+        ar.i64(f.born);
+        ar.i64(f.died);
+        ar.u32(f.father);
+        ar.u32(f.mother);
+        ar.u32(f.spouse);
+        ar.u32(f.dynasty);
+        ar.u32(f.polity);
+        ar.u32(f.culture);
+        ar.u32(f.language);
+        ar.u32(f.home);
+        ar.u32(f.ruler);
+        {
+            std::uint32_t roles = f.roles;
+            ar.u32(roles);
+            f.roles = static_cast<std::uint16_t>(roles);
+        }
+        u8(ar, f.goal);
+        ar.f64(f.ability);
+        ar.f64(f.martial);
+        ar.f64(f.piety);
+        ar.f64(f.ambition);
     });
     vec(ar, s.migrations, [&](FolkMovement& m) {
         ar.i64(m.tick);
