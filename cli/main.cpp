@@ -40,6 +40,7 @@
 #define HISTSIM_FILENO fileno
 #endif
 
+#include "histsim/figures.hpp"
 #include "histsim/simulation.hpp"
 #include "histsim/systems/culture.hpp"
 #include "histsim/systems/economy.hpp"
@@ -48,6 +49,7 @@
 #include "histsim/systems/religion.hpp"
 #include "histsim/systems/technology.hpp"
 #include "histsim/systems/war.hpp"
+#include "histsim/view/figures.hpp"
 #include "histsim/view/map_modes.hpp"
 #include "histsim/view/timeline.hpp"
 #include "histsim/view/png.hpp"
@@ -73,6 +75,8 @@ struct Options {
     std::int64_t top = 0;
     // gate command: how many seeds (1..N)
     std::int64_t seeds = 3;
+    // figure command: which figure (0 = the ruler of the largest realm)
+    std::int64_t id = 0;
     // --at YEAR:ACTION:...: interventions, applied when the run reaches YEAR
     std::vector<std::pair<std::int64_t, std::string>> at;
 };
@@ -122,6 +126,13 @@ struct Options {
                  "                 over seeds 1..N (default 3, 11,000 years each)\n"
                  "  histsim timeline [--seed N] [--level L] [--years Y]\n"
                  "                 the last 60 events of the run, in words\n"
+                 "  histsim figures [--seed N] [--level L] [--years Y]\n"
+                 "                 historical figures: how many of each kind, and the most\n"
+                 "                 notable now (rulers of the largest realms, teachers of\n"
+                 "                 faiths, inventors)\n"
+                 "  histsim figure [--seed N] [--level L] [--years Y] [--id N]\n"
+                 "                 one figure's life, family and deeds (default: the ruler of\n"
+                 "                 the largest realm)\n"
                  "  histsim slavery [--seed N] [--level L] [--years Y]\n"
                  "                 captives and the enslaved every 500 years, where they live,\n"
                  "                 who they are, and the busiest slave routes\n"
@@ -200,6 +211,7 @@ Options parse(const std::vector<std::string_view>& args, std::size_t first) {
             o.at.emplace_back(parse_int(std::string_view(spec).substr(0, colon)), spec.substr(colon + 1));
         }
         else if (a == "--top") o.top = parse_int(value());
+        else if (a == "--id") o.id = parse_int(value());
         else usage("unknown option");
     }
     if (o.years < 0) usage("--years must be >= 0");
@@ -1029,6 +1041,65 @@ int timeline(const Options& o) {
     return 0;
 }
 
+void print_figure_page(const histsim::view::FigurePage& page) {
+    std::printf("%s  [figure %u]\n", page.title.c_str(), page.id);
+    if (!page.subtitle.empty()) std::printf("  %s\n", page.subtitle.c_str());
+    auto section = [](const char* name, const std::vector<histsim::view::FigureLine>& lines) {
+        if (lines.empty()) return;
+        std::printf("\n  %s\n", name);
+        for (const auto& l : lines) {
+            std::printf("    %-10s %s", l.label.c_str(), l.text.c_str());
+            if (l.figure != 0) std::printf("  [figure %u]", l.figure);
+            std::printf("\n");
+        }
+    };
+    section("Life", page.life);
+    section("Family", page.family);
+    section("Deeds", page.deeds);
+}
+
+int figures(const Options& o) {
+    Simulation sim = Simulation::create(o.params);
+    apply_due_now(sim, o, true);
+    advance(sim, o.years, o, true);
+    const histsim::SimState& s = sim.state();
+    std::size_t living = 0, by_role[8] = {};
+    for (const histsim::Figure& f : s.figures) {
+        if (f.id == 0) continue;
+        living += histsim::figure_alive(f, s.tick) ? 1 : 0;
+        for (int b = 0; b < 8; ++b) by_role[b] += (f.roles >> b) & 1u;
+    }
+    static const char* const kRoleNames[8] = {"rulers", "consorts", "royal children", "claimants",
+                                              "usurpers", "inventors", "teachers of faiths", "founders of realms"};
+    std::printf("%zu figures recorded after %lld years (%zu alive):\n", s.figures.empty() ? 0 : s.figures.size() - 1,
+                static_cast<long long>(sim.year()), living);
+    for (int b = 0; b < 8; ++b) std::printf("  %7zu %s\n", by_role[b], kRoleNames[b]);
+    std::printf("\nNotable figures now:\n");
+    for (std::uint32_t id : histsim::view::notable_figures(sim, 16)) {
+        const auto page = histsim::view::figure_page(sim, id);
+        std::printf("  [%6u] %-40s %s\n", id, page.title.c_str(), page.subtitle.c_str());
+    }
+    return 0;
+}
+
+int figure(const Options& o) {
+    Simulation sim = Simulation::create(o.params);
+    apply_due_now(sim, o, true);
+    advance(sim, o.years, o, true);
+    std::uint32_t id = static_cast<std::uint32_t>(std::max<std::int64_t>(0, o.id));
+    if (id == 0) {
+        const auto notable = histsim::view::notable_figures(sim, 1);
+        if (!notable.empty()) id = notable.front();
+    }
+    const auto page = histsim::view::figure_page(sim, id);
+    if (page.id == 0) {
+        std::fprintf(stderr, "no figure %u (%zu recorded)\n", id, sim.state().figures.size());
+        return 1;
+    }
+    print_figure_page(page);
+    return 0;
+}
+
 // The M3 gate: polity sizes against history, in three checks.
 //  1. When the first state (a polity with writing) arises, in years after
 //     the first domesticated crop, against about 6,300 years in history
@@ -1343,6 +1414,12 @@ int main(int argc, char** argv) {
         }
         if (cmd == "timeline") {
             return timeline(parse(args, 2));
+        }
+        if (cmd == "figures") {
+            return figures(parse(args, 2));
+        }
+        if (cmd == "figure") {
+            return figure(parse(args, 2));
         }
         if (cmd == "slavery") {
             return slavery(parse(args, 2));

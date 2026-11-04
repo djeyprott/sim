@@ -5,6 +5,7 @@
 #include <utility>
 #include <vector>
 
+#include "histsim/figures.hpp"
 #include "histsim/language.hpp"
 #include "histsim/systems/polity.hpp"
 #include "histsim/systems/technology.hpp"
@@ -16,6 +17,7 @@ namespace {
 constexpr std::uint32_t kFoundEntity = 0x10000000u;
 constexpr std::uint32_t kNameEntity = 0x20000000u;
 constexpr std::uint32_t kSchismEntity = 0x30000000u;
+constexpr std::uint32_t kProphetFigureEntity = 0x20000000u;  // Stream::Figures
 constexpr std::uint32_t kFollowEntity = 0x40000000u;
 
 std::size_t trait_index(const Content& c, const char* id) {
@@ -169,6 +171,11 @@ void ReligionSystem::step(StepContext& ctx) {
                 const std::string name = kind.missionary > 0.0 ? "Teaching of " + word : "Cult of " + word;
                 const std::uint32_t id = make(static_cast<std::uint8_t>(k), f, 0, name, c, polity);
                 s.faith_of[c] = id;
+                // A missionary faith has a teacher: the "Teaching of" names him.
+                if (kind.missionary > 0.0) {
+                    RngStream fr = ctx.rng(Stream::Figures, kProphetFigureEntity | id);
+                    s.religions[id].founder = record_person(s, content, c, tick, 25, 50, kRoleProphet, fr, word);
+                }
                 s.events.push_back({tick, EventType::ReligionFounded, c, static_cast<std::int64_t>(id)});
             };
             if (kind.found_polity) {

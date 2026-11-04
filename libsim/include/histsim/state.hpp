@@ -104,6 +104,7 @@ struct Religion {
     Tick extinct = kNever;
     CellId origin = kInvalidCell;
     std::uint32_t polity = 0;   // the polity it arose in, if any
+    std::uint32_t founder = 0;  // the figure who taught it (missionary faiths), 0 if none
 };
 
 // ---------------------------------------------------------------- climate
@@ -256,6 +257,53 @@ inline constexpr std::size_t kInstitutionCount = static_cast<std::size_t>(Instit
 }
 
 // A ruler of a polity, and the house he or she belongs to.
+// ---------------------------------------------------------------- figures
+
+// Historical figures: the few people followed by name (rulers and their
+// families, rival claimants, usurpers, inventors, prophets), beside the
+// many counted in cohorts. A figure's life is drawn when it is recorded
+// (birth and death; a ruler's death comes from RulerSystem instead), so
+// nothing needs updating year by year. Figures draw from their own random
+// stream: recording them changes nothing else in the run.
+enum FigureRole : std::uint16_t {
+    kRoleRuler = 1,
+    kRoleConsort = 2,     // married to a ruler
+    kRoleRoyalKin = 4,    // child of a ruler
+    kRoleClaimant = 8,    // claimed a throne in a disputed succession
+    kRoleUsurper = 16,    // seized a throne from another house
+    kRoleInventor = 32,
+    kRoleProphet = 64,    // taught a missionary faith
+    kRoleFounder = 128,   // founded a realm and a house
+};
+
+// What a figure most wants: set by its traits and roles.
+enum class FigureGoal : std::uint8_t {
+    None = 0,
+    Conquest = 1,
+    Prosperity = 2,  // a well-governed, rich realm
+    Faith = 3,
+    Power = 4,       // a throne, or more of one
+    Knowledge = 5,
+    Family = 6,      // the house's future
+};
+
+struct Figure {
+    std::uint32_t id = 0;
+    std::string name;
+    bool female = false;
+    Tick born = 0;
+    Tick died = kNever;  // may lie in the future (the year it will die); kNever: a reigning ruler, whose death RulerSystem decides
+    std::uint32_t father = 0, mother = 0, spouse = 0;  // figure ids (0: not recorded)
+    std::uint32_t dynasty = 0;  // house, if royal
+    std::uint32_t polity = 0;   // realm it belonged to
+    std::uint32_t culture = 0, language = 0;
+    CellId home = kInvalidCell;
+    std::uint32_t ruler = 0;  // its reign (SimState::rulers), if it ruled
+    std::uint16_t roles = 0;  // FigureRole bits
+    FigureGoal goal = FigureGoal::None;
+    double ability = 0.5, martial = 0.5, piety = 0.5, ambition = 0.5;  // 0-1
+};
+
 enum class ReignEnd : std::uint8_t {
     Reigning = 0,
     Died = 1,       // died on the throne
@@ -274,6 +322,7 @@ struct Ruler {
     ReignEnd end = ReignEnd::Reigning;
     double ability = 0.5;  // 0-1: how well the realm is governed
     double martial = 0.5;  // 0-1: how readily it goes to war
+    std::uint32_t figure = 0;  // the person (SimState::figures)
 };
 struct Dynasty {
     std::uint32_t id = 0;
@@ -350,6 +399,7 @@ struct Invention {
     CellId cell = kInvalidCell;
     std::uint32_t technique = 0;
     std::uint32_t culture = 0;  // main culture of the cell then
+    std::uint32_t figure = 0;   // the inventor (SimState::figures)
 };
 
 // Where a disease emerged (far from anywhere it already was).
@@ -403,6 +453,7 @@ enum class EventType : std::uint32_t {
     Usurpation = 29,      // another house seized the throne; cell = capital; value = ruler id (the usurper)
     InstitutionFounded = 30,  // cell = capital; value = polity id x 16 + Institution
     InstitutionLost = 31,     // cell = capital; value = polity id x 16 + Institution
+    SuccessionDisputed = 32,  // a rival claimed the throne; cell = capital; value = the claimant's figure id
 };
 
 struct Event {
@@ -580,6 +631,7 @@ struct SimState {
     // Rulers and their houses (entry 0 of each a placeholder).
     std::vector<Ruler> rulers;
     std::vector<Dynasty> dynasties;
+    std::vector<Figure> figures;  // index = id; figures[0] is no one
 
     // Religions (entry 0 a placeholder) and each cell's faith (0 = none yet).
     std::vector<Religion> religions;

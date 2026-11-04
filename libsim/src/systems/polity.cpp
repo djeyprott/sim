@@ -4,6 +4,7 @@
 #include <cmath>
 #include <vector>
 
+#include "histsim/figures.hpp"
 #include "histsim/language.hpp"
 #include "histsim/systems/culture.hpp"
 #include "histsim/systems/farming.hpp"
@@ -831,6 +832,113 @@ void RulerSystem::step(StepContext& ctx) {
         s.dynasties.push_back(std::move(d));
         by_house.emplace_back(1, founder);
     };
+    // ---- Figures: the people behind the reigns. They draw from their own
+    // stream (one per reign), so recording them changes nothing above.
+    auto new_person = [&](RngStream& fr, const Polity& p, Tick born, bool female, std::uint32_t dynasty,
+                          std::uint16_t roles) {
+        Figure f;
+        f.name = figure_name(content, language_of(p), fr);
+        f.female = female;
+        f.born = born;
+        f.dynasty = dynasty;
+        f.polity = p.id;
+        f.culture = p.culture;
+        f.language = p.language;
+        f.home = p.capital;
+        f.roles = roles;
+        f.ability = fr.uniform();
+        f.martial = fr.uniform();
+        f.piety = fr.uniform();
+        f.ambition = fr.uniform();
+        return f;
+    };
+    // A spouse for figure `who`, alive at `alive_at`.
+    auto marry = [&](std::uint32_t who, Tick alive_at, RngStream& fr) {
+        const Figure me = s.figures[who];
+        Figure f = new_person(fr, s.polities[me.polity], me.born + static_cast<Tick>((fr.uniform() * 12.0 - 6.0) * kTicksPerYear),
+                              !me.female, 0, kRoleConsort);
+        f.died = draw_death(f.born, std::max(alive_at, f.born), fr);
+        f.spouse = who;
+        f.goal = figure_goal(f);
+        const std::uint32_t id = add_figure(s, std::move(f));
+        s.figures[who].spouse = id;
+        return id;
+    };
+    // The person who reigns as ruler `rid`; parents if known.
+    auto person_of_reign = [&](std::uint32_t rid, std::uint16_t roles, std::uint32_t father, std::uint32_t mother) {
+        RngStream fr = ctx.rng(Stream::Figures, rid);
+        const Ruler& r = s.rulers[rid];
+        Figure f = new_person(fr, s.polities[r.polity], r.born, fr.uniform() < 0.1, r.dynasty, roles | kRoleRuler);
+        f.name = r.name;
+        f.father = father;
+        f.mother = mother;
+        f.ruler = rid;
+        f.ability = r.ability;
+        f.martial = r.martial;
+        f.goal = figure_goal(f);
+        const std::uint32_t id = add_figure(s, std::move(f));
+        s.rulers[rid].figure = id;
+        // A grown ruler of a state is married. (Chiefs' families are left
+        // out: thousands of chiefdoms rise and fall, and their kin would
+        // swamp the record.)
+        if (ruler_age(r, tick) >= 18 && polity_has_writing(w, s, r.polity) && fr.uniform() < 0.9) marry(id, tick, fr);
+        return id;
+    };
+    // The rest of the family of a ruler who has died: a spouse, if none yet,
+    // and the children who outlived infancy besides the heir (born at
+    // heir_born; kNever if no child succeeds). Returns them, eldest first.
+    auto family_of = [&](std::uint32_t fid, Tick heir_born, RngStream& fr) {
+        std::vector<std::uint32_t> kids;
+        if (fid == 0) return kids;
+        const Tick adult = s.figures[fid].born + 18 * kTicksPerYear;
+        if (s.figures[fid].spouse == 0) marry(fid, heir_born != kNever ? std::max(heir_born, adult) : adult, fr);
+        const Figure me = s.figures[fid];
+        const int others = static_cast<int>(fr.uniform() * 4.0);
+        for (int k = 0; k < others; ++k) {
+            const Tick born = me.born + static_cast<Tick>((18.0 + fr.uniform() * 22.0) * kTicksPerYear);
+            if (born >= tick) continue;  // the parent died first
+            if (heir_born != kNever && born > heir_born - kTicksPerYear && born < heir_born + kTicksPerYear) continue;
+            const Tick died = draw_death(born, born, fr);
+            if (died < born + 5 * kTicksPerYear) continue;  // died an infant: not recorded
+            Figure c = new_person(fr, s.polities[me.polity], born, fr.uniform() < 0.5, me.dynasty, kRoleRoyalKin);
+            c.died = died;
+            c.father = me.female ? me.spouse : fid;
+            c.mother = me.female ? fid : me.spouse;
+            c.goal = figure_goal(c);
+            kids.push_back(add_figure(s, std::move(c)));
+        }
+        std::sort(kids.begin(), kids.end(), [&](std::uint32_t a, std::uint32_t b) {
+            return s.figures[a].born < s.figures[b].born || (s.figures[a].born == s.figures[b].born && a < b);
+        });
+        return kids;
+    };
+    // The heir's parents: the late ruler and spouse; for a ruler who died
+    // a child, the late ruler's own parents (a younger sibling) if they could
+    // have had a child then, else none recorded (a kinsman).
+    auto parents_of_heir = [&](std::uint32_t fid, Tick heir_born) -> std::pair<std::uint32_t, std::uint32_t> {
+        if (fid == 0) return {0u, 0u};
+        const Figure& me = s.figures[fid];
+        if (me.born + 16 * kTicksPerYear <= heir_born) return me.female ? std::pair{me.spouse, fid} : std::pair{fid, me.spouse};
+        auto could = [&](std::uint32_t p, bool mother) {
+            if (p == 0) return false;
+            const Figure& q = s.figures[p];
+            return q.born + 16 * kTicksPerYear <= heir_born && (!mother || q.born + 48 * kTicksPerYear >= heir_born) &&
+                   (q.died == kNever || q.died > heir_born - (mother ? 0 : kTicksPerYear));
+        };
+        if (could(me.father, false) && could(me.mother, true)) return {me.father, me.mother};
+        return {0u, 0u};
+    };
+    // Only a ruler who reached adulthood had a family of his own.
+    auto grown = [&](std::uint32_t fid) {
+        return fid != 0 && s.figures[fid].born + kAdultAge * kTicksPerYear <= tick;
+    };
+    // A reign has ended without the ruler dying: the person lives on.
+    auto outlive_reign = [&](const Ruler& r) {
+        if (r.figure == 0 || r.figure >= s.figures.size()) return;
+        RngStream fr = ctx.rng(Stream::Figures, r.id);
+        Figure& f = s.figures[r.figure];
+        if (f.died == kNever) f.died = draw_death(f.born, tick, fr);
+    };
     auto end_house_if_gone = [&](std::uint32_t dynasty) {
         if (dynasty == 0 || dynasty >= s.dynasties.size() || s.dynasties[dynasty].ended != kNever) return;
         for (const Polity& q : s.polities) {
@@ -849,6 +957,7 @@ void RulerSystem::step(StepContext& ctx) {
                 r.end = ReignEnd::RealmFell;
                 r.reign_end = tick;
                 end_house_if_gone(r.dynasty);
+                outlive_reign(r);
             }
             continue;
         }
@@ -857,6 +966,7 @@ void RulerSystem::step(StepContext& ctx) {
             const std::uint32_t r = crown(id, 0, 25 + static_cast<int>(rng.uniform() * 20.0), rng);
             found_house(id, r);
             pol.ruler = r;
+            person_of_reign(r, kRoleFounder, 0, 0);
             continue;
         }
         Ruler& old = s.rulers[pol.ruler];
@@ -869,6 +979,10 @@ void RulerSystem::step(StepContext& ctx) {
         old.reign_end = tick;
         // crown() appends to s.rulers, so `old` must not be used after it.
         const std::uint32_t old_house = old.dynasty;
+        const std::uint32_t old_figure = old.figure < s.figures.size() ? old.figure : 0;
+        const std::uint32_t old_id = old.id;
+        if (old_figure != 0) s.figures[old_figure].died = tick;
+        RngStream fr = ctx.rng(Stream::Figures, old_id | 0x80000000u);
         const int heir_age = std::max(0, age - 20 - static_cast<int>(rng.uniform() * 15.0));
         const bool child = heir_age < kAdultAge;
         // Priests lend the heir legitimacy; a council sees the throne passed
@@ -883,17 +997,42 @@ void RulerSystem::step(StepContext& ctx) {
                 pol.contested = true;
                 const std::uint32_t heir = crown(id, old_house, heir_age, rng);
                 pol.ruler = heir;
+                // The heir's eldest grown sibling, or a kinsman, claims the throne.
+                const auto kids = grown(old_figure) ? family_of(old_figure, s.rulers[heir].born, fr) : std::vector<std::uint32_t>{};
+                const auto [father, mother] = parents_of_heir(old_figure, s.rulers[heir].born);
+                person_of_reign(heir, kRoleRoyalKin, father, mother);
+                std::uint32_t claimant = 0;
+                for (std::uint32_t k : kids) {
+                    if (figure_alive(s.figures[k], tick) && figure_age(s.figures[k], tick) >= kAdultAge) {
+                        claimant = k;
+                        break;
+                    }
+                }
+                if (claimant == 0) {
+                    Figure f = new_person(fr, pol, tick - static_cast<Tick>((25.0 + fr.uniform() * 25.0) * kTicksPerYear),
+                                          false, old_house, 0);
+                    f.died = draw_death(f.born, tick, fr);
+                    claimant = add_figure(s, std::move(f));
+                }
+                s.figures[claimant].roles |= kRoleClaimant;
+                s.figures[claimant].goal = figure_goal(s.figures[claimant]);
+                s.events.push_back({tick, EventType::SuccessionDisputed, pol.capital, static_cast<std::int64_t>(claimant)});
                 continue;
             }
             const std::uint32_t usurper = crown(id, 0, 25 + static_cast<int>(rng.uniform() * 25.0), rng);
             found_house(id, usurper);
             pol.ruler = usurper;
             end_house_if_gone(old_house);
+            if (grown(old_figure) && polity_has_writing(w, s, id)) family_of(old_figure, kNever, fr);
+            person_of_reign(usurper, kRoleUsurper | kRoleFounder, 0, 0);
             s.events.push_back({tick, EventType::Usurpation, pol.capital, static_cast<std::int64_t>(usurper)});
             continue;
         }
         const std::uint32_t heir = crown(id, old_house, heir_age, rng);
         pol.ruler = heir;
+        if (grown(old_figure) && polity_has_writing(w, s, id)) family_of(old_figure, s.rulers[heir].born, fr);
+        const auto [father, mother] = parents_of_heir(old_figure, s.rulers[heir].born);
+        person_of_reign(heir, kRoleRoyalKin, father, mother);
         s.events.push_back({tick, EventType::Succession, pol.capital, static_cast<std::int64_t>(heir)});
     }
 }

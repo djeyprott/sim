@@ -13,6 +13,7 @@ add_executable(histsim_tests
     test_scale.cpp
     test_bondage.cpp
     test_rng.cpp
+    test_figures.cpp
     test_polity.cpp
     test_simulation.cpp
     test_technology.cpp

@@ -29,7 +29,12 @@ struct TimelineEntry {
     std::string kind;
     std::string text;
     CellId cell = kInvalidCell;
+    std::uint32_t figure = 0;  // the person it is about (SimState::figures), 0 if none
 };
+
+// The figure an event is about (a ruler crowned, a claimant, an inventor, a
+// prophet), 0 if none.
+std::uint32_t event_figure(const SimState& state, const Event& event);
 
 // Up to `max_entries` entries, newest first: of the given kind ("" for all
 // but the most frequent: raids, newly settled land and ordinary
