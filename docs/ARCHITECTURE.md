@@ -444,7 +444,12 @@ founding of councils and law codes (beside steadying the realm, as before);
 martial the founding of a standing army. In a disputed succession the
 claimant is the heir's most ambitious grown sibling (else a kinsman), and the
 chance that the claim tears the realm apart is scaled by the claimant's
-ambition. Over 6,000 years at level 4, the most ambitious rulers start about
+standing among those who might have claimed (the most ambitious of k has
+ambition^k, which is uniform, so breakups are no more common than before).
+The M3 gate, seeds 1–5 at level 5, still passes all checks: first states a
+median 6,640 years after the first crop, all nine eras within a factor of 3,
+the largest polity in the first 5,000 years 0.29 million km²; ten worlds at
+level 4 give the same picture with and without the traits. Over 6,000 years at level 4, the most ambitious rulers start about
 1.5 times as many wars per year of reign as the least, the most pious found
 temples 2.4 times as often, and claimants who broke realms average 0.62 in
 ambition against 0.5 for all. Next: marriages between houses, and generals
