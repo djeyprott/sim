@@ -78,6 +78,17 @@ public:
     static constexpr double kSavannaFallow = 0.75;
     // A species must do at least this well in a place to be grown there.
     static constexpr double kMinSuitability = 0.05;
+    // Crops follow the climate people are used to (Environment::normal_shift_c):
+    // where it has moved by a step, each species' suitability and the growing
+    // season are worked out again, so a cooling drives wheat south and
+    // shortens the summers, and a warming opens the north and parches the
+    // dry margins.
+    static constexpr double kCropShiftStepC = 0.25;
+    static constexpr double kCropRainStep = 0.025;
+    // Mixed crops, stores and kin make good at most this share of a harvest
+    // that falls short of what people are used to: the buffer is for bad
+    // years, not for a changed climate (that changes the crops instead).
+    static constexpr double kMaxHarvestBuffer = 0.6;
 };
 
 // Farmers' effects on demography and migration.
@@ -87,14 +98,22 @@ inline constexpr double kFarmerStay = 0.6;             // migration x (1 - 0.6 x
 // People per km^2 a cell's land would feed if fully farmed with the given
 // domesticates, in a normal year.
 // Techniques raise crop and herd yields.
-double farm_density(const World& world, CellId cell, std::uint32_t domesticates, std::uint64_t techniques = 0);
+// With a state, under the climate its people are used to (its crop
+// suitability and seasons); without, under the world's own climate.
+double farm_density(const World& world, CellId cell, std::uint32_t domesticates, std::uint64_t techniques = 0,
+                    const SimState* state = nullptr);
 
 // The same, split into what crops and herds feed (farm_density = crops +
 // half the herds where there are crops, else the herds alone).
 struct FarmParts {
     double crops = 0.0, herds = 0.0;
 };
-FarmParts farm_parts(const World& world, CellId cell, std::uint32_t domesticates, std::uint64_t techniques = 0);
+FarmParts farm_parts(const World& world, CellId cell, std::uint32_t domesticates, std::uint64_t techniques = 0,
+                     const SimState* state = nullptr);
+
+// How well a domesticate can be raised in the cell (rain-fed, or on its
+// floodplain) under the climate its people are used to.
+[[nodiscard]] double raisable(const World& world, const SimState& state, CellId cell, std::size_t species);
 
 // How good a biome's grazing is for herds (x the herd yield): open
 // grassland best, then shrubland and savanna; forests and deserts poor.
@@ -106,8 +125,9 @@ double pasture_quality(Biome biome);
     return total > 0.0 ? (p.crops > 0.0 ? 0.5 * p.herds : p.herds) / total : 0.0;
 }
 
-// This year's harvest relative to a normal year, from rainfall and warmth;
-// stores (granaries, irrigation) make good part of a shortfall.
+// This year's harvest relative to a normal year (the climate people are
+// used to), from rainfall and warmth; mixed crops, granaries and kin make
+// good part of a shortfall (at most kMaxHarvestBuffer).
 double harvest_factor(const World& world, const SimState& state, CellId cell);
 
 }  // namespace histsim

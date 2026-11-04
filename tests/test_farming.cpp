@@ -238,16 +238,21 @@ TEST(m2_gate_farming_arises_in_several_plausible_regions) {
         both_all += both;
         CHECK(most >= 8);  // level-4 cells: about 1.6 million km^2
 
-        // Farming only where people know a domesticate that can be raised.
+        // Farming only where people know a domesticate that can be raised:
+        // learned where it could be, in the climate of the time, so nearly
+        // all can be in the climate they are used to now.
+        std::size_t known = 0, unraisable = 0;
         for (CellId cell = 0; cell < w.cell_count(); ++cell) {
             if (s.env.farming[cell] > 0.01) CHECK(s.domesticates[cell] != 0);
             for (std::size_t sp = 0; sp < c.species.size(); ++sp) {
                 if (((s.domesticates[cell] >> sp) & 1u) && !c.species[sp].domesticated_before_start) {
-                    CHECK(w.raisable(cell, sp) >= FarmingSystem::kMinSuitability ||
-                          ((w.species_mask[cell] >> sp) & 1u));
+                    ++known;
+                    unraisable += raisable(w, s, cell, sp) < FarmingSystem::kMinSuitability &&
+                                  !((w.species_mask[cell] >> sp) & 1u);
                 }
             }
         }
+        CHECK(unraisable * 20 <= known);
     }
     CHECK(static_cast<double>(same_all) < 0.92 * static_cast<double>(both_all));
 }
@@ -274,4 +279,62 @@ TEST(farming_herding_wins_on_dry_grassland) {
     }
     CHECK(dry > 0);
     CHECK(pastoral * 4 >= dry * 3);  // at least three in four
+}
+
+// Crops follow the climate people are used to: in the world's own climate
+// they are the world's; a lasting cooling shortens the growing season and
+// takes land from the crops, a lasting warming lengthens the cold lands'
+// summers.
+TEST(farming_crops_follow_a_lasting_change_of_climate) {
+    WorldParams p;
+    p.grid_level = 4;
+    for (const double forcing : {-10.4, 10.4}) {
+        Simulation sim = Simulation::create(p);
+        sim.step_years(1);
+        const World& w = sim.world();
+        const std::size_t n = w.cell_count(), ns = w.content->species.size();
+        {
+            const auto& env = sim.state().env;
+            CHECK_EQ(env.crop_suit.size(), n * ns);
+            std::size_t same = 0;
+            for (CellId c = 0; c < n; ++c) {
+                if (!w.is_land[c] || env.crop_shift_c[c] != 0.0 || env.crop_rain[c] != 1.0) continue;
+                ++same;
+                CHECK_EQ(env.growing_months[c], w.growing_months[c]);
+                for (std::size_t sp = 0; sp < ns; ++sp) {
+                    CHECK_EQ(env.crop_suit[c * ns + sp], w.cultivated_suitability[c * ns + sp]);
+                    CHECK_EQ(env.crop_suit_watered[c * ns + sp], w.watered_suitability[c * ns + sp]);
+                }
+            }
+            CHECK(same > 0);
+        }
+        Command cmd;
+        cmd.type = CommandType::ClimateForcing;
+        cmd.amount = forcing;
+        sim.apply(cmd);
+        sim.step_years(60);
+        const auto& env = sim.state().env;
+        double shift = 0.0, land = 0.0, suit_now = 0.0, suit_was = 0.0;
+        long cold_now = 0, cold_was = 0, months_now = 0, months_was = 0;
+        for (CellId c = 0; c < n; ++c) {
+            if (!w.is_land[c]) continue;
+            shift += env.normal_shift_c[c];
+            land += 1.0;
+            months_now += env.growing_months[c];
+            months_was += w.growing_months[c];
+            if (w.warm_months[c] < 5) cold_now += env.warm_months[c], cold_was += w.warm_months[c];
+            for (std::size_t sp = 0; sp < ns; ++sp) {
+                suit_now += env.crop_suit[c * ns + sp];
+                suit_was += w.cultivated_suitability[c * ns + sp];
+            }
+        }
+        if (forcing < 0.0) {
+            CHECK(shift / land < -4.0);  // most of the way to about -8 C
+            CHECK(months_now < months_was);
+            CHECK(suit_now < 0.8 * suit_was);
+        } else {
+            CHECK(shift / land > 4.0);
+            CHECK(cold_now > cold_was);  // the cold lands' summers lengthen
+        }
+    }
 }

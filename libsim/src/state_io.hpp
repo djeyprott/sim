@@ -203,6 +203,14 @@ void serialize(Ar& ar, SimState& s) {
     doubles(ar, s.env.farm_capacity);
     doubles(ar, s.env.pastoral);
     doubles(ar, s.env.food_store);
+    doubles(ar, s.env.normal_shift_c);
+    doubles(ar, s.env.normal_rain);
+    doubles(ar, s.env.crop_shift_c);
+    doubles(ar, s.env.crop_rain);
+    vec(ar, s.env.crop_suit, [&](std::uint8_t& v) { ar.u8(v); });
+    vec(ar, s.env.crop_suit_watered, [&](std::uint8_t& v) { ar.u8(v); });
+    vec(ar, s.env.growing_months, [&](std::uint8_t& v) { ar.u8(v); });
+    vec(ar, s.env.warm_months, [&](std::uint8_t& v) { ar.u8(v); });
     doubles(ar, s.env.disease_mortality);
 
     ar.i64(s.ledger.initial_population);

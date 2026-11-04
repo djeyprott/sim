@@ -665,7 +665,9 @@ void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rg
         } else if (id == "rain_season") {
             out[c] = rain_season_scale()(w.rain_season[c]);
         } else if (id == "growing") {
-            out[c] = growing_scale()(static_cast<double>(w.growing_months[c]));
+            // Under the climate people are used to, once it has been worked out.
+            const auto& now = sim.state().env.growing_months;
+            out[c] = growing_scale()(static_cast<double>(now.size() == w.cell_count() ? now[c] : w.growing_months[c]));
         } else if (id == "soil") {
             out[c] = soil_scale()(w.soil_fertility[c]);
         } else if (id == "species") {
@@ -1128,7 +1130,20 @@ std::vector<Row> describe_cell_rows(const Simulation& sim, CellId c,
                                 fmt(", warmest %.0f °C", w.warmest_month_c(c))});
     const double rs = w.rain_season[c];
     f.push_back({"Rain season", rs > 0.35 ? "Summer rain" : (rs < -0.35 ? "Winter rain (Mediterranean)" : "Rain all year")});
-    f.push_back({"Growing season", with_commas(static_cast<long long>(w.growing_months[c])) + " months"});
+    {
+        const auto& env = sim.state().env;
+        const bool now = env.growing_months.size() == w.cell_count();
+        const int months = now ? env.growing_months[c] : w.growing_months[c];
+        std::string was;
+        if (now && env.growing_months[c] != w.growing_months[c]) {
+            was = " (" + std::to_string(w.growing_months[c]) + " in the old climate)";
+        }
+        f.push_back({"Growing season", std::to_string(months) + " months" + was});
+        if (env.normal_shift_c.size() == w.cell_count()) {
+            f.push_back({"Usual climate", fmt("%+.1f °C", env.normal_shift_c[c]) +
+                                              fmt(", rain %+.0f%% against the old climate", 100.0 * (env.normal_rain[c] - 1.0))});
+        }
+    }
     f.push_back({"Soil", fmt("%.0f%% fertility", 100.0 * w.soil_fertility[c])});
     if (is_river(w, c)) {
         f.push_back({"River", with_commas(std::llround(w.discharge_m3s[c])) + " m³/s"});

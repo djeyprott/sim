@@ -14,6 +14,7 @@ namespace histsim {
 namespace {
 
 constexpr std::uint32_t kLearningEntity = 0x40000000u;
+constexpr double kNoClimate = 1.0e9;  // crops not yet worked out for the cell
 
 double clamp01(double x) { return x < 0.0 ? 0.0 : (x > 1.0 ? 1.0 : x); }
 
@@ -27,33 +28,42 @@ std::size_t trait_index(const Content& c, const char* id) {
 
 }  // namespace
 
-double farm_density(const World& w, CellId c, std::uint32_t known, std::uint64_t techniques) {
-    const FarmParts p = farm_parts(w, c, known, techniques);
+double farm_density(const World& w, CellId c, std::uint32_t known, std::uint64_t techniques, const SimState* state) {
+    const FarmParts p = farm_parts(w, c, known, techniques, state);
     // Herds add to crops (milk, manure, meat), or carry pastoralists alone.
     return p.crops > 0.0 ? p.crops + 0.5 * p.herds : p.herds;
 }
 
-FarmParts farm_parts(const World& w, CellId c, std::uint32_t known, std::uint64_t techniques) {
+FarmParts farm_parts(const World& w, CellId c, std::uint32_t known, std::uint64_t techniques, const SimState* state) {
     if (!w.is_land[c] || known == 0) return {};
     const auto& species = w.content->species;
+    const std::size_t ns = species.size();
+    // The climate people are used to, where the state has worked it out.
+    const bool now = state != nullptr && state->env.crop_suit.size() == w.cell_count() * ns &&
+                     state->env.growing_months.size() == w.cell_count();
+    auto cultivated = [&](std::size_t sp) { return now ? state->env.crop_suit[c * ns + sp] / 255.0 : w.cultivated(c, sp); };
+    auto watered = [&](std::size_t sp) { return now ? state->env.crop_suit_watered[c * ns + sp] / 255.0 : w.watered(c, sp); };
+    const double growing = now ? state->env.growing_months[c] : w.growing_months[c];
+    const double warm = now ? state->env.warm_months[c] : w.warm_months[c];
+    const double precip = now ? w.precipitation_mm[c] * state->env.crop_rain[c] : w.precipitation_mm[c];
     double crop = 0.0, wet_crop = 0.0, herd = 0.0;
-    for (std::size_t s = 0; s < species.size(); ++s) {
+    for (std::size_t s = 0; s < ns; ++s) {
         if (!((known >> s) & 1u)) continue;
         if (species[s].kind == SpeciesKind::Plant) {
-            const double v = w.cultivated(c, s) * species[s].food_value;
+            const double v = cultivated(s) * species[s].food_value;
             if (v >= FarmingSystem::kMinSuitability) crop = std::max(crop, v);
-            const double wv = w.watered(c, s) * species[s].food_value;
+            const double wv = watered(s) * species[s].food_value;
             if (wv >= FarmingSystem::kMinSuitability) wet_crop = std::max(wet_crop, wv);
         } else {
-            const double v = w.cultivated(c, s) * species[s].food_value;
+            const double v = cultivated(s) * species[s].food_value;
             if (v >= FarmingSystem::kMinSuitability) herd = std::max(herd, v);
         }
     }
     // Rain-fed land: soil, season, rain (crops fail often in dry land), and
     // fallow where fields are shifted (rainforest, savanna).
     const double soil = 0.35 + 0.65 * w.soil_fertility[c];
-    const double season = std::min(1.0, (w.growing_months[c] + 1.0) / 5.0);
-    const double rain = std::clamp((w.precipitation_mm[c] - FarmingSystem::kDryFarmingMm) / FarmingSystem::kDryFarmingSpanMm,
+    const double season = std::min(1.0, (growing + 1.0) / 5.0);
+    const double rain = std::clamp((precip - FarmingSystem::kDryFarmingMm) / FarmingSystem::kDryFarmingSpanMm,
                                    FarmingSystem::kDryFloor, 1.0);
     const auto biome = static_cast<Biome>(w.biome[c]);
     const double fallow = biome == Biome::TropicalRainforest ? FarmingSystem::kRainforestFallow
@@ -64,7 +74,7 @@ FarmParts farm_parts(const World& w, CellId c, std::uint32_t known, std::uint64_
     // farmed every warm month and every year.
     const double fp = w.floodplain_share.empty() ? 0.0 : w.floodplain_share[c];
     const double wet = wet_crop * (0.35 + 0.65 * FarmingSystem::kSiltFertility) *
-                       std::min(1.0, (w.warm_months[c] + 1.0) / 5.0) * FarmingSystem::kFloodplainYield;
+                       std::min(1.0, (warm + 1.0) / 5.0) * FarmingSystem::kFloodplainYield;
     const TechEffects tech = technique_effects(w, c, techniques);
     const double crops = FarmingSystem::kCropDensity * ((1.0 - fp) * dry + fp * wet) * (1.0 + tech.crop_yield);
     const double herds = FarmingSystem::kHerdDensity * herd * pasture_quality(static_cast<Biome>(w.biome[c])) *
@@ -91,16 +101,30 @@ double pasture_quality(Biome b) {
     return 0.0;
 }
 
+double raisable(const World& w, const SimState& s, CellId c, std::size_t sp) {
+    const std::size_t ns = w.content->species.size();
+    if (s.env.crop_suit.size() != w.cell_count() * ns) return w.raisable(c, sp);
+    const double dry = s.env.crop_suit[c * ns + sp] / 255.0;
+    const bool floodplain = !w.floodplain_share.empty() && w.floodplain_share[c] > 0.0;
+    return floodplain ? std::max(dry, s.env.crop_suit_watered[c * ns + sp] / 255.0) : dry;
+}
+
 double harvest_factor(const World& w, const SimState& s, CellId c) {
     if (!w.is_land[c]) return 0.0;
-    const double rain = std::clamp(s.env.precipitation_mm[c] / std::max(1.0, w.precipitation_mm[c]), 0.4, 1.15);
-    const double warmth = std::max(0.3, 1.0 - 0.12 * std::fabs(s.env.temperature_c[c] - w.temperature_c[c]));
+    // Against the climate people are used to: a lasting change is felt in
+    // what grows (farm_parts), a sudden one in the harvest.
+    const bool normals = s.env.normal_shift_c.size() == w.cell_count();
+    const double usual_rain = w.precipitation_mm[c] * (normals ? s.env.normal_rain[c] : 1.0);
+    const double usual_temp = w.temperature_c[c] + (normals ? s.env.normal_shift_c[c] : 0.0);
+    const double rain = std::clamp(s.env.precipitation_mm[c] / std::max(1.0, usual_rain), 0.4, 1.15);
+    const double warmth = std::max(0.3, 1.0 - 0.12 * std::fabs(s.env.temperature_c[c] - usual_temp));
     // Below a normal year, part of the shortfall is made up by mixing crops
     // and fields, famine foods and kin (harvest_buffer); the rest falls on
     // the stores (EconomySystem), and famine comes when they are empty.
     const double f = rain * warmth;
     if (f >= 1.0) return f;
-    const double buffer = technique_effects(w, c, techniques_in(s, c)).harvest_buffer;
+    const double buffer =
+        std::min(FarmingSystem::kMaxHarvestBuffer, technique_effects(w, c, techniques_in(s, c)).harvest_buffer);
     return 1.0 - (1.0 - f) * (1.0 - buffer);
 }
 
@@ -114,6 +138,39 @@ void FarmingSystem::step(StepContext& ctx) {
     if (s.domestication.size() != w.wild_stands.size()) s.domestication.assign(w.wild_stands.size(), 0.0);
     if (s.env.farming.size() != n) s.env.farming.assign(n, 0.0);
     if (s.env.farm_capacity.size() != n) s.env.farm_capacity.assign(n, 0.0);
+
+    // ---- What the land suits under the climate people are used to: worked
+    // out again where that climate has moved a step.
+    {
+        const std::size_t ns = content.species.size();
+        if (s.env.crop_suit.size() != n * ns || s.env.crop_shift_c.size() != n) {
+            s.env.crop_suit.assign(n * ns, 0);
+            s.env.crop_suit_watered.assign(n * ns, 0);
+            s.env.growing_months.assign(n, 0);
+            s.env.warm_months.assign(n, 0);
+            s.env.crop_shift_c.assign(n, kNoClimate);
+            s.env.crop_rain.assign(n, 1.0);
+        }
+        const bool normals = s.env.normal_shift_c.size() == n;
+        parallel_for(n, [&](std::size_t c_begin, std::size_t c_end) {
+        for (CellId c = static_cast<CellId>(c_begin); c < c_end; ++c) {
+            if (!w.is_land[c]) continue;
+            const double shift = normals ? kCropShiftStepC * std::floor(s.env.normal_shift_c[c] / kCropShiftStepC + 0.5) : 0.0;
+            const double rain = normals ? kCropRainStep * std::floor(s.env.normal_rain[c] / kCropRainStep + 0.5) : 1.0;
+            if (shift == s.env.crop_shift_c[c] && rain == s.env.crop_rain[c]) continue;
+            s.env.crop_shift_c[c] = shift;
+            s.env.crop_rain[c] = rain;
+            for (std::size_t sp = 0; sp < ns; ++sp) {
+                s.env.crop_suit[c * ns + sp] = suitability_byte(cultivated_suitability(w, content.species[sp], c, false, shift, rain));
+                s.env.crop_suit_watered[c * ns + sp] =
+                    suitability_byte(cultivated_suitability(w, content.species[sp], c, true, shift, rain));
+            }
+            const SeasonMonths months = season_months(w, c, shift, rain);
+            s.env.growing_months[c] = static_cast<std::uint8_t>(months.growing);
+            s.env.warm_months[c] = static_cast<std::uint8_t>(months.warm);
+        }
+        }, 64);
+    }
 
     const std::size_t i_plants = trait_index(content, "plant_reliance");
     const std::size_t i_storage = trait_index(content, "storage");
@@ -210,7 +267,7 @@ void FarmingSystem::step(StepContext& ctx) {
         RngStream rng = ctx.rng(Stream::Farming, kLearningEntity | c);
         for (std::size_t sp = 0; sp < content.species.size(); ++sp) {
             if (!((offered >> sp) & 1u)) continue;
-            if (w.raisable(c, sp) < kMinSuitability) continue;  // cannot be raised here
+            if (raisable(w, s, c, sp) < kMinSuitability) continue;  // cannot be raised here
             const double herding = s.env.pastoral.size() == n && s.env.farming.size() == n
                                        ? s.env.pastoral[c] * s.env.farming[c]
                                        : 0.0;
@@ -231,7 +288,7 @@ void FarmingSystem::step(StepContext& ctx) {
             s.env.pastoral[c] = 0.0;
             continue;
         }
-        const FarmParts parts = farm_parts(w, c, s.domesticates[c], techniques_in(s, c));
+        const FarmParts parts = farm_parts(w, c, s.domesticates[c], techniques_in(s, c), &s);
         const double density = parts.crops > 0.0 ? parts.crops + 0.5 * parts.herds : parts.herds;
         s.env.farm_capacity[c] = density * w.grid.area_km2(c) * harvest_factor(w, s, c);
         s.env.pastoral[c] = pastoral_share(parts);

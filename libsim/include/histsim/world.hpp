@@ -322,6 +322,19 @@ template <class F>
     if (c < w.river_share.size()) return w.river_share[c];
     return is_river(w, c) ? 1.0 : 0.0;
 }
+// How well a domesticated species grows in a cell (on its floodplain, with
+// `watered`) under the cell's climate shifted by shift_c degrees and its
+// rainfall times rain_ratio; 0 and 1 give World::cultivated_suitability.
+[[nodiscard]] double cultivated_suitability(const World& w, const SpeciesDef& s, CellId c, bool watered, double shift_c,
+                                            double rain_ratio);
+// Suitability as stored (0-255).
+[[nodiscard]] std::uint8_t suitability_byte(double v);
+// Months that can grow crops (5 C and enough rain) and that are warm (5 C),
+// under the shifted climate; 0 and 1 give World::growing_months, warm_months.
+struct SeasonMonths {
+    int growing = 0, warm = 0;
+};
+[[nodiscard]] SeasonMonths season_months(const World& w, CellId c, double shift_c, double rain_ratio);
 // Share of a cell's land in the coastal strip (coast_distance 1 at level 5).
 [[nodiscard]] inline double coast_share(const World& w, CellId c) noexcept {
     if (c < w.coast_share.size()) return w.coast_share[c];

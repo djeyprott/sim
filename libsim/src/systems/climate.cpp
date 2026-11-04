@@ -158,6 +158,20 @@ void ClimateSystem::step(StepContext& ctx) {
         --m.years_left;
     }
     std::erase_if(cl.modifiers, [](const ClimateModifier& m) { return m.years_left <= 0; });
+
+    // ---- The climate people are used to: a running mean of this one.
+    const std::size_t n = w.cell_count();
+    if (s.env.normal_shift_c.size() != n || s.env.normal_rain.size() != n) {
+        s.env.normal_shift_c.assign(n, 0.0);
+        s.env.normal_rain.assign(n, 1.0);
+    }
+    for (CellId c = 0; c < n; ++c) {
+        if (!w.is_land[c]) continue;
+        const double shift = s.env.temperature_c[c] - w.temperature_c[c];
+        const double rain = std::clamp(s.env.precipitation_mm[c] / std::max(1.0, w.precipitation_mm[c]), 0.05, 3.0);
+        s.env.normal_shift_c[c] += (shift - s.env.normal_shift_c[c]) / kNormalYears;
+        s.env.normal_rain[c] += (rain - s.env.normal_rain[c]) / kNormalYears;
+    }
 }
 
 double forage_capacity(const World& w, const SimState& s, CellId c) {
