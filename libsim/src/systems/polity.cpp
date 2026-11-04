@@ -1003,15 +1003,24 @@ void RulerSystem::step(StepContext& ctx) {
             const Tick heir_born = tick - static_cast<Tick>(heir_age) * kTicksPerYear;
             const auto kids = grown(old_figure) ? family_of(old_figure, heir_born, fr) : std::vector<std::uint32_t>{};
             std::uint32_t claimant = 0;
+            int rivals = 0;
             for (std::uint32_t k : kids) {
                 const Figure& c = s.figures[k];
                 if (!figure_alive(c, tick) || figure_age(c, tick) < kAdultAge) continue;
+                ++rivals;
                 if (claimant == 0 || c.ambition > s.figures[claimant].ambition) claimant = k;
             }
             Figure kinsman = new_person(fr, pol, tick - static_cast<Tick>((25.0 + fr.uniform() * 25.0) * kTicksPerYear),
                                         false, old_house, 0);
             kinsman.died = draw_death(kinsman.born, tick, fr);
-            const double ambition = claimant != 0 ? s.figures[claimant].ambition : kinsman.ambition;
+            // How the claimant ranks among all who might have claimed: the
+            // most ambitious of k is ambition^k (uniform), so breakups are no
+            // more common overall than before, only likelier with the bold.
+            double ambition = kinsman.ambition;
+            if (claimant != 0) {
+                ambition = 1.0;
+                for (int k = 0; k < rivals; ++k) ambition *= s.figures[claimant].ambition;
+            }
             const double breakup = polity_has_writing(w, s, id) ? kBreakupState : kBreakupChiefdom;
             if (rng.uniform() < breakup * (0.5 + ambition)) {
                 pol.contested = true;
