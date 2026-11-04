@@ -246,9 +246,9 @@ public:
     static constexpr std::size_t kProvinceMinCells = 4;
     static constexpr double kProvinceSpacingKm = 500.0;
     static constexpr double kLoyaltyRate = 0.1;
-    static constexpr double kLoyaltyBase = 0.1;
+    static constexpr double kLoyaltyBase = 0.0;
     static constexpr double kLoyaltyStability = 0.5;
-    static constexpr double kLoyaltyControl = 0.25;
+    static constexpr double kLoyaltyControl = 0.4;
     static constexpr double kLoyaltyPeople = 0.1;
     static constexpr double kLoyaltyFaith = 0.05;
     static constexpr double kLoyaltyAmbition = 0.3;
