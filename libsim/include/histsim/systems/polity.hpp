@@ -222,11 +222,9 @@ public:
     static constexpr double kSeatWriting = 4.0;
     static constexpr double kSeatBureaucracy = 2.0;
     static constexpr std::size_t kSplitChiefdomCells = 3;
-    // A seat in a fallen state reaches at least kProvinceReachKm (it held a
-    // province), and the rump and successors keep a truce among themselves
-    // for kSuccessorTruceYears.
+    // A seat in a fallen state reaches at least kProvinceReachKm: it held a
+    // province.
     static constexpr double kProvinceReachKm = 200.0;
-    static constexpr std::int64_t kSuccessorTruceYears = 30;
     static constexpr double kSuccessorStability = 0.5;
     // Nomad confederations form on open pasture (pasture quality at least
     // kNomadPasture: grassland, shrubland, savanna) where herds give at least

@@ -585,26 +585,15 @@ void PolitySystem::step(StepContext& ctx) {
         for (const Seat& cand : candidates) {
             if (held_by(cand.cell) == seats.size()) seats.push_back(cand);
         }
-        std::vector<std::uint32_t> heirs;  // the rump, then the successors
         if (state) {
             const std::uint32_t heir = found(capital, static_cast<std::uint32_t>(id), nomadic);
             s.polities[heir].stability = kSuccessorStability;
             for (CellId c : core) s.polity_of[c] = heir;
-            heirs.push_back(heir);
         }
         std::vector<std::uint32_t> successor(seats.size());
         for (std::size_t i = 0; i < seats.size(); ++i) {
             successor[i] = found(seats[i].cell, static_cast<std::uint32_t>(id), nomadic);
             s.polities[successor[i]].stability = kSuccessorStability;
-            heirs.push_back(successor[i]);
-        }
-        // The heirs of a fallen realm are spent: they keep the peace with one
-        // another for a while.
-        for (std::size_t a = 0; a < heirs.size(); ++a) {
-            for (std::size_t b = a + 1; b < heirs.size(); ++b) {
-                s.truces.push_back({std::min(heirs[a], heirs[b]), std::max(heirs[a], heirs[b]),
-                                    ctx.tick + kSuccessorTruceYears * kTicksPerYear});
-            }
         }
         for (CellId c : rest) {
             const std::size_t i = held_by(c);
