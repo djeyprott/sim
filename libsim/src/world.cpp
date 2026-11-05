@@ -330,7 +330,7 @@ double species_suitability(const World& w, const SpeciesDef& s, CellId c) {
 // way on the rain season: spring-sown and winter crops let winter-rain
 // cereals grow under summer rain and the reverse; 500 m on elevation), with river dependence
 // halved: farmers and herders extend a species' range.
-double cultivated_suitability(const World& w, const SpeciesDef& s, CellId c, bool watered = false) {
+double shifted_suitability(const World& w, const SpeciesDef& s, CellId c, bool watered, double shift_c, double rain_ratio) {
     if (!w.is_land[c]) return 0.0;
     auto widen = [](Trapezoid t, double by) {
         t.lo -= by;
@@ -350,8 +350,8 @@ double cultivated_suitability(const World& w, const SpeciesDef& s, CellId c, boo
     winters.lo -= 12.0;
     winters.best_lo -= 12.0;
     const Trapezoid season = widen(s.rain_season, 1.0);
-    double v = winters(w.coldest_month_c(c)) * widen(s.warmest_month_c, 4.0)(w.warmest_month_c(c)) *
-               (watered ? 1.0 : widen_rain(s.annual_precip_mm)(w.precipitation_mm[c]) * season(w.rain_season[c])) *
+    double v = winters(w.coldest_month_c(c) + shift_c) * widen(s.warmest_month_c, 4.0)(w.warmest_month_c(c) + shift_c) *
+               (watered ? 1.0 : widen_rain(s.annual_precip_mm)(w.precipitation_mm[c] * rain_ratio) * season(w.rain_season[c])) *
                widen(s.elevation_m, 500.0)(w.elevation_m[c]);
     if (s.river_affinity > 0.0) {
         const double river = river_effect(w, c, [](double q) { return std::min(1.0, q / 1500.0); });
@@ -460,11 +460,10 @@ void place_species(World& w, const Content& content) {
     w.species_abundance.assign(n * count, 0);
     w.cultivated_suitability.assign(n * count, 0);
     w.watered_suitability.assign(n * count, 0);
-    auto byte = [](double v) { return static_cast<std::uint8_t>(std::min(255.0, std::floor(v * 255.0 + 0.5))); };
     for (std::size_t s = 0; s < count; ++s) {
         for (CellId c = 0; c < n; ++c) {
-            w.cultivated_suitability[c * count + s] = byte(cultivated_suitability(w, content.species[s], c));
-            w.watered_suitability[c * count + s] = byte(cultivated_suitability(w, content.species[s], c, true));
+            w.cultivated_suitability[c * count + s] = suitability_byte(shifted_suitability(w, content.species[s], c, false, 0.0, 1.0));
+            w.watered_suitability[c * count + s] = suitability_byte(shifted_suitability(w, content.species[s], c, true, 0.0, 1.0));
         }
     }
     std::vector<double> suit(n);
@@ -640,6 +639,24 @@ void build_climate_mapping(World& w) {
 }
 
 }  // namespace
+
+double cultivated_suitability(const World& w, const SpeciesDef& s, CellId c, bool watered, double shift_c, double rain_ratio) {
+    return shifted_suitability(w, s, c, watered, shift_c, rain_ratio);
+}
+
+std::uint8_t suitability_byte(double v) { return static_cast<std::uint8_t>(std::min(255.0, std::floor(v * 255.0 + 0.5))); }
+
+SeasonMonths season_months(const World& w, CellId c, double shift_c, double rain_ratio) {
+    SeasonMonths out;
+    if (!w.is_land[c]) return out;
+    for (int m = 0; m < 12; ++m) {
+        const double t = w.month_temperature_c(c, m) + shift_c;
+        const double pm = w.month_precipitation_mm(c, m) * rain_ratio;
+        out.growing += (t >= 5.0 && pm >= 0.35 * month_pet_mm(t)) ? 1 : 0;
+        out.warm += t >= 5.0 ? 1 : 0;
+    }
+    return out;
+}
 
 const char* biome_name(Biome b) {
     switch (b) {
@@ -959,18 +976,11 @@ World generate_test_world(const WorldParams& params, const Content& content) {
             w.growing_months[c] = 0;
             continue;
         }
-        int growing = 0;
         double pet = 0.0;
-        for (int m = 0; m < 12; ++m) {
-            const double t = w.month_temperature_c(c, m);
-            const double pm = w.month_precipitation_mm(c, m);
-            pet += month_pet_mm(t);
-            growing += (t >= 5.0 && pm >= 0.35 * month_pet_mm(t)) ? 1 : 0;
-        }
-        w.growing_months[c] = static_cast<std::uint8_t>(growing);
-        int warm = 0;
-        for (int m = 0; m < 12; ++m) warm += w.month_temperature_c(c, m) >= 5.0 ? 1 : 0;
-        w.warm_months[c] = static_cast<std::uint8_t>(warm);
+        for (int m = 0; m < 12; ++m) pet += month_pet_mm(w.month_temperature_c(c, m));
+        const SeasonMonths months = season_months(w, c, 0.0, 1.0);
+        w.growing_months[c] = static_cast<std::uint8_t>(months.growing);
+        w.warm_months[c] = static_cast<std::uint8_t>(months.warm);
         deficit_mm[c] = std::max(0.0, pet - w.precipitation_mm[c]);
         const double runoff_mm = std::max(0.0, w.precipitation_mm[c] - 0.8 * pet);
         runoff_m3s[c] = runoff_mm * w.grid.area_km2(c) * 1000.0 / 31557600.0;

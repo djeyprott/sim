@@ -157,6 +157,21 @@ struct Environment {
     // Food stored in the cell, in person-years: granaries, pits, jars and
     // herds kept for the lean year (EconomySystem: food stores).
     std::vector<double> food_store;
+    // The climate people are used to (ClimateSystem): each cell's running
+    // mean over about 30 years of its warmth (C above the world's own) and
+    // rainfall (x the world's own).
+    std::vector<double> normal_shift_c;
+    std::vector<double> normal_rain;
+    // What crops and herds the land suits under that climate (FarmingSystem),
+    // recomputed when it moves a step (kCropShiftStepC, kCropRainStep): the
+    // climate they were computed for; per cell x species (0-255) rain-fed and
+    // on the floodplain; and the months that grow crops and that are warm.
+    std::vector<double> crop_shift_c;
+    std::vector<double> crop_rain;
+    std::vector<std::uint8_t> crop_suit;
+    std::vector<std::uint8_t> crop_suit_watered;
+    std::vector<std::uint8_t> growing_months;
+    std::vector<std::uint8_t> warm_months;
     // Extra chance of dying from disease this year, per cell and age group
     // (cell * kDiseaseAgeGroups + group), set by the disease system and
     // applied by demography.

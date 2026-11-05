@@ -392,7 +392,7 @@ void MigrationSystem::step(StepContext& ctx) {
         double best_appeal = 0.0, best_room = 0.0;
         auto consider = [&](CellId nb, double factor) {
             if (!w.is_land[nb]) return;
-            const double could = farm_density(w, nb, known, techs) * w.grid.area_km2(nb);
+            const double could = farm_density(w, nb, known, techs, &s) * w.grid.area_km2(nb);
             const double room = could - static_cast<double>(s.cell_population[nb]);
             if (could <= 0.0 || room < kColonizeRoom * could) return;
             const double climb_km = std::fabs(w.elevation_m[nb] - w.elevation_m[c]) / 1000.0;
@@ -815,7 +815,7 @@ void MigrationSystem::step(StepContext& ctx) {
     for (const auto& [to, known] : carried) {
         std::uint32_t usable = 0;
         for (std::size_t sp = 0; sp < w.content->species.size(); ++sp) {
-            if (((known >> sp) & 1u) && w.raisable(to, sp) >= FarmingSystem::kMinSuitability) {
+            if (((known >> sp) & 1u) && raisable(w, s, to, sp) >= FarmingSystem::kMinSuitability) {
                 usable |= 1u << sp;
             }
         }

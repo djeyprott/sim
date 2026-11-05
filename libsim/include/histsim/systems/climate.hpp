@@ -34,6 +34,9 @@ public:
     static constexpr double kRegionalTempPersistence = 0.6;
     static constexpr double kRegionalPrecipSd = 0.15;  // fraction, year-to-year
     static constexpr double kRegionalPrecipPersistence = 0.4;
+    // The climate people are used to follows the climate they live in over
+    // about this many years (SimState::Environment::normal_shift_c).
+    static constexpr double kNormalYears = 30.0;
     static constexpr double kPrecipPerDegree = 0.03;   // global rainfall +3% per K
 
     // Bond events: about every 1,470 years (+-500), lasting 150-400 years,
