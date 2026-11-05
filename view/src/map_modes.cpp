@@ -919,7 +919,8 @@ Legend legend(std::string_view mode_id) {
                       {"No ruler", kStateless}, {"Uninhabited", kEmptyLand}, {"Ocean", kOceanNeutral}};
     } else if (id == "war") {
         l.title = "War this year";
-        l.swatches = {{"Changed hands in war", kTaken}, {"Battles", kFighting}, {"Raided by nomads", kRaided},
+        l.swatches = {{"Field army (dot; white heart: winning)", hex("#d64541")}, {"Changed hands in war", kTaken},
+                      {"Fighting along the front", kFighting}, {"Raided by nomads", kRaided},
                       {"Raided in the last 20 years", kRaidedLately},
                       {"Ruled by a polity at war", kAtWar}, {"At peace", kPeace}, {"Uninhabited", kEmptyLand},
                       {"Ocean", kOceanNeutral}};
@@ -1759,7 +1760,7 @@ std::vector<MapMarker> capital_markers(const Simulation& sim, std::string_view m
             if (a.to != kNever || a.cell >= w.cell_count() || a.men < 50.0) continue;
             MapMarker m;
             m.cell = a.cell;
-            m.radius = std::clamp(2.0 + 1.2 * std::log10(a.men / 50.0), 2.0, 7.0);
+            m.radius = std::clamp(3.0 + 1.5 * std::log10(a.men / 50.0), 3.0, 8.0);
             m.fill = hex("#d64541");
             m.ring = hex("#2a0f0e");
             if (a.victories > a.defeats) m.center = hex("#ffffff");
