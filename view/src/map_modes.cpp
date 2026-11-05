@@ -1395,8 +1395,31 @@ std::vector<Row> describe_cell_rows(const Simulation& sim, CellId c,
                     with_commas(static_cast<long long>(war.started / kTicksPerYear)) + ")";
         }
         if (!wars.empty()) f.push_back({"At war", wars});
+        // Its field armies.
+        for (std::size_t i = 1; i < s.armies.size(); ++i) {
+            const Army& a = s.armies[i];
+            if (a.to != kNever || a.polity != ruler) continue;
+            std::string where = a.cell < w.cell_count() && s.polity_of[a.cell] == ruler ? "in its own land" : "in enemy land";
+            std::string goal;
+            if (a.goal < w.cell_count() && a.goal != a.cell) {
+                const std::uint32_t at = s.polity_of[a.goal];
+                goal = at != 0 && s.polities[at].capital == a.goal ? ", marching on " + s.polities[at].name : ", on the march";
+            }
+            f.push_back({"Field army", with_commas(static_cast<long long>(a.men)) + " men, " + where + goal + "; " +
+                                           std::to_string(a.victories) + " battles won, " + std::to_string(a.defeats) + " lost",
+                         a.general < s.figures.size() ? a.general : 0u});
+        }
     } else {
         f.push_back({"Polity", "none: bands, tribes and villages"});
+    }
+    // Armies standing here.
+    for (std::size_t i = 1; i < s.armies.size(); ++i) {
+        const Army& a = s.armies[i];
+        if (a.to != kNever || a.cell != c || a.polity >= s.polities.size()) continue;
+        const std::string led = a.general != 0 && a.general < s.figures.size() ? " under " + s.figures[a.general].name : "";
+        f.push_back({"Army here", "the army of " + s.polities[a.polity].name + led + ", " +
+                                      with_commas(static_cast<long long>(a.men)) + " men",
+                     a.general < s.figures.size() ? a.general : 0u});
     }
     mark("Economy");
     if (!s.urban.empty() && s.urban[c] > 0.001) {
@@ -1725,9 +1748,28 @@ std::vector<MapMarker> capital_markers(const Simulation& sim, std::string_view m
     std::vector<MapMarker> out;
     const std::string id(mode_id);
     const bool realms = id == "realms";
-    if (!realms && id != "polity" && id != "stability" && id != "provinces") return out;
     const World& w = sim.world();
     const SimState& s = sim.state();
+    // Field armies on the war and realms maps: red, larger for more men;
+    // an army that has won a battle has a white heart.
+    std::vector<MapMarker> field;
+    if (id == "war" || realms) {
+        for (std::size_t i = 1; i < s.armies.size(); ++i) {
+            const Army& a = s.armies[i];
+            if (a.to != kNever || a.cell >= w.cell_count() || a.men < 50.0) continue;
+            MapMarker m;
+            m.cell = a.cell;
+            m.radius = std::clamp(2.0 + 1.2 * std::log10(a.men / 50.0), 2.0, 7.0);
+            m.fill = hex("#d64541");
+            m.ring = hex("#2a0f0e");
+            if (a.victories > a.defeats) m.center = hex("#ffffff");
+            field.push_back(m);
+        }
+    }
+    if (!realms && id != "polity" && id != "stability" && id != "provinces") {
+        std::stable_sort(field.begin(), field.end(), [](const MapMarker& a, const MapMarker& b) { return a.radius < b.radius; });
+        return field;
+    }
     for (std::uint32_t p = 1; p < s.polities.size(); ++p) {
         const Polity& pol = s.polities[p];
         if (pol.ended != kNever || pol.capital >= w.cell_count() || s.polity_of.size() != w.cell_count() ||
@@ -1759,8 +1801,10 @@ std::vector<MapMarker> capital_markers(const Simulation& sim, std::string_view m
             out.push_back(m);
         }
     }
-    // Larger dots last, so they sit on top.
+    // Larger dots last, so they sit on top; armies above capitals.
     std::stable_sort(out.begin(), out.end(), [](const MapMarker& a, const MapMarker& b) { return a.radius < b.radius; });
+    std::stable_sort(field.begin(), field.end(), [](const MapMarker& a, const MapMarker& b) { return a.radius < b.radius; });
+    out.insert(out.end(), field.begin(), field.end());
     return out;
 }
 

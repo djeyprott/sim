@@ -653,6 +653,13 @@ void PolitySystem::step(StepContext& ctx) {
             for (std::uint32_t a : war.attackers) if (a < np) warring[a] = 1;
             for (std::uint32_t d : war.defenders) if (d < np) warring[d] = 1;
         }
+        // Each realm's living field army: its general and the battles it has won.
+        std::vector<std::uint32_t> army_wins(np, 0), army_general(np, 0);
+        for (const Army& a : s.armies) {
+            if (a.to != kNever || a.polity == 0 || a.polity >= np) continue;
+            army_wins[a.polity] = std::max(army_wins[a.polity], a.victories);
+            army_general[a.polity] = a.general;
+        }
         auto retire = [&](Polity& pol) {
             if (pol.commander != 0 && pol.commander < s.commanders.size()) s.commanders[pol.commander].to = ctx.tick;
             pol.commander = 0;
@@ -697,7 +704,9 @@ void PolitySystem::step(StepContext& ctx) {
             const Figure& general = s.figures[m.figure];
             const Ruler& king = s.rulers[pol.ruler];
             const double regency = ruler_age(king, ctx.tick) < RulerSystem::kAdultAge ? 2.0 : 1.0;
-            const double chance = kCoup * m.fame * (0.5 + general.ambition) * (1.5 - pol.stability) * (1.5 - king.ability) * regency;
+            const double loyal_army = army_wins[id] != 0 && army_general[id] == m.figure ? std::min(2.0, static_cast<double>(army_wins[id])) : 0.0;
+            const double chance = kCoup * m.fame * (0.5 + general.ambition) * (1.5 - pol.stability) * (1.5 - king.ability) *
+                                  regency * (1.0 + kArmyCoup * loyal_army);
             RngStream rng = ctx.rng(Stream::Polity, kCoupEntity | static_cast<std::uint32_t>(id));
             if (rng.uniform() >= chance) continue;
             pol.rebel = m.figure;  // takes the throne next year (RulerSystem), if he lives

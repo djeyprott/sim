@@ -423,6 +423,10 @@ void WarSystem::step(StepContext& ctx) {
     std::vector<std::int8_t> side(np, 0);
     if (s.armies.empty()) s.armies.emplace_back();
     auto living = [&](std::uint32_t id) { return id != 0 && id < s.armies.size() && s.armies[id].to == kNever; };
+    // Armies of wars ended elsewhere (a people's flight) go home.
+    for (Army& a : s.armies) {
+        if (a.to == kNever && a.war != 0 && a.war < s.wars.size() && s.wars[a.war].ended != kNever) a.to = s.wars[a.war].ended;
+    }
     const double spacing = kLevel5CellKm * w.cell_scale();
     std::vector<int> dist(n, -1);
     std::vector<CellId> queue;

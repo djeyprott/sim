@@ -249,3 +249,46 @@ TEST(war_conquest_dynasties_settle_down) {
         CHECK_EQ(s.polities[1].settling_since, kNever);
     }
 }
+
+// Field armies: each war's leaders raise one; an army stands on land, is
+// living only while its war goes on, and breaks below kBroken of its men;
+// battles are between armies of the two sides of a war.
+TEST(war_field_armies_march_fight_and_disband) {
+    Setup x = two_polities();
+    SimState& s = x.s;
+    const World& w = x.sim.world();
+    const std::uint32_t id = start_war(w, s, s.tick, 1, 2, WarGoal::Conquest);
+    run_war_system(w, s, 60);
+    const War& war = s.wars[id];
+    CHECK(war.army_a != 0 && war.army_a < s.armies.size());
+    CHECK_EQ(s.armies[war.army_a].polity, 1u);
+    CHECK(war.ended != kNever);
+    for (std::size_t i = 1; i < s.armies.size(); ++i) CHECK(s.armies[i].to != kNever);  // the war is over
+
+    WorldParams p;
+    p.grid_level = 4;
+    Simulation sim = Simulation::create(p);
+    sim.step_years(5000);
+    const SimState& t = sim.state();
+    CHECK(t.armies.size() > 10);
+    CHECK(!t.battles.empty());
+    for (std::size_t i = 1; i < t.armies.size(); ++i) {
+        const Army& a = t.armies[i];
+        CHECK_EQ(a.id, static_cast<std::uint32_t>(i));
+        CHECK(a.cell < sim.world().cell_count() && sim.world().is_land[a.cell]);
+        CHECK(a.raised > 0.0 && a.men <= a.raised + 1e-9);
+        CHECK(a.war != 0 && a.war < t.wars.size());
+        if (a.to == kNever) {
+            CHECK_EQ(t.wars[a.war].ended, kNever);
+            CHECK(a.men >= WarSystem::kBroken * a.raised);
+            CHECK(t.wars[a.war].army_a == i || t.wars[a.war].army_d == i);
+        }
+    }
+    for (const Battle& b : t.battles) {
+        CHECK(b.winner != 0 && b.winner < t.armies.size() && b.loser != 0 && b.loser < t.armies.size());
+        CHECK_EQ(t.armies[b.winner].war, b.war);
+        CHECK_EQ(t.armies[b.loser].war, b.war);
+        CHECK(t.armies[b.winner].polity != t.armies[b.loser].polity);
+        CHECK(b.dead >= 0);
+    }
+}

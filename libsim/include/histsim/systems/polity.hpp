@@ -326,6 +326,9 @@ public:
     // unrest + kPriestZeal x 2 x (piety - 0.5).
     static constexpr double kPriestLegitimacy = 0.1;
     static constexpr double kPriestZeal = 0.1;
+    // A general at the head of a field army that has won battles is that
+    // much more dangerous: coup chance x (1 + kArmyCoup x min(2, its victories)).
+    static constexpr double kArmyCoup = 1.0;
     static constexpr double kSuccessorStability = 0.5;
     // Nomad confederations form on open pasture (pasture quality at least
     // kNomadPasture: grassland, shrubland, savanna) where herds give at least
