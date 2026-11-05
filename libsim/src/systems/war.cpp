@@ -18,6 +18,7 @@ constexpr std::uint32_t kDeclareEntity = 0x20000000u;
 constexpr std::uint32_t kDiplomacyEntity = 0x30000000u;
 constexpr std::uint32_t kRaidEntity = 0x40000000u;
 constexpr std::uint32_t kAllianceEntity = 0x50000000u;
+constexpr std::uint32_t kArmyEntity = 0x60000000u;
 
 std::size_t trait_index(const Content& c, const char* id) {
     for (std::size_t t = 0; t < c.traits.size(); ++t) {
@@ -197,6 +198,25 @@ Armies raise_armies(const World& w, const SimState& s) {
 }  // namespace
 
 std::vector<double> polity_strengths(const World& w, const SimState& s) { return raise_armies(w, s).strength; }
+
+std::uint32_t army_at(const SimState& s, CellId c) {
+    std::uint32_t best = 0;
+    for (std::size_t i = 1; i < s.armies.size(); ++i) {
+        const Army& a = s.armies[i];
+        if (a.to == kNever && a.cell == c && (best == 0 || a.men > s.armies[best].men)) best = static_cast<std::uint32_t>(i);
+    }
+    return best;
+}
+
+double army_strength(const World& w, const SimState& s, std::uint32_t id) {
+    if (id == 0 || id >= s.armies.size()) return 0.0;
+    const Army& a = s.armies[id];
+    if (a.polity == 0 || a.polity >= s.polities.size()) return 0.0;
+    const Polity& p = s.polities[a.polity];
+    const TechEffects e = technique_effects(w, p.capital, techniques_in(s, p.capital));
+    return a.men * (1.0 + e.military) * (has_institution(p.institutions, Institution::Army) ? Institutions::kArmyStrength : 1.0) *
+           general_factor(s, a.polity);
+}
 
 bool herder_tribe(const World& w, const SimState& s, std::uint32_t id) {
     if (id == 0 || id >= s.polities.size()) return false;
@@ -401,6 +421,12 @@ void WarSystem::step(StepContext& ctx) {
 
     // ---- Wars under way.
     std::vector<std::int8_t> side(np, 0);
+    if (s.armies.empty()) s.armies.emplace_back();
+    auto living = [&](std::uint32_t id) { return id != 0 && id < s.armies.size() && s.armies[id].to == kNever; };
+    const double spacing = kLevel5CellKm * w.cell_scale();
+    std::vector<int> dist(n, -1);
+    std::vector<CellId> queue;
+    queue.reserve(n);
     for (std::size_t wi = 1; wi < s.wars.size(); ++wi) {
         War& war = s.wars[wi];
         if (war.ended != kNever) continue;
@@ -408,6 +434,10 @@ void WarSystem::step(StepContext& ctx) {
         auto finish = [&](WarOutcome outcome) {
             war.ended = tick;
             war.outcome = outcome;
+            // The armies go home.
+            for (std::uint32_t id : {war.army_a, war.army_d}) {
+                if (living(id)) s.armies[id].to = tick;
+            }
             if (alive(s, lead_a) && alive(s, lead_d)) {
                 const auto [x, y] = ordered(lead_a, lead_d);
                 s.truces.push_back({x, y, tick + kTruceYears * kTicksPerYear});
@@ -435,8 +465,172 @@ void WarSystem::step(StepContext& ctx) {
             }
             return total;
         };
-        const double pa = side_power(war.attackers, false), pd = side_power(war.defenders, false);
+        double pa = side_power(war.attackers, false), pd = side_power(war.defenders, false);
         RngStream rng = ctx.rng(Stream::War, kWarEntity | war.id);
+
+        // ---- Field armies: raised, marched, fought, worn and fed.
+        RngStream arng = ctx.rng(Stream::War, kArmyEntity | war.id);
+        auto kill_soldiers = [&](std::uint32_t id, double men) -> std::int64_t {
+            if (men <= 0.0 || id == 0 || id >= np) return 0;
+            std::int64_t total = 0;
+            for (CellId c : cells[id]) {
+                if (s.polity_of[c] == id) total += fighting_men(s, c);
+            }
+            if (total <= 0) return 0;
+            const double share = std::min(0.5, men / static_cast<double>(total));
+            std::int64_t dead = 0;
+            for (CellId c : cells[id]) {
+                if (s.polity_of[c] == id) dead += kill(s, c, share, true, arng);
+            }
+            blow(id, kShockDead * static_cast<double>(dead));
+            return dead;
+        };
+        auto raise = [&](std::uint32_t leader, std::uint32_t last) -> std::uint32_t {
+            if (last != 0 && last < s.armies.size() && tick - s.armies[last].to < kReraiseYears * kTicksPerYear) return last;
+            const double men = kFieldShare * armies.levy[leader];
+            if (men < 1.0) return last;
+            const Polity& p = s.polities[leader];
+            Army a;
+            a.id = static_cast<std::uint32_t>(s.armies.size());
+            a.polity = leader;
+            a.war = war.id;
+            a.general = p.commander != 0 && p.commander < s.commanders.size() ? s.commanders[p.commander].figure : 0;
+            a.cell = a.goal = p.capital;
+            a.men = a.raised = men;
+            a.from = tick;
+            s.armies.push_back(a);
+            return a.id;
+        };
+        if (!living(war.army_a)) war.army_a = raise(lead_a, war.army_a);
+        if (!living(war.army_d)) war.army_d = raise(lead_d, war.army_d);
+        auto in_side = [&](CellId c, std::int8_t mine) {
+            const std::uint32_t o = s.polity_of[c];
+            return o != 0 && o < np && side[o] == mine;
+        };
+        // Up to `steps` cells by land toward `goal` (breadth-first from the goal).
+        auto step_toward = [&](std::uint32_t id, CellId goal, int steps) {
+            Army& a = s.armies[id];
+            if (steps <= 0 || goal == a.cell || goal == kInvalidCell || !w.is_land[goal]) return;
+            for (CellId c : queue) dist[c] = -1;
+            queue.clear();
+            dist[goal] = 0;
+            queue.push_back(goal);
+            for (std::size_t i = 0; i < queue.size() && dist[a.cell] < 0; ++i) {
+                for (CellId nb : w.grid.neighbors(queue[i])) {
+                    if (dist[nb] >= 0 || !w.is_land[nb]) continue;
+                    dist[nb] = dist[queue[i]] + 1;
+                    queue.push_back(nb);
+                }
+            }
+            for (int k = 0; k < steps && dist[a.cell] > 0; ++k) {
+                CellId next = kInvalidCell;
+                for (CellId nb : w.grid.neighbors(a.cell)) {
+                    if (dist[nb] >= 0 && dist[nb] < dist[a.cell] && (next == kInvalidCell || nb < next)) next = nb;
+                }
+                if (next == kInvalidCell) break;
+                a.cell = next;
+            }
+        };
+        auto march = [&](std::uint32_t me, std::uint32_t foe, std::int8_t mine, std::uint32_t foe_leader) {
+            if (!living(me)) return;
+            Army& a = s.armies[me];
+            CellId goal = s.polities[foe_leader].capital;
+            if (living(foe)) {
+                const CellId fc = s.armies[foe].cell;
+                if (in_side(fc, mine) || w.grid.distance_km(a.cell, fc) <= kEngageKm) goal = fc;
+            }
+            a.goal = goal;
+            const Polity& p = s.polities[a.polity];
+            const double transport = technique_effects(w, p.capital, techniques_in(s, p.capital)).land_transport;
+            const double reach_cells = kMarchKm * (p.nomadic ? kNomadMarch : 1.0) * (1.0 + transport) / spacing;
+            const double whole = std::floor(reach_cells);
+            const int steps = static_cast<int>(whole) + (arng.uniform() < reach_cells - whole ? 1 : 0);
+            step_toward(me, goal, steps);
+        };
+        auto close = [&](CellId x, CellId y) {
+            if (x == y) return true;
+            for (CellId nb : w.grid.neighbors(x)) {
+                if (nb == y) return true;
+            }
+            return false;
+        };
+        auto battle = [&]() {
+            const std::uint32_t ia = war.army_a, id = war.army_d;
+            const double sa = army_strength(w, s, ia), sd = army_strength(w, s, id);
+            if (sa + sd <= 0.0) return;
+            const bool a_wins = arng.uniform() < sa * sa / (sa * sa + sd * sd);
+            const std::uint32_t iw = a_wins ? ia : id, il = a_wins ? id : ia;
+            const double sw = a_wins ? sa : sd, sl = a_wins ? sd : sa;
+            Army& win = s.armies[iw];
+            Army& lose = s.armies[il];
+            const double lost_l = kRoutLoss * lose.men;
+            const double lost_w = kWinLoss * win.men * std::min(1.0, sw > 0.0 ? sl / sw : 1.0);
+            lose.men -= lost_l;
+            win.men -= lost_w;
+            ++win.victories;
+            ++lose.defeats;
+            Battle b;
+            b.tick = tick;
+            b.cell = lose.cell;
+            b.war = war.id;
+            b.winner = iw;
+            b.loser = il;
+            const std::uint32_t wp = win.polity, lp = lose.polity;
+            b.dead = kill_soldiers(lp, lost_l) + kill_soldiers(wp, lost_w);
+            war.deaths += b.dead;
+            const std::uint32_t mc = s.polities[wp].commander;
+            if (mc != 0 && mc < s.commanders.size() && s.commanders[mc].figure == s.armies[iw].general) {
+                s.commanders[mc].fame += kFameBattle;
+            }
+            s.events.push_back({tick, EventType::BattleFought, b.cell, static_cast<std::int64_t>(s.battles.size())});
+            s.battles.push_back(b);
+            // The beaten army falls back toward its capital.
+            step_toward(il, s.polities[lp].capital, 1);
+        };
+        march(war.army_a, war.army_d, 1, lead_d);
+        if (living(war.army_a) && living(war.army_d) && close(s.armies[war.army_a].cell, s.armies[war.army_d].cell)) {
+            battle();
+        } else {
+            march(war.army_d, war.army_a, 2, lead_a);
+            if (living(war.army_a) && living(war.army_d) && close(s.armies[war.army_a].cell, s.armies[war.army_d].cell)) battle();
+        }
+        auto wear = [&](std::uint32_t me, std::int8_t mine) {
+            if (!living(me)) return;
+            Army& a = s.armies[me];
+            const CellId c = a.cell;
+            const bool home = in_side(c, mine);
+            const auto biome = static_cast<Biome>(w.biome[c]);
+            const bool harsh = biome == Biome::Desert || biome == Biome::Tundra || biome == Biome::TropicalRainforest ||
+                               biome == Biome::IceSheet;
+            const double lost = kAttrition * (home ? kHomeAttrition : 1.0) * (harsh ? kHarshAttrition : 1.0) * a.men;
+            a.men -= lost;
+            const std::uint32_t mp = a.polity;
+            war.deaths += kill_soldiers(mp, lost);
+            Army& b = s.armies[me];
+            if (home) b.men = std::min(b.raised, b.men + kRefill * b.raised);
+            // It lives off the land.
+            const double people = static_cast<double>(s.cell_population[c]);
+            if (s.env.food_store.size() == n && people > 0.0) {
+                const double need = kForage * b.men;
+                const double take = std::min(s.env.food_store[c], need);
+                s.env.food_store[c] -= take;
+                if (need > take) war.deaths += kill(s, c, kForageDeaths * std::min(1.0, (need - take) / people), false, arng);
+            }
+            const std::uint32_t owner = s.polity_of[c];
+            const std::uint32_t v = s.province_of.size() == n ? s.province_of[c] : 0;
+            if (v != 0 && v < s.provinces.size()) {
+                s.provinces[v].unrest = std::min(1.0, s.provinces[v].unrest + kArmyUnrest);
+            } else if (owner != 0 && owner < np) {
+                s.polities[owner].unrest = std::min(1.0, s.polities[owner].unrest + kArmyUnrest);
+            }
+            if (b.men < kBroken * b.raised) b.to = tick;  // it breaks up
+        };
+        wear(war.army_a, 1);
+        wear(war.army_d, 2);
+        // A side without a field army fights on with garrisons and levies.
+        if (!living(war.army_a)) pa *= kNoArmy;
+        if (!living(war.army_d)) pd *= kNoArmy;
+        const bool broken = (war.army_a != 0 && !living(war.army_a)) || (war.army_d != 0 && !living(war.army_d));
 
         // Cells the two sides held at the start of the year (taken cells
         // stay listed; their owner is read as it is now).
@@ -452,7 +646,10 @@ void WarSystem::step(StepContext& ctx) {
         std::vector<CellId> front_a, front_d;  // cells of each side on the front
         auto push = [&](std::int8_t mine, double ratio) -> bool {
             CellId target = kInvalidCell, from = kInvalidCell;
-            double best = -1.0;
+            double best = -1.0e18;
+            // Land is taken where the side's field army is.
+            const std::uint32_t mine_army = mine == 1 ? war.army_a : war.army_d;
+            const CellId at = living(mine_army) ? s.armies[mine_army].cell : kInvalidCell;
             front_a.clear();
             front_d.clear();
             for (CellId c : member_cells) {
@@ -469,7 +666,8 @@ void WarSystem::step(StepContext& ctx) {
                                            reach[owner]) < kConquestControl) {
                             continue;
                         }
-                        if (ctl > best || (ctl == best && nb < target)) best = ctl, target = nb, from = c;
+                        const double score = at != kInvalidCell ? -w.grid.distance_km(at, nb) : ctl;
+                        if (score > best || (score == best && nb < target)) best = score, target = nb, from = c;
                     }
                 }
             }
@@ -499,6 +697,8 @@ void WarSystem::step(StepContext& ctx) {
             flee(s, from, target, kConquestSettlers, rng, arrivals);
             s.polity_of[target] = s.polity_of[from];
             s.strife[target] = 2;
+            // The army moves into what it took.
+            if (at != kInvalidCell && close(at, target)) s.armies[mine_army].cell = target;
             return true;
         };
         // On finer grids, as many pushes as cells make up a level-5 cell, so
@@ -544,7 +744,7 @@ void WarSystem::step(StepContext& ctx) {
         } else if (side[s.polity_of[cap_a]] == 2) {
             outcome = WarOutcome::DefendersWon;
             capital_fell = true;
-        } else if (rng.uniform() < kPeace * (1.0 + years / 10.0)) {
+        } else if (rng.uniform() < kPeace * (1.0 + years / 10.0) * (broken ? kNoArmyPeace : 1.0)) {
             outcome = war.cells_taken > war.cells_lost   ? WarOutcome::AttackersWon
                       : war.cells_lost > war.cells_taken ? WarOutcome::DefendersWon
                                                          : WarOutcome::Stalemate;

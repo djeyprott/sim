@@ -445,6 +445,35 @@ struct War {
     std::int64_t deaths = 0;
     std::uint32_t cells_taken = 0;  // by the attackers
     std::uint32_t cells_lost = 0;   // retaken by the defenders
+    std::uint32_t army_a = 0, army_d = 0;  // the leaders' field armies now (SimState::armies), 0 if none
+};
+
+// A field army (WarSystem): raised by a war's leading realm on each side,
+// led by its general, it marches cell by cell toward the enemy's army or
+// capital, takes land where it stands, lives off the country it passes
+// through and is worn down by marching, disease and battle. It disbands
+// when the war ends.
+struct Army {
+    std::uint32_t id = 0;
+    std::uint32_t polity = 0;
+    std::uint32_t war = 0;
+    std::uint32_t general = 0;   // a figure (its polity's general when raised), 0 if none
+    CellId cell = kInvalidCell;  // where it is
+    CellId goal = kInvalidCell;  // where it is going
+    double men = 0.0;
+    double raised = 0.0;         // men when raised
+    Tick from = 0;
+    Tick to = kNever;            // disbanded
+    std::uint32_t victories = 0, defeats = 0;
+};
+
+// A battle between two field armies.
+struct Battle {
+    Tick tick = 0;
+    CellId cell = kInvalidCell;
+    std::uint32_t war = 0;
+    std::uint32_t winner = 0, loser = 0;  // armies
+    std::int64_t dead = 0;
 };
 
 // Why a people left its land in a body.
@@ -530,6 +559,7 @@ enum class EventType : std::uint32_t {
     SuccessionDisputed = 32,  // a rival claimed the throne; cell = capital; value = the claimant's figure id
     ProvinceRevolt = 33,      // a province broke away with its governor; cell = its seat; value = province id
     PeasantUprising = 34,     // the people rose; cell = where; value = index into SimState::uprisings
+    BattleFought = 35,        // two field armies met; cell = where; value = index into SimState::battles
 };
 
 struct Event {
@@ -712,6 +742,8 @@ struct SimState {
     std::vector<std::uint32_t> province_of;   // per cell: its province (0: the crown's, or no province)
     std::vector<Uprising> uprisings;
     std::vector<Commander> commanders;  // index = id; commanders[0] is no one
+    std::vector<Army> armies;           // index = id; armies[0] is none
+    std::vector<Battle> battles;
 
     // Religions (entry 0 a placeholder) and each cell's faith (0 = none yet).
     std::vector<Religion> religions;

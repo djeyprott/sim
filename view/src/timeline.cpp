@@ -1,5 +1,6 @@
 #include "histsim/view/timeline.hpp"
 
+#include <cctype>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -71,6 +72,7 @@ const char* event_kind(EventType type) {
         case EventType::WarBegan:
         case EventType::WarEnded:
         case EventType::AllianceFormed:
+        case EventType::BattleFought:
         case EventType::Raid: return "war";
         case EventType::LanguageSplit:
         case EventType::CultureSplit:
@@ -247,6 +249,21 @@ std::string describe_event(const Simulation& sim, const Event& e) {
                        (age < RulerSystem::kAdultAge ? ", ruled for by a regent" : "");
             }
             return "";
+        case EventType::BattleFought:
+            if (index < s.battles.size()) {
+                const Battle& b = s.battles[index];
+                auto who = [&](std::uint32_t id) {
+                    if (id == 0 || id >= s.armies.size()) return std::string("an army");
+                    const Army& a = s.armies[id];
+                    std::string led;
+                    if (a.general != 0 && a.general < s.figures.size()) led = " under " + s.figures[a.general].name;
+                    return "the army of " + polity_name(s, a.polity) + led;
+                };
+                std::string text = who(b.winner);
+                text[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(text[0])));
+                return text + " defeats " + who(b.loser) + place(sim, b.cell) + " (" + commas(b.dead) + " dead)";
+            }
+            return "";
         case EventType::PeasantUprising:
             if (index < s.uprisings.size()) {
                 const Uprising& u = s.uprisings[index];
@@ -315,6 +332,9 @@ std::uint32_t event_figure(const SimState& s, const Event& e) {
         case EventType::SuccessionDisputed: f = static_cast<std::uint32_t>(index); break;
         case EventType::ProvinceRevolt: f = index < s.provinces.size() ? s.provinces[index].governor : 0; break;
         case EventType::PeasantUprising: f = index < s.uprisings.size() ? s.uprisings[index].leader : 0; break;
+        case EventType::BattleFought:
+            f = index < s.battles.size() && s.battles[index].winner < s.armies.size() ? s.armies[s.battles[index].winner].general : 0;
+            break;
         case EventType::ReligionFounded: f = index < s.religions.size() ? s.religions[index].founder : 0; break;
         case EventType::Invention:
             for (const Invention& inv : s.inventions) {
@@ -358,6 +378,14 @@ bool event_involves(const SimState& s, const Event& e, std::uint32_t p) {
             return index < s.provinces.size() && (s.provinces[index].polity == p || s.provinces[index].became == p);
         case EventType::PeasantUprising:
             return index < s.uprisings.size() && (s.uprisings[index].polity == p || s.uprisings[index].became == p);
+        case EventType::BattleFought:
+            if (index < s.battles.size()) {
+                const Battle& b = s.battles[index];
+                for (std::uint32_t a : {b.winner, b.loser}) {
+                    if (a < s.armies.size() && s.armies[a].polity == p) return true;
+                }
+            }
+            return false;
         case EventType::InstitutionFounded:
         case EventType::InstitutionLost: return v / 16 == p;
         default: return false;
@@ -372,7 +400,10 @@ std::vector<TimelineEntry> timeline(const Simulation& sim, std::string_view kind
         const Event& e = *it;
         const char* k = event_kind(e.type);
         if (!kind.empty() && kind != k) continue;
-        const bool frequent = e.type == EventType::Raid || e.type == EventType::CellSettled || e.type == EventType::Succession;
+        const bool small_battle = e.type == EventType::BattleFought && static_cast<std::size_t>(e.value) < s.battles.size() &&
+                                  s.battles[static_cast<std::size_t>(e.value)].dead < 1000;
+        const bool frequent =
+            e.type == EventType::Raid || e.type == EventType::CellSettled || e.type == EventType::Succession || small_battle;
         if (kind.empty() && cell == kInvalidCell && polity == 0 && frequent) continue;
         if (cell != kInvalidCell && e.cell != cell) continue;
         if (polity != 0 && !event_involves(s, e, polity)) continue;
