@@ -720,6 +720,24 @@ int wars(const Options& o) {
                     war.defenders.size(), static_cast<long long>(war.deaths), war.cells_taken, war.cells_lost,
                     histsim::war_outcome_name(war.outcome));
     }
+    // Field armies and the bloodiest battles.
+    {
+        std::size_t raised = 0, broke = 0;
+        for (std::size_t i = 1; i < s.armies.size(); ++i) {
+            ++raised;
+            broke += s.armies[i].to != histsim::kNever && s.armies[i].men < histsim::WarSystem::kBroken * s.armies[i].raised ? 1 : 0;
+        }
+        std::vector<std::size_t> by_dead;
+        for (std::size_t i = 0; i < s.battles.size(); ++i) by_dead.push_back(i);
+        std::stable_sort(by_dead.begin(), by_dead.end(), [&](auto a, auto b) { return s.battles[a].dead > s.battles[b].dead; });
+        std::printf("\nField armies: %zu raised, %zu broken in the field; %zu battles. Bloodiest:\n", raised, broke, s.battles.size());
+        for (std::size_t i = 0; i < by_dead.size() && i < 10; ++i) {
+            const histsim::Battle& b = s.battles[by_dead[i]];
+            const histsim::Event e{b.tick, histsim::EventType::BattleFought, b.cell, static_cast<std::int64_t>(by_dead[i])};
+            std::printf("  year %5lld  %s\n", static_cast<long long>(b.tick / histsim::kTicksPerYear),
+                        histsim::view::describe_event(sim, e).c_str());
+        }
+    }
     // Nomads: conquest dynasties, and the confederations alive now.
     std::size_t dynasties = 0, ever = 0, now = 0;
     for (const histsim::Event& e : s.events) dynasties += e.type == histsim::EventType::ConquestDynasty ? 1 : 0;

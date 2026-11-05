@@ -350,6 +350,8 @@ void serialize(Ar& ar, SimState& s) {
         ar.i64(w.deaths);
         ar.u32(w.cells_taken);
         ar.u32(w.cells_lost);
+        ar.u32(w.army_a);
+        ar.u32(w.army_d);
     });
     vec(ar, s.alliances, [&](Alliance& a) {
         ar.u32(a.a);
@@ -424,6 +426,28 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(m.defeats);
         ar.f64(m.fame);
         flag(ar, m.seized);
+    });
+    vec(ar, s.armies, [&](Army& a) {
+        ar.u32(a.id);
+        ar.u32(a.polity);
+        ar.u32(a.war);
+        ar.u32(a.general);
+        ar.u32(a.cell);
+        ar.u32(a.goal);
+        ar.f64(a.men);
+        ar.f64(a.raised);
+        ar.i64(a.from);
+        ar.i64(a.to);
+        ar.u32(a.victories);
+        ar.u32(a.defeats);
+    });
+    vec(ar, s.battles, [&](Battle& b) {
+        ar.i64(b.tick);
+        ar.u32(b.cell);
+        ar.u32(b.war);
+        ar.u32(b.winner);
+        ar.u32(b.loser);
+        ar.i64(b.dead);
     });
     vec(ar, s.uprisings, [&](Uprising& u) {
         ar.i64(u.tick);

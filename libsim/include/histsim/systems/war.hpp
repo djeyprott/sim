@@ -144,6 +144,47 @@ public:
     static constexpr double kShockDefeat = 0.3;
     static constexpr double kShockRaid = 0.05;
     static constexpr double kVictoryRelief = 0.1;
+    // Field armies. Each side's leader raises kFieldShare of its levy as a
+    // field army at its capital, under its general. Each year it marches
+    // up to kMarchKm (x kNomadMarch for mounted nomads, x (1 + land
+    // transport)) by land toward the enemy army, if that is in its own
+    // side's land or within kEngageKm, else toward the enemy capital. The
+    // land its side takes in a year is taken next to it (the cells nearest
+    // the army) and it moves into what it takes.
+    static constexpr double kFieldShare = 0.5;
+    static constexpr double kMarchKm = 450.0;
+    static constexpr double kNomadMarch = 2.0;
+    static constexpr double kEngageKm = 700.0;
+    // Battle: armies in the same or neighbouring cells fight. The winner is
+    // drawn with chance s_a^2 / (s_a^2 + s_b^2), strength = men x quality x
+    // general. The loser loses kRoutLoss of its men and falls back a cell
+    // toward its capital; the winner loses kWinLoss x the loser's strength
+    // ratio. Its general gains kFameBattle.
+    static constexpr double kRoutLoss = 0.4;
+    static constexpr double kWinLoss = 0.1;
+    static constexpr double kFameBattle = 0.15;
+    // An army worn below kBroken of the men it was raised with breaks up;
+    // its side fights on at kNoArmy of its strength (garrisons and local
+    // levies), the war is kNoArmyPeace times as likely to end each year, and
+    // after kReraiseYears it raises a new army.
+    static constexpr double kBroken = 0.2;
+    static constexpr double kNoArmy = 0.6;
+    static constexpr double kNoArmyPeace = 2.0;
+    static constexpr std::int64_t kReraiseYears = 5;
+    // Wear: kAttrition of its men a year in enemy land (x kHomeAttrition at
+    // home), x kHarshAttrition in desert, tundra and rainforest; in its own
+    // land it is refilled by kRefill of its strength a year.
+    static constexpr double kAttrition = 0.08;
+    static constexpr double kHomeAttrition = 0.3;
+    static constexpr double kHarshAttrition = 2.5;
+    static constexpr double kRefill = 0.15;
+    // Living off the land: the army eats kForage years of food per man from
+    // the stores of the cell it stands in; where the stores run short,
+    // kForageDeaths of the people starve (in proportion to the shortfall),
+    // and the unrest of the land (province or crown) rises by kArmyUnrest.
+    static constexpr double kForage = 0.5;
+    static constexpr double kForageDeaths = 0.02;
+    static constexpr double kArmyUnrest = 0.05;
 };
 
 // The cells within `km` of a cell (itself included), by walking neighbours.
@@ -181,6 +222,12 @@ std::int64_t kill_in_strife(SimState& state, CellId cell, double share, RngStrea
 // Returns its id.
 std::uint32_t start_war(const World& world, SimState& state, Tick tick, std::uint32_t attacker,
                         std::uint32_t defender, WarGoal goal);
+
+// The living field army at a cell, if any (the largest).
+std::uint32_t army_at(const SimState& state, CellId cell);
+// A field army's fighting strength (men x the quality of its realm's
+// soldiers x its general).
+double army_strength(const World& world, const SimState& state, std::uint32_t army);
 
 // "won by the attackers" etc.
 const char* war_outcome_name(WarOutcome outcome);

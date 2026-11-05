@@ -52,7 +52,7 @@ public:
     [[nodiscard]] RunSummary summary() const;
 
     // Format version written by save(). Bump it when the layout changes.
-    static constexpr std::uint32_t kSnapshotVersion = 25;
+    static constexpr std::uint32_t kSnapshotVersion = 26;
 
 private:
     Simulation() = default;
