@@ -580,7 +580,11 @@ void WarSystem::step(StepContext& ctx) {
             b.winner = iw;
             b.loser = il;
             const std::uint32_t wp = win.polity, lp = lose.polity;
-            b.dead = kill_soldiers(lp, lost_l) + kill_soldiers(wp, lost_w);
+            // One after the other: both draw on the army stream, and the order
+            // of the operands of + is not fixed (MSVC differs).
+            const std::int64_t dead_l = kill_soldiers(lp, lost_l);
+            const std::int64_t dead_w = kill_soldiers(wp, lost_w);
+            b.dead = dead_l + dead_w;
             war.deaths += b.dead;
             const std::uint32_t mc = s.polities[wp].commander;
             if (mc != 0 && mc < s.commanders.size() && s.commanders[mc].figure == s.armies[iw].general) {
