@@ -390,7 +390,7 @@ double polity_reach(const World& world, const SimState& state, std::uint32_t pol
 // distance rather than a straight line, so borders follow mountains,
 // deserts, rivers and coasts.
 struct RuleTravel {
-    static constexpr double kRiver = 0.6;      // x km along a navigable river (/ (1 + water transport))
+    static constexpr double kRiver = 0.8;      // x km along a navigable river (/ (1 + water transport))
     static constexpr double kSea = 1.0;        // x km by sea (with boats; / (1 + water transport))
     static constexpr double kClimb = 0.6;      // overland x (1 + kClimb x height difference in km)
     static constexpr double kHighM = 1000.0;    // ground above this is rough:
@@ -398,8 +398,9 @@ struct RuleTravel {
     static constexpr double kSearch = 6.0;     // each realm's distances are found out to kSearch x its reach;
     static constexpr double kFar = 1.0;        // beyond, kFar x the straight-line distance (at least the limit)
 };
-// How hard a cell is to cross: 1 for temperate lowland and open grassland,
-// 1.4 boreal forest, 2 desert, tundra and rainforest, 4 ice; more high up.
+// How hard a cell is to cross: 1 for temperate lowland, 0.9 open
+// grassland, 1.4 boreal forest, 2 desert, tundra and rainforest, 4 ice;
+// more high up.
 [[nodiscard]] double rule_terrain(const World& world, CellId cell);
 
 // Each living realm's travel distance (as above) from its capital to the

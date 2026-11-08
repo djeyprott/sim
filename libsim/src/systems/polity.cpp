@@ -109,13 +109,14 @@ double polity_reach_km(const World& w, const SimState& s, CellId capital) {
 double rule_terrain(const World& w, CellId c) {
     double f = 1.0;
     switch (static_cast<Biome>(w.biome[c])) {
+        case Biome::TemperateGrassland:
+        case Biome::TropicalSavanna: f = 0.9; break;
         case Biome::BorealForest: f = 1.4; break;
         case Biome::Desert:
         case Biome::Tundra:
         case Biome::TropicalRainforest: f = 2.0; break;
         case Biome::IceSheet: f = 4.0; break;
-        default: f = 1.0; break;  // temperate and Mediterranean lands, grassland and savanna, shrubland
-                                  // (riders' speed on open country is in nomads' reach)
+        default: f = 1.0; break;  // temperate and Mediterranean lands, shrubland
     }
     return f * (1.0 + std::max(0.0, w.elevation_m[c] - RuleTravel::kHighM) / RuleTravel::kHighScale);
 }
