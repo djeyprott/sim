@@ -357,3 +357,46 @@ TEST(diplomacy_lost_land_is_claimed_until_won_back_or_forgotten) {
     update_relations(w, s, s.tick, borders);
     CHECK(s.claims.empty());
 }
+
+TEST(diplomacy_an_overlord_at_war_elsewhere_abandons_its_subject) {
+    Setup x = two_polities();
+    SimState& s = x.s;
+    const World& w = x.sim.world();
+    // Polity 3 pays tribute to polity 2; polity 4 is a stranger.
+    s.polities.resize(5);
+    for (std::uint32_t id = 3; id <= 4; ++id) {
+        s.polities[id].id = id;
+        s.polities[id].name = id == 3 ? "Payer" : "Stranger";
+        s.polities[id].capital = x.heart;
+    }
+    s.polities[3].overlord = 2;
+    s.polities[3].bond = Bond::Tributary;
+    // Attacked while its overlord is at peace, the subject is defended.
+    const std::uint32_t first = start_war(w, s, 0, 4, 3, WarGoal::Conquest);
+    CHECK_EQ(war_between(s, 4, 2), first);
+    CHECK(find_relation(s, 3, 2)->trust > 0.5);
+    s.wars[first].ended = 0;
+    // Its overlord now at war with polity 1, the subject is left alone, and remembers.
+    start_war(w, s, 0, 1, 2, WarGoal::Conquest);
+    const double opinion = opinion_between(s, 3, 2);
+    const std::uint32_t second = start_war(w, s, 0, 4, 3, WarGoal::Conquest);
+    CHECK(std::find(s.wars[second].defenders.begin(), s.wars[second].defenders.end(), 2u) == s.wars[second].defenders.end());
+    CHECK(find_relation(s, 3, 2)->trust < 0.4);
+    CHECK(opinion_between(s, 3, 2) < opinion);
+    CHECK(s.events.back().type == EventType::Abandoned || s.events[s.events.size() - 2].type == EventType::Abandoned);
+}
+
+TEST(diplomacy_withheld_tribute_is_cause_for_war_for_a_generation) {
+    Setup x = two_polities();
+    SimState& s = x.s;
+    Relation& r = relation_of(s, 1, 2, s.tick);
+    CHECK(!cause_for_war(s, 1, 2));
+    r.withheld = s.tick;
+    r.withheld_by = 2;
+    CHECK(tribute_withheld(s, 1, 2));
+    CHECK(!tribute_withheld(s, 2, 1));
+    CHECK(cause_for_war(s, 1, 2));
+    CHECK(!cause_for_war(s, 2, 1));
+    s.tick += static_cast<Tick>(Diplomacy::kGrievanceYears + 1) * kTicksPerYear;
+    CHECK(!cause_for_war(s, 1, 2));
+}
