@@ -917,12 +917,13 @@ void WarSystem::step(StepContext& ctx) {
                             std::clamp(control_of(lord, p.capital) / Diplomacy::kProjection, Diplomacy::kMinHold, 1.0) *
                             (fighting[lord] && !at_war_with_lord ? Diplomacy::kDistracted : 1.0) * (0.5 + trust);
         const Polity& o = s.polities[lord];
-        const double unrest = (1.0 - opinion) *
+        const double unrest = std::clamp((1.0 - opinion) *
                               (s.cultures[p.culture].root != s.cultures[o.culture].root ? Diplomacy::kForeign : 1.0) *
                               (p.religion != o.religion ? Diplomacy::kForeign : 1.0) *
-                              (new_reign(id) || new_reign(lord) ? Diplomacy::kNewReign : 1.0);
+                              (new_reign(id) || new_reign(lord) ? Diplomacy::kNewReign : 1.0),
+                                         Diplomacy::kMinUnrest, Diplomacy::kMaxUnrest);
         const double draw = rng.uniform();
-        if (armies.strength[id] >= kRebelRatio * hold && !at_war_with_lord) {
+        if (armies.strength[id] >= Diplomacy::kRebelHold * hold && !at_war_with_lord) {
             if (draw < kRebellion * unrest) start_war(w, s, tick, id, lord, WarGoal::Independence);
         } else if (p.bond == Bond::Tributary && armies.strength[id] >= Diplomacy::kWithholdRatio * hold && !at_war_with_lord) {
             if (draw < Diplomacy::kWithhold * unrest) {

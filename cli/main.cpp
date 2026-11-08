@@ -730,6 +730,19 @@ int wars(const Options& o) {
         std::vector<std::size_t> by_dead;
         for (std::size_t i = 0; i < s.battles.size(); ++i) by_dead.push_back(i);
         std::stable_sort(by_dead.begin(), by_dead.end(), [&](auto a, auto b) { return s.battles[a].dead > s.battles[b].dead; });
+        {
+            std::size_t subjugated = 0, submitted = 0, withheld = 0, abandoned = 0, independence = 0;
+            for (const histsim::Event& e : s.events) {
+                subjugated += e.type == histsim::EventType::Subjugated ? 1 : 0;
+                submitted += e.type == histsim::EventType::Submitted ? 1 : 0;
+                withheld += e.type == histsim::EventType::TributeWithheld ? 1 : 0;
+                abandoned += e.type == histsim::EventType::Abandoned ? 1 : 0;
+            }
+            for (std::size_t i = 1; i < s.wars.size(); ++i) independence += s.wars[i].goal == histsim::WarGoal::Independence ? 1 : 0;
+            std::printf("\nSubjects: %zu subjugated, %zu offered tribute, %zu withheld it, %zu wars of independence, "
+                        "%zu left to fend for themselves; %zu relations, %zu land claims standing\n",
+                        subjugated, submitted, withheld, independence, abandoned, s.relations.size(), s.claims.size());
+        }
         std::printf("\nField armies: %zu raised, %zu broken in the field; %zu battles. Bloodiest:\n", raised, broke, s.battles.size());
         for (std::size_t i = 0; i < by_dead.size() && i < 10; ++i) {
             const histsim::Battle& b = s.battles[by_dead[i]];

@@ -25,12 +25,12 @@
 // Subjects and overlords (stage B). Each year a subject weighs the hold its
 // overlord has on it: the overlord's strength x clamp(its control at the
 // subject's capital / kProjection, kMinHold, 1), x kDistracted if it is at
-// war with someone else, x (0.5 + trust). A subject at least kRebelRatio
-// (war.hpp) as strong as that rebels (kRebellion a year); a tributary at
+// war with someone else, x (0.5 + trust). A subject at least kRebelHold
+// times as strong as that rebels (kRebellion a year); a tributary at
 // least kWithholdRatio as strong withholds its tribute (kWithhold a year),
 // both x unrest = (1 - opinion) x kForeign for another culture root and
 // again for another faith, x kNewReign in the year either ruler came to
-// the throne. Tribute withheld gives the overlord cause for a war to
+// the throne (between kMinUnrest and kMaxUnrest). Tribute withheld gives the overlord cause for a war to
 // restore it for kGrievanceYears.
 // An overlord already at war elsewhere does not come to the aid of an
 // attacked subject: trust falls by kAbandonTrust and opinion by
@@ -76,12 +76,14 @@ struct Diplomacy {
     static constexpr double kProjection = 0.2;
     static constexpr double kMinProjection = 0.85;
     // Subjects.
-    static constexpr double kMinHold = 0.25;
+    static constexpr double kMinHold = 0.5;
     static constexpr double kDistracted = 0.6;
-    static constexpr double kWithholdRatio = 0.4;
+    static constexpr double kWithholdRatio = 0.5;
+    static constexpr double kRebelHold = 1.0;
     static constexpr double kWithhold = 0.04;
     static constexpr double kForeign = 1.5;
-    static constexpr double kNewReign = 3.0;
+    static constexpr double kMinUnrest = 0.5, kMaxUnrest = 2.0;
+    static constexpr double kNewReign = 2.0;
     static constexpr double kWithheldShock = 0.2;
     static constexpr double kGrievanceYears = 30.0;
     static constexpr double kAbandonTrust = 0.25;
