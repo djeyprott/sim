@@ -398,8 +398,9 @@ struct RuleTravel {
     static constexpr double kSearch = 6.0;     // each realm's distances are found out to kSearch x its reach;
     static constexpr double kFar = 1.0;        // beyond, kFar x the straight-line distance (at least the limit)
 };
-// How hard a cell is to cross: 0.85 for temperate lowland, 0.7 open
-// grassland, up to 1.6 desert, tundra and rainforest, 3 ice; more high up.
+// How hard a cell is to cross: 1 for temperate lowland, 0.9 open
+// grassland, 1.4 boreal forest, 2 desert, tundra and rainforest, 4 ice;
+// more high up.
 [[nodiscard]] double rule_terrain(const World& world, CellId cell);
 
 // Each living realm's travel distance (as above) from its capital to the
