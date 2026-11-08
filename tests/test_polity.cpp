@@ -410,7 +410,8 @@ TEST(polity_generals_and_high_priests) {
     for (std::size_t id = 1; id < s.polities.size(); ++id) {
         const Polity& q = s.polities[id];
         if (q.commander != 0) {
-            CHECK(q.ended == kNever);
+            // (A realm that ended this past year keeps its general until the next.)
+            CHECK(q.ended == kNever || q.ended + kTicksPerYear >= s.tick);
             CHECK(q.commander < s.commanders.size());
             CHECK_EQ(s.commanders[q.commander].polity, static_cast<std::uint32_t>(id));
             CHECK_EQ(s.commanders[q.commander].to, kNever);

@@ -1312,7 +1312,7 @@ std::vector<Row> describe_cell_rows(const Simulation& sim, CellId c,
         const std::uint32_t ruler = s.polity_of[c];
         const Polity& pol = s.polities[ruler];
         const double reach = polity_reach(w, s, ruler);
-        const double control = polity_control(w.grid.distance_km(pol.capital, c), reach);
+        const double control = polity_control(rule_km(w, s, ruler, c), reach);
         const std::uint32_t capital_city = s.city_of.empty() ? 0 : s.city_of[pol.capital];
         f.push_back({"Polity", pol.name + " (" + polity_level(w, s, ruler) + "), " +
                                    (c == pol.capital ? std::string("capital here")

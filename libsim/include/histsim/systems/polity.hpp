@@ -382,6 +382,43 @@ double polity_reach_km(const World& world, const SimState& state, CellId capital
 // The same for a polity: nomads reach kNomadReach times as far.
 double polity_reach(const World& world, const SimState& state, std::uint32_t polity);
 
+// How far a realm's rule must travel: km over open level ground; dearer
+// through forest, desert, tundra, rainforest and high ground (rule_terrain)
+// and up steep slopes, cheaper along rivers and, for peoples with boats,
+// across the sea; eased by carts, roads and ships (at half the effect they
+// have on reach). Control falls with this
+// distance rather than a straight line, so borders follow mountains,
+// deserts, rivers and coasts.
+struct RuleTravel {
+    static constexpr double kRiver = 0.6;      // x km along a navigable river (/ (1 + water transport))
+    static constexpr double kSea = 1.0;        // x km by sea (with boats; / (1 + water transport))
+    static constexpr double kClimb = 0.6;      // overland x (1 + kClimb x height difference in km)
+    static constexpr double kHighM = 1000.0;    // ground above this is rough:
+    static constexpr double kHighScale = 1500.0;  // x (1 + metres above kHighM / kHighScale)
+    static constexpr double kSearch = 6.0;     // each realm's distances are found out to kSearch x its reach;
+    static constexpr double kFar = 1.0;        // beyond, kFar x the straight-line distance (at least the limit)
+};
+// How hard a cell is to cross: 0.85 for temperate lowland, 0.7 open
+// grassland, up to 1.6 desert, tundra and rainforest, 3 ice; more high up.
+[[nodiscard]] double rule_terrain(const World& world, CellId cell);
+
+// Each living realm's travel distance (as above) from its capital to the
+// cells within its search radius, found once per system step.
+class RuleField {
+public:
+    void build(const World& world, const SimState& state, const std::vector<double>& reach);
+    [[nodiscard]] double km(const World& world, const SimState& state, std::uint32_t polity, CellId cell) const;
+
+private:
+    std::vector<std::vector<std::pair<CellId, double>>> near_;  // per polity, sorted by cell
+    std::vector<double> limit_;
+};
+// One realm's travel distance to one cell (a search of its own: for the
+// viewer and rare uses).
+[[nodiscard]] double rule_km(const World& world, const SimState& state, std::uint32_t polity, CellId cell);
+// The same between any two cells, under the techniques known at `from`.
+[[nodiscard]] double rule_km_between(const World& world, const SimState& state, CellId from, CellId to, double limit_km);
+
 // Control a polity has over a cell at a distance from its capital (0-1).
 [[nodiscard]] inline double polity_control(double distance_km, double reach_km) {
     const double r = distance_km / reach_km;
