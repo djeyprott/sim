@@ -216,7 +216,7 @@ double admin_capacity(const World& w, const SimState& s, std::uint32_t id) {
     const Polity& p = s.polities[id];
     const TechEffects e = technique_effects(w, p.capital, techniques_in(s, p.capital));
     return PolitySystem::kAdminLoad * (1.0 + e.administration) * (1.0 + 0.3 * e.contact) *
-           (p.nomadic ? PolitySystem::kNomadReach : 1.0);
+           nomad_reach_factor(w, s, id);
 }
 
 std::vector<double> admin_loads(const World& w, const SimState& s, const RuleField& rule, const std::vector<double>& reach) {
@@ -231,10 +231,21 @@ std::vector<double> admin_loads(const World& w, const SimState& s, const RuleFie
     return load;
 }
 
+double nomad_reach_factor(const World& w, const SimState& s, std::uint32_t id) {
+    if (id == 0 || id >= s.polities.size() || !s.polities[id].nomadic) return 1.0;
+    const auto& techs = w.content->techniques;
+    for (std::size_t k = 0; k < techs.size(); ++k) {
+        if (techs[k].id == "bronze") {
+            return (techniques_in(s, s.polities[id].capital) >> k) & 1u ? PolitySystem::kNomadReach : PolitySystem::kNomadReachEarly;
+        }
+    }
+    return PolitySystem::kNomadReach;
+}
+
 double polity_reach(const World& w, const SimState& s, std::uint32_t id) {
     if (id == 0 || id >= s.polities.size()) return 0.0;
     const Polity& p = s.polities[id];
-    return polity_reach_km(w, s, p.capital) * (p.nomadic ? PolitySystem::kNomadReach : 1.0);
+    return polity_reach_km(w, s, p.capital) * nomad_reach_factor(w, s, id);
 }
 
 bool polity_has_writing(const World& w, const SimState& s, std::uint32_t id) {
@@ -999,6 +1010,7 @@ void PolitySystem::step(StepContext& ctx) {
         }
         const CellId capital = s.polities[id].capital;
         const bool nomadic = s.polities[id].nomadic;
+        const double nomad_factor = nomad_reach_factor(w, s, static_cast<std::uint32_t>(id));
         // All its land, including any taken earlier this year.
         std::vector<CellId> mine;
         for (CellId c = 0; c < n; ++c) {
@@ -1076,7 +1088,7 @@ void PolitySystem::step(StepContext& ctx) {
             // A seat in a fallen state held a province under it: it keeps at
             // least a province's reach (its governor's, or a local dynasty's).
             const double own = polity_reach_km(w, s, c);
-            candidates.push_back({c, score, (state ? std::max(own, kProvinceReachKm) : own) * (nomadic ? kNomadReach : 1.0)});
+            candidates.push_back({c, score, (state ? std::max(own, kProvinceReachKm) : own) * nomad_factor});
         }
         std::stable_sort(candidates.begin(), candidates.end(), [](const Seat& a, const Seat& b) {
             return a.score > b.score || (a.score == b.score && a.cell < b.cell);

@@ -363,6 +363,9 @@ public:
     static constexpr double kShadowWealth = 20000.0;
     static constexpr double kShadowMax = 5.0;
     static constexpr double kNomadReach = 2.0;
+    // ... once they have bronze arms (mounted warfare as the steppe knew it,
+    // got by contact with the states); before, kNomadReachEarly.
+    static constexpr double kNomadReachEarly = 1.3;
     // A confederation needs a state within this distance (the shadow empire).
     static constexpr double kShadowKm = 1500.0;
     // Without one, confederations still form, kNoShadow times as readily:
@@ -388,7 +391,10 @@ void hinterland_people(const World& world, const SimState& state, std::vector<do
 
 // How far a capital's rule reaches, in km, from the techniques known there.
 double polity_reach_km(const World& world, const SimState& state, CellId capital);
-// The same for a polity: nomads reach kNomadReach times as far.
+// How much further a polity's rule reaches for being nomadic (1 if not):
+// kNomadReach with bronze arms, kNomadReachEarly without.
+[[nodiscard]] double nomad_reach_factor(const World& world, const SimState& state, std::uint32_t polity);
+// The same for a polity: nomads reach further (nomad_reach_factor).
 double polity_reach(const World& world, const SimState& state, std::uint32_t polity);
 
 // How far a realm's rule must travel: km over open level ground; dearer

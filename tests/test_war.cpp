@@ -151,7 +151,10 @@ TEST(war_nomad_confederations_reach_far_and_raise_big_levies) {
     const double settled_reach = polity_reach(w, s, 1);
     const double settled_strength = polity_strengths(w, s)[1];
     s.polities[1].nomadic = true;
-    CHECK_NEAR(polity_reach(w, s, 1), PolitySystem::kNomadReach * settled_reach, 1e-9);
+    // Without bronze arms, kNomadReachEarly times as far; with them, kNomadReach.
+    const double factor = nomad_reach_factor(w, s, 1);
+    CHECK(factor == PolitySystem::kNomadReach || factor == PolitySystem::kNomadReachEarly);
+    CHECK_NEAR(polity_reach(w, s, 1), factor * settled_reach, 1e-9);
     CHECK(polity_strengths(w, s)[1] > WarSystem::kNomadLevy * settled_strength);  // more levy, firmer control
     CHECK(std::string(polity_level(w, s, 1)) == "confederation");
 }
