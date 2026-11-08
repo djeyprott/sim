@@ -833,8 +833,9 @@ void WarSystem::step(StepContext& ctx) {
                     nomads.capital = seat;
                     nomads.settling_since = tick;
                     s.events.push_back({tick, EventType::ConquestDynasty, seat, static_cast<std::int64_t>(lead_a)});
-                } else {
+                } else if (!nomads.nomadic || nomad_reach_factor(w, s, lead_a) >= PolitySystem::kNomadReach) {
                     // Herder tribes join the confederation as clans; others pay.
+                    // (Riders without bronze arms take plunder, not subjects.)
                     subjugate(s, lead_d, lead_a,
                               nomads.nomadic && herder_tribe(w, s, lead_d) ? Bond::Vassal : Bond::Tributary, tick);
                 }
