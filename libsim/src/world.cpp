@@ -219,8 +219,8 @@ TectonicRelief tectonic_relief(const Grid& g, std::uint64_t seed, double land_fr
         crust.swap(next);
     }
     for (CellId c = 0; c < n; ++c) {
-        const Vec3 q = warped(g.center(c), 0.5, 0x3E1Full);
-        crust[c] = 0.4 * crust[c] + 1.2 * (fractal_noise(seed ^ 0xC2057ull, {1.7 * q.x, 1.7 * q.y, 1.7 * q.z}, 5) - 0.5);
+        const Vec3 q = warped(g.center(c), 0.7, 0x3E1Full);
+        crust[c] = 0.35 * crust[c] + 1.2 * (fractal_noise(seed ^ 0xC2057ull, {2.4 * q.x, 2.4 * q.y, 2.4 * q.z}, 5) - 0.5);
     }
     // Threshold: a little more crust than land (its rim is shelf).
     std::vector<double> sorted = crust;
