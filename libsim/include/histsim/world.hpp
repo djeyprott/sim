@@ -87,6 +87,7 @@ struct World {
     std::vector<std::uint8_t> biome;            // Biome
     std::vector<std::uint8_t> growing_months;   // months warm and wet enough for plants to grow
     std::vector<std::uint8_t> warm_months;      // months warm enough (5 C), water aside: a floodplain's season
+    std::vector<std::uint16_t> plate;           // tectonic plate (generated worlds; empty on Earth)
 
     // ---- Water and soil
     std::vector<CellId> downstream;             // where this cell drains (kInvalidCell for ocean)

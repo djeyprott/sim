@@ -1141,8 +1141,9 @@ World generate_test_world(const WorldParams& params, const Content& content) {
     if (params.kind == WorldKind::Earth) {
         earth_relief(w);
     } else {
-        const TectonicRelief relief = tectonic_relief(w.grid, params.seed, 1.0 - params.ocean_fraction);
+        TectonicRelief relief = tectonic_relief(w.grid, params.seed, 1.0 - params.ocean_fraction);
         const std::vector<double>& raw = relief.height_m;
+        w.plate = std::move(relief.plate);
         std::vector<double> sorted = raw;
         const auto k = static_cast<std::size_t>(params.ocean_fraction * static_cast<double>(n - 1));
         std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(k), sorted.end());
@@ -1425,6 +1426,7 @@ std::uint64_t World::hash() const noexcept {
     h.span<std::uint8_t>(biome);
     h.span<std::uint8_t>(growing_months);
     h.span<std::uint8_t>(warm_months);
+    for (std::uint16_t p : plate) h.u32(p);
     h.span<double>(floodplain_share);
     h.span<std::uint32_t>(downstream);
     h.span<double>(discharge_m3s);
