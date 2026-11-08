@@ -501,11 +501,11 @@ void PolitySystem::step(StepContext& ctx) {
         std::size_t tried = 0;
         for (std::size_t k = 0; tried < attempts && k < frontier.size(); ++k) {
             const auto [best, target] = frontier[k];
-            if (best < kMinWorthControl) break;
-            // Worth taking this far out? Richer land than its own is worth
-            // more trouble, poorer less.
+            if (best < kMinControl) break;
+            // Worth taking this far out? Land poorer than its own is worth
+            // less trouble.
             const double ratio = home > 0.0 ? worth(target) / home : 1.0;
-            const double needed = std::clamp(kMinControl / std::sqrt(std::max(1e-6, ratio)), kMinWorthControl, kMaxWorthControl);
+            const double needed = std::clamp(kMinControl / std::sqrt(std::max(1e-6, ratio)), kMinControl, kMaxWorthControl);
             if (best < needed) continue;
             if (load[id] + cell_share / best > capacity) continue;
             ++tried;

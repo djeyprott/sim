@@ -154,12 +154,10 @@ public:
     // Direct rule only where it pays and the realm can manage it.
     // Worth: a cell's people (farmers in full, foragers at kForagerWorth)
     // x (1 + its trade per person / kTradePerPerson, at most 3), per km^2,
-    // against the same over the realm's own land. Land as rich as its own is
-    // taken at kMinControl; richer land further out (control kMinControl /
-    // sqrt(ratio), at least kMinWorthControl), poorer only nearer (at most
-    // kMaxWorthControl).
+    // against the same over the realm's own land. Land as rich as its own,
+    // or richer, is taken at kMinControl; poorer only nearer (control
+    // kMinControl / sqrt(ratio), at most kMaxWorthControl).
     static constexpr double kForagerWorth = 0.2;
-    static constexpr double kMinWorthControl = 0.15;
     static constexpr double kMaxWorthControl = 0.6;
     // Capacity: ruling a cell directly takes 1 / control of the realm's
     // administration (a level-5 cell's worth of land); a realm runs at most
