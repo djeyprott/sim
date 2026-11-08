@@ -205,6 +205,9 @@ void ReligionSystem::step(StepContext& ctx) {
         }
     }
 
+    RuleField rule;
+    rule.build(w, s, reach);
+
     // ---- Conversion, every land from last year's faiths at once.
     std::vector<std::uint32_t> next = s.faith_of;
     std::vector<std::pair<std::uint32_t, double>> pulls;
@@ -245,7 +248,7 @@ void ReligionSystem::step(StepContext& ctx) {
         if (ruler != 0 && s.polities[ruler].ended == kNever && reach[ruler] > 0.0) {
             const std::uint32_t g = s.polities[ruler].religion;
             if (g != 0 && g != f && !kinds[s.religions[g].kind].ethnic) {
-                const double control = polity_control(w.grid.distance_km(s.polities[ruler].capital, c), reach[ruler]);
+                const double control = polity_control(rule.km(w, s, ruler, c), reach[ruler]);
                 // A pious ruler presses the faith harder.
                 add(g, kRulerPull * control * people * kinds[s.religions[g].kind].appeal *
                            trait_factor(reigning_person(s, ruler), &Figure::piety));

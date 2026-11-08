@@ -2,10 +2,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
+#include <limits>
+#include <queue>
 #include <vector>
 
 #include "histsim/figures.hpp"
 #include "histsim/language.hpp"
+#include "histsim/parallel.hpp"
 #include "histsim/systems/culture.hpp"
 #include "histsim/systems/farming.hpp"
 #include "histsim/systems/religion.hpp"
@@ -100,6 +104,111 @@ void hinterland_people(const World& w, const SimState& s, std::vector<double>& p
 double polity_reach_km(const World& w, const SimState& s, CellId capital) {
     const TechEffects e = technique_effects(w, capital, techniques_in(s, capital));
     return PolitySystem::kBaseReachKm * (1.0 + e.administration) * (1.0 + 0.3 * e.contact);
+}
+
+double rule_terrain(const World& w, CellId c) {
+    double f = 1.0;
+    switch (static_cast<Biome>(w.biome[c])) {
+        case Biome::TemperateGrassland:
+        case Biome::TropicalSavanna: f = 0.9; break;
+        case Biome::BorealForest: f = 1.4; break;
+        case Biome::Desert:
+        case Biome::Tundra:
+        case Biome::TropicalRainforest: f = 2.0; break;
+        case Biome::IceSheet: f = 4.0; break;
+        default: f = 1.0; break;  // temperate and Mediterranean lands, shrubland
+    }
+    return f * (1.0 + std::max(0.0, w.elevation_m[c] - RuleTravel::kHighM) / RuleTravel::kHighScale);
+}
+
+namespace {
+
+// Travel distance along one link under the techniques of the realm.
+double rule_link_km(const World& w, const World::TradeEdge& e, const TechEffects& t) {
+    double best = std::numeric_limits<double>::infinity();
+    if (e.modes & kTradeLand) {
+        best = e.distance_km * 0.5 * (rule_terrain(w, e.a) + rule_terrain(w, e.b)) * (1.0 + RuleTravel::kClimb * e.climb) /
+               (1.0 + 0.5 * std::max(0.0, t.land_transport));
+    }
+    // (Reach already grows with these techniques; half their effect again here.)
+    const double water = 1.0 + 0.5 * std::max(0.0, t.water_transport);
+    if (e.modes & kTradeRiver) best = std::min(best, e.distance_km * RuleTravel::kRiver / water);
+    if ((e.modes & kTradeSea) && t.water_transport > 0.0) best = std::min(best, e.distance_km * RuleTravel::kSea / water);
+    return best;
+}
+
+// Distances from `from` out to `limit` km (cells and km, in the order found).
+void rule_search(const World& w, const TechEffects& t, CellId from, double limit, std::vector<double>& dist,
+                 std::vector<std::pair<CellId, double>>& out) {
+    out.clear();
+    using Q = std::pair<double, CellId>;
+    std::priority_queue<Q, std::vector<Q>, std::greater<>> q;
+    q.emplace(0.0, from);
+    dist[from] = 0.0;
+    std::vector<CellId> touched{from};
+    while (!q.empty()) {
+        const auto [d, c] = q.top();
+        q.pop();
+        if (d > dist[c]) continue;
+        out.emplace_back(c, d);
+        for (std::uint32_t k = w.trade_edge_begin[c]; k < w.trade_edge_begin[c + 1]; ++k) {
+            const World::TradeEdge& e = w.trade_edges[w.trade_edge_ids[k]];
+            const CellId nb = e.a == c ? e.b : e.a;
+            const double nd = d + rule_link_km(w, e, t);
+            if (nd > limit || nd >= dist[nb]) continue;
+            if (dist[nb] == std::numeric_limits<double>::infinity()) touched.push_back(nb);
+            dist[nb] = nd;
+            q.emplace(nd, nb);
+        }
+    }
+    for (CellId c : touched) dist[c] = std::numeric_limits<double>::infinity();
+}
+
+}  // namespace
+
+void RuleField::build(const World& w, const SimState& s, const std::vector<double>& reach) {
+    const std::size_t np = s.polities.size();
+    near_.assign(np, {});
+    limit_.assign(np, 0.0);
+    if (w.trade_edge_begin.size() != w.cell_count() + 1) return;
+    parallel_for(np, [&](std::size_t begin, std::size_t end) {
+        std::vector<double> dist(w.cell_count(), std::numeric_limits<double>::infinity());
+        for (std::size_t id = std::max<std::size_t>(begin, 1); id < end; ++id) {
+            const Polity& p = s.polities[id];
+            if (p.ended != kNever || id >= reach.size() || reach[id] <= 0.0 || p.capital >= w.cell_count()) continue;
+            limit_[id] = RuleTravel::kSearch * reach[id];
+            const TechEffects t = technique_effects(w, p.capital, techniques_in(s, p.capital));
+            rule_search(w, t, p.capital, limit_[id], dist, near_[id]);
+            std::sort(near_[id].begin(), near_[id].end());
+        }
+    }, 8);
+}
+
+double RuleField::km(const World& w, const SimState& s, std::uint32_t id, CellId c) const {
+    if (id < near_.size()) {
+        const auto& v = near_[id];
+        const auto it = std::lower_bound(v.begin(), v.end(), std::pair<CellId, double>{c, -1.0});
+        if (it != v.end() && it->first == c) return it->second;
+    }
+    const double straight = id < s.polities.size() ? w.grid.distance_km(s.polities[id].capital, c) : 0.0;
+    return std::max(id < limit_.size() ? limit_[id] : 0.0, RuleTravel::kFar * straight);
+}
+
+double rule_km_between(const World& w, const SimState& s, CellId from, CellId to, double limit) {
+    if (from == to) return 0.0;
+    if (w.trade_edge_begin.size() != w.cell_count() + 1) return w.grid.distance_km(from, to);
+    std::vector<double> dist(w.cell_count(), std::numeric_limits<double>::infinity());
+    std::vector<std::pair<CellId, double>> found;
+    rule_search(w, technique_effects(w, from, techniques_in(s, from)), from, limit, dist, found);
+    for (const auto& [c, d] : found) {
+        if (c == to) return d;
+    }
+    return std::max(limit, RuleTravel::kFar * w.grid.distance_km(from, to));
+}
+
+double rule_km(const World& w, const SimState& s, std::uint32_t id, CellId c) {
+    if (id == 0 || id >= s.polities.size()) return 0.0;
+    return rule_km_between(w, s, s.polities[id].capital, c, RuleTravel::kSearch * polity_reach(w, s, id));
 }
 
 double polity_reach(const World& w, const SimState& s, std::uint32_t id) {
@@ -313,16 +422,18 @@ void PolitySystem::step(StepContext& ctx) {
     // ---- Reach and strength.
     std::vector<double> reach(np, 0.0), strength(np, 0.0);
     for (std::size_t id = 1; id < np; ++id) {
-        if (s.polities[id].ended != kNever) continue;
-        reach[id] = polity_reach(w, s, static_cast<std::uint32_t>(id));
-        for (CellId c : cells[id]) {
-            strength[id] += static_cast<double>(s.cell_population[c]) *
-                            polity_control(w.grid.distance_km(s.polities[id].capital, c), reach[id]);
-        }
+        if (s.polities[id].ended == kNever) reach[id] = polity_reach(w, s, static_cast<std::uint32_t>(id));
     }
+    // Rule travels by land, river and sea, not as the crow flies.
+    RuleField rule;
+    rule.build(w, s, reach);
     auto control_of = [&](std::size_t id, CellId c) {
-        return polity_control(w.grid.distance_km(s.polities[id].capital, c), reach[id]);
+        return reach[id] > 0.0 ? polity_control(rule.km(w, s, static_cast<std::uint32_t>(id), c), reach[id]) : 0.0;
     };
+    for (std::size_t id = 1; id < np; ++id) {
+        if (s.polities[id].ended != kNever) continue;
+        for (CellId c : cells[id]) strength[id] += static_cast<double>(s.cell_population[c]) * control_of(id, c);
+    }
 
     // ---- Expansion over stateless land: one attempt a year per polity (per
     // level-5 cell's worth of land on finer grids), at the neighbouring cells
@@ -860,8 +971,9 @@ void PolitySystem::step(StepContext& ctx) {
         }
         const CellId capital = s.polities[id].capital;
         const bool nomadic = s.polities[id].nomadic;
+        // All its land, including any taken earlier this year.
         std::vector<CellId> mine;
-        for (CellId c : cells[id]) {
+        for (CellId c = 0; c < n; ++c) {
             if (s.polity_of[c] == id) mine.push_back(c);
         }
         Polity& pol = s.polities[id];

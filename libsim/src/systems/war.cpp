@@ -161,7 +161,7 @@ struct Armies {
     std::vector<double> strength;  // soldiers x quality
 };
 
-Armies raise_armies(const World& w, const SimState& s) {
+Armies raise_armies(const World& w, const SimState& s, const RuleField* given = nullptr) {
     const std::size_t np = s.polities.size();
     Armies a{std::vector<double>(np, 0.0), std::vector<double>(np, 0.0)};
     if (s.polity_of.size() != w.cell_count()) return a;
@@ -170,11 +170,14 @@ Armies raise_armies(const World& w, const SimState& s) {
     for (std::uint32_t id = 1; id < np; ++id) {
         if (alive(s, id)) reach[id] = polity_reach(w, s, id);
     }
+    RuleField own;
+    if (given == nullptr) own.build(w, s, reach);
+    const RuleField& rule = given != nullptr ? *given : own;
     for (CellId c = 0; c < w.cell_count(); ++c) {
         const std::uint32_t id = s.polity_of[c];
         if (id == 0 || !alive(s, id) || s.cell_population[c] == 0) continue;
         const Polity& p = s.polities[id];
-        const double control = polity_control(w.grid.distance_km(p.capital, c), reach[id]);
+        const double control = polity_control(rule.km(w, s, id, c), reach[id]);
         a.levy[id] += static_cast<double>(s.cell_population[c]) * control * WarSystem::kLevy *
                       (0.5 + cell_trait(s, c, i_warfare)) * (p.nomadic ? WarSystem::kNomadLevy : 1.0);
     }
@@ -367,11 +370,14 @@ void WarSystem::step(StepContext& ctx) {
     for (std::uint32_t id = 1; id < np; ++id) {
         if (alive(s, id)) reach[id] = polity_reach(w, s, id);
     }
+    RuleField rule;
+    rule.build(w, s, reach);
+    auto rule_km_of = [&](std::uint32_t id, CellId c) { return rule.km(w, s, id, c); };
     auto control_of = [&](std::uint32_t id, CellId c) {
-        return reach[id] > 0.0 ? polity_control(w.grid.distance_km(s.polities[id].capital, c), reach[id]) : 0.0;
+        return reach[id] > 0.0 ? polity_control(rule_km_of(id, c), reach[id]) : 0.0;
     };
     const double slack = std::max(0.0, kLevel5CellKm * w.cell_scale() - kConquestNearKm);
-    const Armies armies = raise_armies(w, s);
+    const Armies armies = raise_armies(w, s, &rule);
     // People of each polity at the start of the year, to weigh its losses.
     std::vector<double> people_of(np, 0.0);
     for (std::uint32_t id = 1; id < np; ++id) {
@@ -670,8 +676,7 @@ void WarSystem::step(StepContext& ctx) {
                     if (side[owner] == mine && s.cell_population[nb] > 0) {
                         const double ctl = control_of(owner, nb);
                         if (reach[owner] <= 0.0 ||
-                            polity_control(std::max(0.0, w.grid.distance_km(s.polities[owner].capital, nb) - slack),
-                                           reach[owner]) < kConquestControl) {
+                            polity_control(std::max(0.0, rule_km_of(owner, nb) - slack), reach[owner]) < kConquestControl) {
                             continue;
                         }
                         const double score = at != kInvalidCell ? -w.grid.distance_km(at, nb) : ctl;
@@ -864,8 +869,7 @@ void WarSystem::step(StepContext& ctx) {
         } else if (p.bond == Bond::Vassal && war_between(s, id, lord) == 0 &&
                    // Distance counted as for conquest (less the cell spacing beyond
                    // kConquestNearKm), so a bordering vassal can be held at any grid level.
-                   ((polity_control(std::max(0.0, w.grid.distance_km(s.polities[lord].capital, p.capital) - slack),
-                                    reach[lord]) >= kAbsorbControl &&
+                   ((polity_control(std::max(0.0, rule_km_of(lord, p.capital) - slack), reach[lord]) >= kAbsorbControl &&
                      rng.uniform() < kAbsorb) ||
                     // A herder clan bordering its confederation merges into it.
                     (s.polities[lord].nomadic && herder_tribe(w, s, id) &&

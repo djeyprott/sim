@@ -388,6 +388,8 @@ void CultureSystem::step(StepContext& ctx) {
         for (std::size_t p = 1; p < s.polities.size(); ++p) {
             if (s.polities[p].ended == kNever) reach[p] = polity_reach(w, s, static_cast<std::uint32_t>(p));
         }
+        RuleField rule;
+        rule.build(w, s, reach);
 
         auto add = [](std::vector<std::pair<std::uint32_t, double>>& v, std::uint32_t id, double p) {
             for (auto& e : v) {
@@ -408,7 +410,7 @@ void CultureSystem::step(StepContext& ctx) {
             const std::uint32_t ruler = s.polity_of.size() == n ? s.polity_of[c] : 0;
             const bool ruled = ruler != 0 && s.polities[ruler].ended == kNever && reach[ruler] > 0.0;
             const double control =
-                ruled ? polity_control(w.grid.distance_km(s.polities[ruler].capital, c), reach[ruler]) : 0.0;
+                ruled ? polity_control(rule.km(w, s, ruler, c), reach[ruler]) : 0.0;
             Top& t = cell_top[c];
             for (auto j = first; j < last; ++j) {
                 const Cohort& o = s.cohorts[j];
