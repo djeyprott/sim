@@ -1357,6 +1357,19 @@ std::vector<Row> describe_cell_rows(const Simulation& sim, CellId c,
                                           " since year " + with_commas(static_cast<long long>(d.founded / kTicksPerYear))});
             }
         }
+        // How much of its administration it uses.
+        {
+            std::vector<double> only(s.polities.size(), 0.0);
+            only[ruler] = polity_reach(w, s, ruler);
+            RuleField rf;
+            rf.build(w, s, only);
+            const double load = admin_loads(w, s, rf, only)[ruler];
+            const double cap = admin_capacity(w, s, ruler);
+            if (cap > 0.0) {
+                f.push_back({"Administration", fmt("%.0f%% of what it can rule directly", 100.0 * load / cap) +
+                                                   (load >= PolitySystem::kTributeLoad * cap ? "; seeks tribute, not land" : "")});
+            }
+        }
         // Its general and high priest.
         if (pol.commander != 0 && pol.commander < s.commanders.size()) {
             const Commander& gm = s.commanders[pol.commander];

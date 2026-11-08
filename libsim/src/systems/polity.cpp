@@ -211,6 +211,26 @@ double rule_km(const World& w, const SimState& s, std::uint32_t id, CellId c) {
     return rule_km_between(w, s, s.polities[id].capital, c, RuleTravel::kSearch * polity_reach(w, s, id));
 }
 
+double admin_capacity(const World& w, const SimState& s, std::uint32_t id) {
+    if (id == 0 || id >= s.polities.size()) return 0.0;
+    const Polity& p = s.polities[id];
+    const TechEffects e = technique_effects(w, p.capital, techniques_in(s, p.capital));
+    return PolitySystem::kAdminLoad * (1.0 + e.administration) * (1.0 + 0.3 * e.contact) *
+           (p.nomadic ? PolitySystem::kNomadReach : 1.0);
+}
+
+std::vector<double> admin_loads(const World& w, const SimState& s, const RuleField& rule, const std::vector<double>& reach) {
+    std::vector<double> load(s.polities.size(), 0.0);
+    if (s.polity_of.size() != w.cell_count()) return load;
+    const double share = std::min(1.0, w.cell_scale() * w.cell_scale());  // of a level-5 cell
+    for (CellId c = 0; c < w.cell_count(); ++c) {
+        const std::uint32_t id = s.polity_of[c];
+        if (id == 0 || id >= reach.size() || reach[id] <= 0.0) continue;
+        load[id] += share / std::max(1e-3, polity_control(rule.km(w, s, id, c), reach[id]));
+    }
+    return load;
+}
+
 double polity_reach(const World& w, const SimState& s, std::uint32_t id) {
     if (id == 0 || id >= s.polities.size()) return 0.0;
     const Polity& p = s.polities[id];
@@ -441,9 +461,13 @@ void PolitySystem::step(StepContext& ctx) {
     const std::size_t attempts = std::max<std::size_t>(1, w.cells_for(1));
     const double cell_share = std::min(1.0, w.cell_scale() * w.cell_scale());  // of a level-5 cell
     const double coarse = std::max(1.0, w.cell_scale() * w.cell_scale());       // level-5 cells in one
+    std::vector<double> load = admin_loads(w, s, rule, reach);
     std::vector<std::pair<double, CellId>> frontier;
     for (std::size_t id = 1; id < np; ++id) {
         if (s.polities[id].ended != kNever) continue;
+        // At the limit of what its administration can run, it takes no more.
+        const double capacity = admin_capacity(w, s, static_cast<std::uint32_t>(id));
+        if (load[id] >= capacity) continue;
         frontier.clear();
         for (CellId c : cells[id]) {
             for (CellId nb : w.grid.neighbors(c)) {
@@ -458,14 +482,18 @@ void PolitySystem::step(StepContext& ctx) {
         frontier.erase(std::unique(frontier.begin(), frontier.end()), frontier.end());
         RngStream rng = ctx.rng(Stream::Polity, static_cast<std::uint32_t>(id));
         const double warfare = cell_trait(s, s.polities[id].capital, i_warfare);
-        for (std::size_t k = 0; k < attempts && k < frontier.size(); ++k) {
+        std::size_t tried = 0;
+        for (std::size_t k = 0; tried < attempts && k < frontier.size(); ++k) {
             const auto [best, target] = frontier[k];
             if (best < kMinControl) break;
+            if (load[id] + cell_share / best > capacity) continue;
+            ++tried;
             // Strength against the people of a level-5 cell's worth of land.
             const double people = static_cast<double>(s.cell_population[target]) / cell_share;
             const double p = kAnnex * best * (0.5 + warfare) * std::min(1.0, strength[id] / (4.0 * people)) / coarse;
             if (rng.uniform() < p) {
                 s.polity_of[target] = static_cast<std::uint32_t>(id);
+                load[id] += cell_share / best;
                 // Rebuild later from polity_of; capitals are rechecked next year.
             }
         }

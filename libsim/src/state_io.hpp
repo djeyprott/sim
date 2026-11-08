@@ -542,6 +542,7 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(r.states);
         ar.f64(r.largest_polity_km2);
         ar.i64(r.largest_polity_people);
+        ar.f64(r.largest_sphere_km2);
         ar.u32(r.domesticated);
         ar.f64(r.trade_value);
         ar.f64(r.food_traded);

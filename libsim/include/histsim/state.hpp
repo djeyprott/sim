@@ -630,6 +630,7 @@ struct YearRecord {
     std::uint32_t states = 0;               // of which states (with writing)
     double largest_polity_km2 = 0.0;
     std::int64_t largest_polity_people = 0;
+    double largest_sphere_km2 = 0.0;  // a realm with its tributaries and vassals (and theirs)
     std::uint32_t domesticated = 0;       // species domesticated somewhere so far
     double trade_value = 0.0;             // value of goods carried between cells this year (food = 1)
     double food_traded = 0.0;             // food carried between cells this year, people fed

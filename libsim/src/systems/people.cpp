@@ -914,6 +914,21 @@ void HistorySystem::step(StepContext& ctx) {
             r.largest_polity_people = people[id];
         }
     }
+    // Spheres: each living realm's land with that of its subjects, and theirs.
+    {
+        std::vector<double> sphere(s.polities.size(), 0.0);
+        for (std::uint32_t id = 1; id < s.polities.size(); ++id) {
+            if (s.polities[id].ended != kNever) continue;
+            std::uint32_t top = id;
+            for (int depth = 0; depth < 8; ++depth) {
+                const std::uint32_t up = s.polities[top].overlord;
+                if (up == 0 || up >= s.polities.size() || s.polities[up].ended != kNever) break;
+                top = up;
+            }
+            sphere[top] += area[id];
+        }
+        for (double a : sphere) r.largest_sphere_km2 = std::max(r.largest_sphere_km2, a);
+    }
     std::uint32_t ever = 0;
     for (const Domestication& d : s.domestications) ever |= 1u << d.species;
     for (; ever != 0; ever &= ever - 1) ++r.domesticated;
