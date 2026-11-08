@@ -134,7 +134,7 @@ spells.
 
 | Step | Model |
 | --- | --- |
-| Terrain | Fractal noise continents; sea level set so the requested share of cells is ocean. On Earth worlds (`WorldKind::Earth`, `--earth`), Earth's relief instead (below). |
+| Terrain | Plate tectonics (below); sea level set so the requested share of cells is ocean. On Earth worlds (`WorldKind::Earth`, `--earth`), Earth's relief instead (below). |
 | Temperature | Mean annual T = 27 − 30z² − 17z⁴ − 6.5 × altitude in km (z = sine of latitude), plus up to 6 °C on mid-latitude lands with the sea upwind (6 × (1 − continentality), strongest near 46°: winter westerlies off a warm ocean, as in western Europe). From coldest to warmest month: 2 + 18 × min(z², 0.64) + 37 × z × continentality °C (London about 13, Moscow 25, Yakutsk 50+). |
 | Rainfall | Two sources. The prevailing wind: a zonal profile (wet equator, a dry subtropical belt from about 15° to 30°, wet westerlies, dry poles) scaled by moisture from upwind: each cell traces back along its prevailing wind (trades and polar easterlies from the east, westerlies from the west between 30° and 60°) and dries with the distance of land crossed (fading over 1,400 km, three times as far at the equator, where rising air and forests recycle rain: the Congo and the Amazon). The summer monsoon: land heated in summer draws moist air from the sea on its equator side, and beyond about 27° from the east coast too where that is nearer (the western flank of the subtropical highs): up to 1,300 mm, strongest near 27° and fading to nothing by 5° and 50°, falling off steeply inland (÷ (1 + (distance ÷ 600 km)³)), so India, West Africa's Sahel, East Asia, the eastern United States and northern Australia are wet in summer while the hearts of the Sahara and Australia stay dry. Water narrower than 1,200 km (the Red Sea, Caspian, Black Sea, Baltic) is not a moisture source: a trace crosses it, counting half its width as land, so the steppes behind it stay dry. A ridge more than 800 m above the cell on either path casts a rain shadow; otherwise height lifts rain on the windward side. Rainfall is then smoothed once with each cell's land neighbours. |
 | Seasons | Temperature range grows with latitude and continentality (land upwind); rain season is signed (−1 winter rain, Mediterranean; +1 summer rain, monsoon). Monthly values come from these, peaking in July in the north and January in the south. |
@@ -145,6 +145,25 @@ spells.
 | Wild species | Each species in `data/species.json` has trapezoid niches (coldest and warmest month, rainfall, rain season, elevation) and a river affinity. Suitability is their product. Homelands are picked from suitable cells (the best of 24 tries by spread, far apart from each other) and ranges spread from them up to `range_km`. Stored as a 32-bit presence mask and an abundance byte per cell. |
 | Deposits | Each good in `data/goods.json` that comes from a deposit (salt, flint and obsidian, timber, fish, copper and tin ore, shell, gold) lies in each suitable cell (hills, mountains, coast, dry land, forest...; never on ice sheets) with its chance per 50,000 km², so the same share of land at every grid level, at a random richness stored as a byte. |
 | Trade links | Every pair of neighbouring land cells (marked as a river link where one drains into the other along a river), plus sea links between coasts whose open water connects within 500 km. Stored once each with length and height difference, and listed per cell (CSR). |
+
+#### Plate tectonics
+
+Generated worlds get their relief from a simple model of plate tectonics
+(`tectonic_relief` in `world.cpp`; the plate of each cell is `World::plate`,
+shown by the Plates map mode):
+
+| Step | Model |
+| --- | --- |
+| Plates | 8–14 seeds scattered on the sphere; each cell belongs to the seed nearest it in a noise-warped space (so borders wander), with a random weight per seed (so plates come in many sizes); stray specks join the plate around them. Each plate turns about its own random pole at its own rate. |
+| Continental crust | Plates are made continental in a random order until they cover about the land's share. The crust is a warped low-frequency noise biased toward the continental plates (0.35 of a blurred plate mask plus noise), cut at 1.12 times the land's share, so continents spill over or fall short of their plates: some coasts follow plate borders (active margins), others lie inside a plate (passive ones). |
+| Boundaries | At each boundary cell, how fast the plates close or part (their relative velocity along the boundary normal) and the crust on each side; continent rides over ocean, and of two like plates the lighter. Each cell takes the effect of the nearest boundary within its plate (within 1,400 km): ocean under continent, a coastal range 150 km inland (the Andes); continent against continent, the highest ranges and a plateau behind (the Himalaya and Tibet); ocean against ocean, an island arc on the riding plate and a trench on the diving one (Japan); parting plates, a rift valley on land and a mid-ocean ridge at sea. Ranges are broken into peaks and passes by noise, and the uplift is smoothed over the grid's steps. |
+| Base relief | Continents rise from a slope and shelf (by distance from the crust's edge) to low interiors with swells and basins; old ranges worn low (ridged noise) inland; the ocean deepens away from the continents. 3–7 hotspots raise volcanic islands and highlands; three passes of weathering wear the heights toward their neighbours. |
+| Heights | Sea level is the quantile for the requested ocean share. Land heights follow Earth's hypsometry by rank (median about 450 m, 30% below 250 m, 5% above 2,300 m at the scale of a cell), with a quarter of the world's own relief kept, so mountains stay where the plates put them. |
+
+Over seeds 1–10 at level 5: about 27% of the land within one cell of the coast
+(Earth at the same resolution, 29%), 6.1% desert and 5.1% temperate grassland
+(Earth: 6.2% and 4.0%), the median land height about 520 m. The M3 gate passes
+17 of 18 eras.
 
 Content packs are plain JSON with `//` comments. The reader parses numbers
 exactly (decimal digits up to 15 and powers of ten up to 22, a single correctly

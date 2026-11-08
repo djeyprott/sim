@@ -287,6 +287,7 @@ const ColorScale& age_scale() {  // magenta, light to dark
 // Order matters: keys 1-9 and 0 select the first ten.
 const std::vector<MapModeInfo> kModes = {
     {"terrain", "Terrain", "Elevation above and below sea level", "Land"},
+    {"plates", "Plates", "Tectonic plates (generated worlds): land light, sea dark", "Land"},
     {"biome", "Biome", "Vegetation zone from the climate of each month", "Land"},
     {"temperature", "Temperature", "This year's mean temperature", "Land"},
     {"temp_anomaly", "Temp. anomaly", "This year's temperature minus the long-run baseline", "Land"},
@@ -440,6 +441,23 @@ double crowding(const SimState& s, CellId c) {
 }
 
 }  // namespace
+
+// A plate's colour: hues spread by the golden angle.
+Rgba plate_color(std::uint32_t plate) {
+    const double hue = 6.0 * (static_cast<double>(plate) * 0.618033988749895 - std::floor(static_cast<double>(plate) * 0.618033988749895));
+    const double x = 1.0 - std::fabs(hue - 2.0 * std::floor(hue / 2.0) - 1.0);
+    double r = 0, g = 0, b = 0;
+    switch (static_cast<int>(hue)) {
+        case 0: r = 1, g = x; break;
+        case 1: r = x, g = 1; break;
+        case 2: g = 1, b = x; break;
+        case 3: g = x, b = 1; break;
+        case 4: r = x, b = 1; break;
+        default: r = 1, b = x; break;
+    }
+    auto ch = [](double v) { return static_cast<std::uint8_t>(70.0 + 150.0 * v); };
+    return Rgba{ch(r), ch(g), ch(b), 255};
+}
 
 Rgba language_color(const SimState& s, std::uint32_t lang) {
     if (lang == 0 || lang >= s.languages.size()) return kEmptyLand;
@@ -646,7 +664,16 @@ void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rg
     for (CellId c = 0; c < n; ++c) {
         const bool land = w.is_land[c] != 0;
         const bool inhabited = s.cell_population[c] > 0;
-        if (id == "terrain") {
+        if (id == "plates") {
+            if (w.plate.size() != n) {
+                out[c] = land ? kEmptyLand : kOceanNeutral;
+            } else {
+                const Rgba base = plate_color(w.plate[c]);
+                const double k = land ? 0.85 : 0.45;
+                out[c] = Rgba{static_cast<std::uint8_t>(base.r * k + (land ? 38 : 0)), static_cast<std::uint8_t>(base.g * k + (land ? 38 : 0)),
+                              static_cast<std::uint8_t>(base.b * k + (land ? 38 : 0)), 255};
+            }
+        } else if (id == "terrain") {
             if (!land) {
                 out[c] = terrain_ocean()(w.elevation_m[c]);
             } else if (s.env.temperature_c[c] < kIceBelowC) {
@@ -797,6 +824,9 @@ Legend legend(std::string_view mode_id) {
         const auto land = ramp_entries(terrain_land(), "%.0f");
         l.ramp.insert(l.ramp.end(), land.begin(), land.end());
         l.swatches = {{"Ice (below -10 °C this year)", kIce}};
+    } else if (id == "plates") {
+        l.title = "Tectonic plates";
+        l.swatches = {{"Plates (each its own colour)", kEmptyLand}, {"Land", kEmptyLand}, {"Ocean (darker)", kOceanNeutral}};
     } else if (id == "biome") {
         l.title = "Biome";
         for (std::size_t b = 1; b < kBiomeColors.size(); ++b) {
@@ -974,6 +1004,19 @@ Legend legend(std::string_view mode_id) {
 Legend legend(const Simulation& sim, std::string_view mode_id) {
     Legend l = legend(mode_id);
     const std::string id(map_mode(mode_id).id);
+    if (id == "plates" && !sim.world().plate.empty()) {
+        l.swatches.clear();
+        const World& w = sim.world();
+        std::uint32_t plates = 0;
+        for (std::uint16_t p : w.plate) plates = std::max<std::uint32_t>(plates, p + 1u);
+        for (std::uint32_t p = 0; p < plates; ++p) {
+            const Rgba base = plate_color(p);
+            l.swatches.push_back({"Plate " + std::to_string(p + 1),
+                                  Rgba{static_cast<std::uint8_t>(base.r * 0.85 + 38), static_cast<std::uint8_t>(base.g * 0.85 + 38),
+                                       static_cast<std::uint8_t>(base.b * 0.85 + 38), 255}});
+        }
+        l.swatches.push_back({"Ocean (darker)", kOceanNeutral});
+    }
     if (id == "polity") {
         const SimState& s = sim.state();
         std::vector<std::int64_t> people(s.polities.size(), 0);
@@ -1665,6 +1708,13 @@ std::vector<std::uint32_t> border_regions(const Simulation& sim, std::string_vie
     const SimState& s = sim.state();
     std::vector<std::uint32_t> key = s.polity_of;
     const std::string border_mode = map_mode(mode_id).id;
+    if (border_mode == "plates") {
+        const World& w = sim.world();
+        if (w.plate.size() == key.size()) {
+            for (std::size_t c = 0; c < key.size(); ++c) key[c] = w.plate[c] + 1u;
+        }
+        return key;
+    }
     if ((border_mode == "provinces" || border_mode == "unrest") && s.province_of.size() == key.size()) {
         for (std::size_t c = 0; c < key.size(); ++c) {
             if (s.province_of[c] != 0) key[c] = 0x80000000u | s.province_of[c];
