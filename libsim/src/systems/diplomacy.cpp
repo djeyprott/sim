@@ -66,7 +66,7 @@ std::uint32_t claims_on(const SimState& s, std::uint32_t by, std::uint32_t of) {
 }
 
 bool cause_for_war(const SimState& s, std::uint32_t a, std::uint32_t b) {
-    if (claims_on(s, a, b) > 0 || opinion_between(s, a, b) < Diplomacy::kHostile) return true;
+    if (claims_on(s, a, b) > 0) return true;
     // Holy war: a zealous high priest against another faith.
     const std::uint32_t pr = s.polities[a].priest;
     return s.polities[a].religion != s.polities[b].religion && pr != 0 && pr < s.figures.size() &&

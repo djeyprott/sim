@@ -17,8 +17,10 @@
 //                      kMaxClaimOpinion)
 //   + kAllyOpinion     if allied; - kBondOpinion if one pays the other
 // Land lost in war is claimed by the loser for kClaimYears, unless it is
-// won back first. A claim, a hostile opinion or a holy war (a zealous
-// high priest against another faith) gives a realm cause for war.
+// won back first. A claim or a holy war (a zealous high priest against
+// another faith) gives a realm cause for war. (Hostility alone does not:
+// the victors of the last war would then have the most cause for the
+// next, and conquest would snowball; it weighs through opinion instead.)
 
 #include <cstdint>
 #include <vector>
@@ -43,14 +45,13 @@ struct Diplomacy {
     static constexpr double kWarShock = 0.3;   // opinion lost when a war begins
     static constexpr double kForgetYears = 150.0;  // relations of realms no longer in touch are kept this long after a war
     static constexpr std::int64_t kClaimYears = 100;
-    static constexpr double kHostile = -0.2;   // opinion below which a realm has cause for war
     static constexpr double kHolyPiety = 0.7;  // a high priest this pious preaches holy war on other faiths
     // Declaring war: the chance is scaled by kCause with cause for war,
     // kNoCause without, and by (1 - kOpinionWeight x opinion). A realm judges
     // its strength by what it can bring to the enemy's capital: its power
     // x clamp(control there / kProjection, kMinProjection, 1).
     static constexpr double kCause = 3.0;
-    static constexpr double kNoCause = 1.25;
+    static constexpr double kNoCause = 1.5;
     static constexpr double kOpinionWeight = 0.5;
     static constexpr double kProjection = 0.2;
     static constexpr double kMinProjection = 0.85;
@@ -63,7 +64,7 @@ struct Diplomacy {
 [[nodiscard]] double opinion_between(const SimState& state, std::uint32_t a, std::uint32_t b);
 // Cells of `of` that `by` claims.
 [[nodiscard]] std::uint32_t claims_on(const SimState& state, std::uint32_t by, std::uint32_t of);
-// Whether `a` has cause for war on `b`: a claim, hostility or holy war.
+// Whether `a` has cause for war on `b`: a claim or holy war.
 [[nodiscard]] bool cause_for_war(const SimState& state, std::uint32_t a, std::uint32_t b);
 // The opinion two realms drift toward this year.
 [[nodiscard]] double opinion_target(const World& world, const SimState& state, const Relation& r, Tick now);
