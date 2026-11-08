@@ -427,6 +427,22 @@ void serialize(Ar& ar, SimState& s) {
         ar.f64(m.fame);
         flag(ar, m.seized);
     });
+    vec(ar, s.relations, [&](Relation& r) {
+        ar.u32(r.a);
+        ar.u32(r.b);
+        ar.f64(r.opinion);
+        ar.f64(r.trust);
+        ar.u32(r.wars);
+        ar.i64(r.last_war);
+        ar.i64(r.since);
+        ar.u32(r.claims_ab);
+        ar.u32(r.claims_ba);
+    });
+    vec(ar, s.claims, [&](Claim& c) {
+        ar.u32(c.cell);
+        ar.u32(c.by);
+        ar.i64(c.until);
+    });
     vec(ar, s.armies, [&](Army& a) {
         ar.u32(a.id);
         ar.u32(a.polity);

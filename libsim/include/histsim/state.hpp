@@ -414,6 +414,25 @@ struct Alliance {
     Tick ended = kNever;
 };
 
+// How two realms regard each other (diplomacy.hpp): kept for pairs that
+// border, are bound or allied, or fought within living memory.
+struct Relation {
+    std::uint32_t a = 0, b = 0;  // polity ids, a < b
+    double opinion = 0.0;        // -1 hostile .. 1 friendly
+    double trust = 0.5;          // 0..1: promises kept and broken
+    std::uint32_t wars = 0;      // wars fought against each other
+    Tick last_war = kNever;      // when the last of them ended
+    Tick since = 0;              // first met
+    std::uint32_t claims_ab = 0, claims_ba = 0;  // cells of b that a claims, of a that b claims (this year)
+};
+
+// A realm's claim on land it lost in war, until `until`.
+struct Claim {
+    CellId cell = kInvalidCell;
+    std::uint32_t by = 0;  // the claimant
+    Tick until = 0;
+};
+
 // After a war its leaders keep the peace until `until`.
 struct Truce {
     std::uint32_t a = 0, b = 0;  // a < b
@@ -744,6 +763,8 @@ struct SimState {
     std::vector<Uprising> uprisings;
     std::vector<Commander> commanders;  // index = id; commanders[0] is no one
     std::vector<Army> armies;           // index = id; armies[0] is none
+    std::vector<Relation> relations;    // sorted by (a, b)
+    std::vector<Claim> claims;
     std::vector<Battle> battles;
 
     // Religions (entry 0 a placeholder) and each cell's faith (0 = none yet).
