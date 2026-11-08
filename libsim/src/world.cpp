@@ -6,6 +6,7 @@
 #include <memory>
 #include <queue>
 #include <stdexcept>
+#include <tuple>
 
 #include "histsim/hash.hpp"
 #include "histsim/portable_math.hpp"
@@ -86,6 +87,322 @@ CellId nearest_from(const Grid& g, CellId start, const Vec3& p) {
         if (next == best) return best;
         best = next;
     }
+}
+
+// ------------------------------------------------------------------ tectonics
+
+// A plate-tectonic relief for generated worlds. Plates grow from scattered
+// seeds; each is continental or oceanic and turns about its own pole, and
+// what happens where two meet raises or lowers the land near the boundary:
+// ocean under continent gives a coastal range and a trench (the Andes),
+// continent against continent the highest ranges and a plateau behind them
+// (the Himalaya and Tibet), ocean against ocean a volcanic island arc (Japan),
+// plates pulling apart a rift on land and a ridge at sea. Continental crust
+// sits high, ocean floor deep; the edges of continents that face no
+// subduction sink into shelves. Hotspots raise volcanic islands. Noise adds
+// basins, peninsulas and detail. Heights in metres; sea level is fixed by the
+// caller.
+struct TectonicRelief {
+    std::vector<double> height_m;
+    std::vector<std::uint16_t> plate;
+};
+
+double tect_u01(std::uint64_t seed, std::uint32_t tag, std::uint32_t i, std::uint32_t j = 0) {
+    const PhiloxCounter ctr{i, j, tag, 0x7EC70000u};
+    const PhiloxKey key{static_cast<std::uint32_t>(seed), static_cast<std::uint32_t>(seed >> 32)};
+    return static_cast<double>(philox4x32_10(ctr, key)[0]) * 0x1.0p-32;
+}
+
+Vec3 tect_random_unit(std::uint64_t seed, std::uint32_t tag, std::uint32_t i) {
+    const double z = 2.0 * tect_u01(seed, tag, i, 0) - 1.0;
+    const double phi = 2.0 * kPi * tect_u01(seed, tag, i, 1);
+    const double r = std::sqrt(std::max(0.0, 1.0 - z * z));
+    return {r * pmath::cos(phi), r * pmath::sin(phi), z};
+}
+
+Vec3 tect_cross(const Vec3& a, const Vec3& b) {
+    return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+}
+
+// A smooth bell: 1 at x = 0, falling to 0 at |x| = width.
+double bell(double x, double width) {
+    const double u = x / width;
+    if (u <= -1.0 || u >= 1.0) return 0.0;
+    const double v = 1.0 - u * u;
+    return v * v;
+}
+
+TectonicRelief tectonic_relief(const Grid& g, std::uint64_t seed, double land_fraction) {
+    const std::size_t n = g.cell_count();
+    TectonicRelief out;
+    std::vector<double>& h = out.height_m;
+    h.assign(n, 0.0);
+    auto warped = [&](const Vec3& p, double amount, std::uint64_t salt) {
+        const Vec3 q{p.x + amount * (fractal_noise(seed ^ salt, p, 3) - 0.5),
+                     p.y + amount * (fractal_noise(seed ^ (salt + 1), p, 3) - 0.5),
+                     p.z + amount * (fractal_noise(seed ^ (salt + 2), p, 3) - 0.5)};
+        const double len = std::sqrt(dot(q, q));
+        return Vec3{q.x / len, q.y / len, q.z / len};
+    };
+
+    // ---- Plates: the nearest of scattered seeds, in a warped space so the
+    // borders wander; seeds of different weight make plates of many sizes.
+    const auto plates = static_cast<std::uint32_t>(8 + std::floor(7.0 * tect_u01(seed, 1, 0)));
+    std::vector<Vec3> centre(plates);
+    std::vector<double> weight(plates);
+    for (std::uint32_t k = 0; k < plates; ++k) {
+        centre[k] = tect_random_unit(seed, 3, k);
+        weight[k] = 0.35 * tect_u01(seed, 2, k);
+    }
+    out.plate.assign(n, 0);
+    for (CellId c = 0; c < n; ++c) {
+        const Vec3 q = warped(g.center(c), 0.9, 0x71A7E0ull);
+        double best = -1.0e18;
+        for (std::uint32_t k = 0; k < plates; ++k) {
+            const double score = dot(q, centre[k]) + weight[k];
+            if (score > best) best = score, out.plate[c] = static_cast<std::uint16_t>(k);
+        }
+    }
+    // Stray specks join the plate around them.
+    for (int pass = 0; pass < 2; ++pass) {
+        std::vector<std::uint16_t> next = out.plate;
+        for (CellId c = 0; c < n; ++c) {
+            int same = 0, total = 0;
+            std::uint16_t major = out.plate[c];
+            int major_count = 0;
+            for (CellId nb : g.neighbors(c)) {
+                ++total;
+                if (out.plate[nb] == out.plate[c]) ++same;
+                int cnt = 0;
+                for (CellId nb2 : g.neighbors(c)) cnt += out.plate[nb2] == out.plate[nb] ? 1 : 0;
+                if (cnt > major_count || (cnt == major_count && out.plate[nb] < major)) major_count = cnt, major = out.plate[nb];
+            }
+            if (same * 2 < total) next[c] = major;
+        }
+        out.plate.swap(next);
+    }
+    std::vector<double> area(plates, 0.0);
+    double total = 0.0;
+    for (CellId c = 0; c < n; ++c) {
+        area[out.plate[c]] += g.area_km2(c);
+        total += g.area_km2(c);
+    }
+    // ---- Continental plates in a random order, until about the land's share.
+    std::vector<std::uint32_t> order(plates);
+    for (std::uint32_t k = 0; k < plates; ++k) order[k] = k;
+    std::sort(order.begin(), order.end(), [&](std::uint32_t a, std::uint32_t b) {
+        const double ka = tect_u01(seed, 4, a), kb = tect_u01(seed, 4, b);
+        return ka != kb ? ka < kb : a < b;
+    });
+    std::vector<std::uint8_t> continental(plates, 0);
+    double crust_area = 0.0;
+    std::uint32_t chosen = 0;
+    for (std::uint32_t k : order) {
+        if (crust_area >= land_fraction * total || chosen + 2 >= plates) break;
+        continental[k] = 1;
+        crust_area += area[k];
+        ++chosen;
+    }
+    // ---- Continental crust: blobs that favour the continental plates but
+    // spill over and fall short of their edges, so some coasts follow plate
+    // borders (active margins) and others lie inside a plate (passive ones).
+    std::vector<double> crust(n);
+    for (CellId c = 0; c < n; ++c) crust[c] = continental[out.plate[c]] ? 1.0 : 0.0;
+    for (int pass = 0; pass < 3; ++pass) {
+        std::vector<double> next(n);
+        for (CellId c = 0; c < n; ++c) {
+            double sum = crust[c];
+            int count = 1;
+            for (CellId nb : g.neighbors(c)) sum += crust[nb], ++count;
+            next[c] = sum / count;
+        }
+        crust.swap(next);
+    }
+    for (CellId c = 0; c < n; ++c) {
+        const Vec3 q = warped(g.center(c), 0.5, 0x3E1Full);
+        crust[c] = 0.4 * crust[c] + 1.2 * (fractal_noise(seed ^ 0xC2057ull, {1.7 * q.x, 1.7 * q.y, 1.7 * q.z}, 5) - 0.5);
+    }
+    // Threshold: a little more crust than land (its rim is shelf).
+    std::vector<double> sorted = crust;
+    const auto kth = static_cast<std::size_t>((1.0 - 1.12 * land_fraction) * static_cast<double>(n - 1));
+    std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(kth), sorted.end());
+    const double cut = sorted[kth];
+    std::vector<std::uint8_t> is_cont(n);
+    for (CellId c = 0; c < n; ++c) is_cont[c] = crust[c] > cut ? 1 : 0;
+
+    // ---- Motion: each plate turns about its own pole. Ocean floor is
+    // denser than continent; of two ocean plates, one is older.
+    std::vector<Vec3> pole(plates);
+    std::vector<double> density(plates);
+    for (std::uint32_t k = 0; k < plates; ++k) {
+        const double rate = 0.5 + tect_u01(seed, 5, k);
+        const Vec3 axis = tect_random_unit(seed, 6, k);
+        pole[k] = {axis.x * rate, axis.y * rate, axis.z * rate};
+        density[k] = tect_u01(seed, 7, k);
+    }
+    auto velocity = [&](std::uint32_t k, const Vec3& p) { return tect_cross(pole[k], p); };
+
+    // ---- Boundaries: how fast the plates close (+) or part (-), and the
+    // crust across them.
+    struct Edge {
+        double closing = 0.0;
+        bool other_cont = false;
+        bool over = false;  // this side rides over the other
+    };
+    std::vector<Edge> edge(n);
+    std::vector<CellId> boundary;
+    for (CellId c = 0; c < n; ++c) {
+        const std::uint32_t a = out.plate[c];
+        double closing = 0.0;
+        int count = 0, cont_across = 0;
+        std::uint32_t other = a;
+        for (CellId nb : g.neighbors(c)) {
+            const std::uint32_t b = out.plate[nb];
+            if (b == a) continue;
+            const Vec3& p = g.center(c);
+            const Vec3& q = g.center(nb);
+            Vec3 d{q.x - p.x, q.y - p.y, q.z - p.z};
+            const double len = std::sqrt(dot(d, d));
+            d = {d.x / len, d.y / len, d.z / len};
+            const Vec3 va = velocity(a, p), vb = velocity(b, p);
+            closing += dot({va.x - vb.x, va.y - vb.y, va.z - vb.z}, d);
+            cont_across += is_cont[nb];
+            ++count;
+            if (other == a || b < other) other = b;
+        }
+        if (count == 0) continue;
+        const bool here_cont = is_cont[c] != 0, there_cont = cont_across * 2 >= count;
+        // Continent rides over ocean; between like crusts, the lighter plate.
+        const bool over = here_cont != there_cont ? here_cont : density[a] < density[other];
+        edge[c] = {closing / count, there_cont, over};
+        boundary.push_back(c);
+    }
+    // ---- Each cell's nearest boundary within its own plate.
+    constexpr double kReachKm = 1400.0;
+    std::vector<double> dist(n, 1.0e18);
+    std::vector<CellId> source(n, kInvalidCell);
+    using Near = std::tuple<double, CellId, CellId>;
+    std::priority_queue<Near, std::vector<Near>, std::greater<>> near;
+    for (CellId c : boundary) near.emplace(0.0, c, c);
+    while (!near.empty()) {
+        const auto [d, c, src] = near.top();
+        near.pop();
+        if (source[c] != kInvalidCell) continue;
+        source[c] = src;
+        dist[c] = d;
+        for (CellId nb : g.neighbors(c)) {
+            if (source[nb] != kInvalidCell || out.plate[nb] != out.plate[c]) continue;
+            const double nd = d + g.distance_km(c, nb);
+            if (nd <= kReachKm) near.emplace(nd, nb, src);
+        }
+    }
+    // ---- Distance from the continental edge (km, signed: + inland).
+    std::vector<double> shore(n, 1.0e18);
+    {
+        using Q = std::pair<double, CellId>;
+        std::priority_queue<Q, std::vector<Q>, std::greater<>> q;
+        for (CellId c = 0; c < n; ++c) {
+            for (CellId nb : g.neighbors(c)) {
+                if (is_cont[nb] != is_cont[c]) {
+                    q.emplace(0.5 * g.distance_km(c, nb), c);
+                    break;
+                }
+            }
+        }
+        while (!q.empty()) {
+            const auto [d, c] = q.top();
+            q.pop();
+            if (shore[c] <= d) continue;
+            shore[c] = d;
+            for (CellId nb : g.neighbors(c)) {
+                if (is_cont[nb] != is_cont[c]) continue;
+                const double nd = d + g.distance_km(c, nb);
+                if (nd < shore[nb]) q.emplace(nd, nb);
+            }
+        }
+    }
+
+    std::vector<double> uplift(n, 0.0);
+    for (CellId c = 0; c < n; ++c) {
+        const Vec3& p = g.center(c);
+        const bool cont = is_cont[c] != 0;
+        const double s = std::min(shore[c], 3000.0);
+        // Continents rise from a slope and shelf to a low interior with
+        // swells and basins; the ocean deepens away from them.
+        const double swell = fractal_noise(seed ^ 0x5E11ull, p, 4) - 0.5;
+        double z = cont ? -150.0 + 380.0 * std::min(1.0, s / 500.0) + 1000.0 * swell
+                        : -400.0 - 4000.0 * std::min(1.0, s / 600.0) + 600.0 * swell;
+        // Old ranges, worn low, where plates met long ago (the Appalachians,
+        // the Urals): ridged noise inland.
+        if (cont) {
+            const double r = 1.0 - std::fabs(2.0 * fractal_noise(seed ^ 0x01DAull, warped(p, 0.3, 0x0A1Dull), 4) - 1.0);
+            z += 1100.0 * r * r * r * r * std::min(1.0, s / 400.0);
+        }
+        double& u = uplift[c];
+        // What the nearest boundary does here.
+        if (source[c] != kInvalidCell) {
+            const Edge& e = edge[source[c]];
+            const double d = dist[c];
+            const double close = std::clamp(e.closing / 1.2, -1.0, 1.0);
+            const double rough = 0.6 + 0.8 * fractal_noise(seed ^ 0x3A9Bull, p, 3);  // peaks, gaps and passes
+            if (close > 0.1) {
+                if (cont && e.other_cont) {
+                    // Collision: the highest ranges, a high plateau behind.
+                    u += close * rough * (4500.0 * bell(d, 420.0) + 1600.0 * bell(d - 500.0, 650.0));
+                } else if (cont) {
+                    // Ocean dives under: a coastal range just inland.
+                    u += close * rough * 3800.0 * bell(d - 150.0, 380.0);
+                } else if (!e.over) {
+                    u -= close * 2600.0 * bell(d, 250.0);  // the diving floor: a trench
+                } else {
+                    u += close * rough * 4600.0 * bell(d - 180.0, 230.0);  // an island arc
+                }
+            } else if (close < -0.1) {
+                if (cont) {
+                    u -= -close * 1500.0 * bell(d, 280.0);  // a rift valley
+                } else {
+                    u += -close * 1500.0 * bell(d, 550.0);  // a mid-ocean ridge
+                }
+            }
+        }
+        z += 350.0 * (fractal_noise(seed ^ 0xD37Aull, p, 5) - 0.5);
+        h[c] = z;
+    }
+    // Uplift, smoothed over the steps of the grid, then added.
+    for (int pass = 0; pass < 2; ++pass) {
+        std::vector<double> next(n);
+        for (CellId c = 0; c < n; ++c) {
+            double sum = 2.0 * uplift[c];
+            double count = 2.0;
+            for (CellId nb : g.neighbors(c)) sum += uplift[nb], count += 1.0;
+            next[c] = sum / count;
+        }
+        uplift.swap(next);
+    }
+    for (CellId c = 0; c < n; ++c) h[c] += uplift[c];
+    // ---- Hotspots: volcanic islands and highlands.
+    const auto hotspots = static_cast<std::uint32_t>(3 + std::floor(5.0 * tect_u01(seed, 8, 0)));
+    std::vector<std::pair<CellId, int>> ring;
+    std::vector<std::uint8_t> mark(n, 0);
+    for (std::uint32_t i = 0; i < hotspots; ++i) {
+        const CellId hc = nearest_from(g, 0, tect_random_unit(seed, 9, i));
+        const double strength = 3000.0 + 2500.0 * tect_u01(seed, 10, i);
+        g.cells_within(hc, 4, ring, mark);
+        for (const auto& [c, steps] : ring) h[c] += strength * bell(g.distance_km(hc, c), 250.0);
+    }
+    // ---- Weathering: the highest ground wears toward its neighbours.
+    for (int pass = 0; pass < 3; ++pass) {
+        std::vector<double> next = h;
+        for (CellId c = 0; c < n; ++c) {
+            double sum = 0.0;
+            int count = 0;
+            for (CellId nb : g.neighbors(c)) sum += h[nb], ++count;
+            const double mean = sum / count;
+            if (h[c] > mean && h[c] > 0.0) next[c] = h[c] - 0.2 * (h[c] - mean);
+        }
+        h.swap(next);
+    }
+    return out;
 }
 
 // f(x) through the points (xs[i], ys[i]), xs increasing, clamped at the ends.
@@ -824,29 +1141,35 @@ World generate_test_world(const WorldParams& params, const Content& content) {
     if (params.kind == WorldKind::Earth) {
         earth_relief(w);
     } else {
-        std::vector<double> raw(n);
-        for (CellId c = 0; c < n; ++c) {
-            raw[c] = fractal_noise(params.seed, w.grid.center(c));
-        }
+        const TectonicRelief relief = tectonic_relief(w.grid, params.seed, 1.0 - params.ocean_fraction);
+        const std::vector<double>& raw = relief.height_m;
         std::vector<double> sorted = raw;
         const auto k = static_cast<std::size_t>(params.ocean_fraction * static_cast<double>(n - 1));
         std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(k), sorted.end());
         const double sea = sorted[k];  // the k-th smallest value is unique, whatever the sort
-        const double lo = *std::min_element(raw.begin(), raw.end());
-        const double hi = *std::max_element(raw.begin(), raw.end());
-
         w.elevation_m.resize(n);
         w.is_land.resize(n);
+        std::vector<CellId> land_cells;
         for (CellId c = 0; c < n; ++c) {
-            if (raw[c] > sea) {
-                const double t = (raw[c] - sea) / (hi - sea);
-                w.elevation_m[c] = 6000.0 * t * t;  // most land low, a few high ranges
-                w.is_land[c] = 1;
-            } else {
-                const double t = (sea - raw[c]) / (sea - lo);
-                w.elevation_m[c] = -200.0 - 5000.0 * std::sqrt(t);  // shelf, then deep ocean
-                w.is_land[c] = 0;
-            }
+            const bool land = raw[c] > sea;
+            // The sea at least a shelf deep.
+            w.elevation_m[c] = land ? raw[c] - sea : std::clamp(raw[c] - sea, -10500.0, -50.0);
+            w.is_land[c] = land ? 1 : 0;
+            if (land) land_cells.push_back(c);
+        }
+        // Land heights follow Earth's curve (by rank: broad lowlands, a long
+        // tail of highlands; at the scale of a cell), with a quarter of the
+        // world's own relief kept.
+        std::sort(land_cells.begin(), land_cells.end(), [&](CellId a, CellId b) {
+            return w.elevation_m[a] != w.elevation_m[b] ? w.elevation_m[a] < w.elevation_m[b] : a < b;
+        });
+        static constexpr std::array<double, 12> kRank{0.0, 0.1, 0.2, 0.3, 0.5, 0.7, 0.8, 0.9, 0.95, 0.98, 0.995, 1.0};
+        static constexpr std::array<double, 12> kHeight{5.0, 60.0, 150.0, 250.0, 450.0, 780.0, 1080.0, 1650.0, 2300.0, 3300.0, 4500.0, 5800.0};
+        const double denom = std::max<double>(1.0, static_cast<double>(land_cells.size() - 1));
+        for (std::size_t i = 0; i < land_cells.size(); ++i) {
+            const CellId c = land_cells[i];
+            const double curve = piecewise(static_cast<double>(i) / denom, kRank, kHeight);
+            w.elevation_m[c] = std::clamp(0.75 * curve + 0.25 * w.elevation_m[c], 5.0, 8800.0);
         }
     }
 

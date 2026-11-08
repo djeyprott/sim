@@ -148,9 +148,10 @@ OnePolity one_polity() {
     x.s = x.sim.state();
     const World& w = x.sim.world();
     for (CellId c = 0; c < w.cell_count() && x.capital == kInvalidCell; ++c) {
-        if (x.s.cell_population[c] < 1000) continue;
+        // Peopled lowland, so the realm is not hard to hold for its ground.
+        if (x.s.cell_population[c] < 1000 || w.elevation_m[c] > 500.0) continue;
         bool all = true;
-        for (CellId nb : w.grid.neighbors(c)) all = all && x.s.cell_population[nb] >= 1000;
+        for (CellId nb : w.grid.neighbors(c)) all = all && x.s.cell_population[nb] >= 1000 && w.elevation_m[nb] < 500.0;
         if (all) x.capital = c;
     }
     x.s.polities.resize(2);
@@ -178,6 +179,8 @@ void run_polities(const World& w, SimState& s, int years) {
 TEST(polity_stability_falls_in_famine_and_names_the_cause) {
     OnePolity x = one_polity();
     const World& w = x.sim.world();
+    // The capital alone, so that famine is all that differs.
+    for (CellId nb : w.grid.neighbors(x.capital)) x.s.polity_of[nb] = 0;
     SimState fed = x.s;
     run_polities(w, fed, 1);
     CHECK_EQ(fed.polities[1].pressure[static_cast<std::size_t>(Pressure::Famine)], 0.0);

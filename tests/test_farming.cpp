@@ -45,9 +45,20 @@ TEST(bond_intensity_rises_holds_and_fades) {
 }
 
 TEST(bond_effect_cools_the_north_and_dries_monsoons) {
+    // A world with land near both poles.
     WorldParams p;
     p.grid_level = 4;
-    const World w = generate_test_world(p);
+    World w = generate_test_world(p);
+    auto polar_land = [&](const World& x, double sign) {
+        for (CellId c = 0; c < x.cell_count(); ++c) {
+            if (x.is_land[c] && sign * x.grid.center(c).z > 0.8) return true;
+        }
+        return false;
+    };
+    while (!polar_land(w, 1.0) || !polar_land(w, -1.0)) {
+        ++p.seed;
+        w = generate_test_world(p);
+    }
     const BondEvent b{0, 200, 2.0};
     double north = 0.0, south = 0.0, monsoon_rain = 1.0, other_rain = 1.0;
     int nn = 0, ns = 0;
