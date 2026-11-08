@@ -378,6 +378,7 @@ void WarSystem::step(StepContext& ctx) {
     };
     const double slack = std::max(0.0, kLevel5CellKm * w.cell_scale() - kConquestNearKm);
     const Armies armies = raise_armies(w, s, &rule);
+    const std::vector<double> load = admin_loads(w, s, rule, reach);
     // People of each polity at the start of the year, to weigh its losses.
     std::vector<double> people_of(np, 0.0);
     for (std::uint32_t id = 1; id < np; ++id) {
@@ -687,6 +688,14 @@ void WarSystem::step(StepContext& ctx) {
             if (target == kInvalidCell || ratio <= 1.0) return false;
             if (rng.uniform() >= kSeize * std::min(2.0, ratio - 1.0) / coarse) return false;
             const std::uint32_t loser = s.polity_of[target];
+            // A settled realm fighting for tribute wins the field but keeps no land.
+            if (mine == 1 && war.goal == WarGoal::Tribute && !s.polities[lead_a].nomadic) {
+                blow(loser, kShockLand * static_cast<double>(s.cell_population[target]));
+                war.deaths += kill(s, target, kSackDeaths, false, rng);
+                s.strife[target] = 2;
+                if (at != kInvalidCell && close(at, target)) s.armies[mine_army].cell = target;
+                return true;
+            }
             // Losing land shakes the loser in proportion to the people lost.
             blow(loser, kShockLand * static_cast<double>(s.cell_population[target]));
             // The sack, and refugees to the nearest cell their side still holds.
@@ -972,7 +981,11 @@ void WarSystem::step(StepContext& ctx) {
             const double martial = king != 0 && king < s.rulers.size() ? s.rulers[king].martial : 0.5;
             const double ambition = trait_factor(reigning_person(s, id), &Figure::ambition);
             if (rng.uniform() < kDeclare * (0.5 + warfare) * (0.5 + martial) * ambition * std::min(2.0, ratio - 1.0)) {
-                start_war(w, s, tick, id, b, p.nomadic && !q.nomadic ? WarGoal::Tribute : WarGoal::Conquest);
+                // Nomads raid farmers for tribute; a realm that cannot run more
+                // land fights for tribute too.
+                const bool tribute = (p.nomadic && !q.nomadic) ||
+                                     load[id] >= PolitySystem::kTributeLoad * admin_capacity(w, s, id);
+                start_war(w, s, tick, id, b, tribute ? WarGoal::Tribute : WarGoal::Conquest);
                 busy[id] = busy[b] = 1;
                 break;
             }

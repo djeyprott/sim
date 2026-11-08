@@ -151,6 +151,25 @@ public:
     static constexpr double kFormation = 0.01;
     // Expansion: chance a year of taking the best stateless neighbour.
     static constexpr double kAnnex = 0.03;
+    // Direct rule only where it pays and the realm can manage it.
+    // Worth: a cell's people (farmers in full, foragers at kForagerWorth)
+    // x (1 + its trade per person / kTradePerPerson, at most 3), per km^2,
+    // against the same over the realm's own land. Land as rich as its own is
+    // taken at kMinControl; richer land further out (control kMinControl /
+    // sqrt(ratio), at least kMinWorthControl), poorer only nearer (at most
+    // kMaxWorthControl).
+    static constexpr double kForagerWorth = 0.2;
+    static constexpr double kMinWorthControl = 0.15;
+    static constexpr double kMaxWorthControl = 0.6;
+    // Capacity: ruling a cell directly takes 1 / control of the realm's
+    // administration (a level-5 cell's worth of land); a realm runs at most
+    // kAdminLoad x (1 + administration) x (1 + 0.3 contact) (x kNomadReach
+    // for nomads). At capacity it takes no more land, and it makes war on a
+    // neighbour for tribute rather than for its land.
+    static constexpr double kAdminLoad = 40.0;
+    // A settled realm at kTributeLoad of its capacity makes war for tribute:
+    // its victories in the field win it a tributary, not land.
+    static constexpr double kTributeLoad = 0.8;
     // Civil war: chance a year per unit of (1 - mean control), for polities
     // of at least kCivilWarCells cells.
     static constexpr double kCivilWar = 0.004;
@@ -419,6 +438,13 @@ private:
 [[nodiscard]] double rule_km(const World& world, const SimState& state, std::uint32_t polity, CellId cell);
 // The same between any two cells, under the techniques known at `from`.
 [[nodiscard]] double rule_km_between(const World& world, const SimState& state, CellId from, CellId to, double limit_km);
+
+// How much administration a realm can run directly (see kAdminLoad), and
+// each living realm's load: the sum over its cells of 1 / control (in
+// level-5 cells' worth of land).
+[[nodiscard]] double admin_capacity(const World& world, const SimState& state, std::uint32_t polity);
+[[nodiscard]] std::vector<double> admin_loads(const World& world, const SimState& state, const RuleField& rule,
+                                              const std::vector<double>& reach);
 
 // Control a polity has over a cell at a distance from its capital (0-1).
 [[nodiscard]] inline double polity_control(double distance_km, double reach_km) {
