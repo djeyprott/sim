@@ -1127,7 +1127,8 @@ int figure(const Options& o) {
 //     the first domesticated crop, against about 6,300 years in history
 //     (farming in the Fertile Crescent about 9500 BCE, Uruk about 3200 BCE).
 //  2. Before 5,000 years of farming, no polity larger than a big chiefdom.
-//  3. The largest polity era by era, eras counted from the first state
+//  3. The largest realm era by era (with its tributaries and vassals),
+//     eras counted from the first state
 //     (3200 BCE), against the largest empire to date (Taagepera's figures,
 //     as compiled in Wikipedia's list of largest empires). Counting from
 //     the first state keeps the growth of states apart from the timing of
@@ -1232,7 +1233,9 @@ int gate(const Options& o) {
                 for (const histsim::YearRecord& y : s.history) {
                     const std::int64_t since = y.year - state_year;
                     if (since >= pt.since_state - kWindow && since <= pt.since_state + kWindow) {
-                        best = std::max(best, y.largest_polity_km2 / 1e6);
+                        // A realm with its tributaries and vassals: many early
+                        // empires (Akkad, Shang, Assyria) were largely tributary.
+                        best = std::max(best, y.largest_sphere_km2 / 1e6);
                     }
                 }
                 r.at.push_back(best);
@@ -1255,7 +1258,7 @@ int gate(const Options& o) {
         std::sort(v.begin(), v.end());
         return v.empty() ? -1.0 : v[v.size() / 2];
     };
-    std::printf("M3 gate: the largest polity by era, %lld seeds at level %d, %lld years each.\n", static_cast<long long>(n),
+    std::printf("M3 gate: the largest realm (with its subjects) by era, %lld seeds at level %d, %lld years each.\n", static_cast<long long>(n),
                 o.params.grid_level, static_cast<long long>(o.years));
     std::printf("The first state is timed from the first crop (history: from about 9500 BCE);\n"
                 "polity sizes from the first state (history: from about 3200 BCE).\n\n");

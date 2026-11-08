@@ -151,15 +151,7 @@ public:
     static constexpr double kFormation = 0.01;
     // Expansion: chance a year of taking the best stateless neighbour.
     static constexpr double kAnnex = 0.03;
-    // Direct rule only where it pays and the realm can manage it.
-    // Worth: a cell's people (farmers in full, foragers at kForagerWorth)
-    // x (1 + its trade per person / kTradePerPerson, at most 3), per km^2,
-    // against the same over the realm's own land. Land as rich as its own,
-    // or richer, is taken at kMinControl; poorer only nearer (control
-    // kMinControl / sqrt(ratio), at most kMaxWorthControl).
-    static constexpr double kForagerWorth = 0.2;
-    static constexpr double kMaxWorthControl = 0.6;
-    // Capacity: ruling a cell directly takes 1 / control of the realm's
+    // Direct rule only as far as the realm can manage it. Capacity: ruling a cell directly takes 1 / control of the realm's
     // administration (a level-5 cell's worth of land); a realm runs at most
     // kAdminLoad x (1 + administration) x (1 + 0.3 contact) (x kNomadReach
     // for nomads). At capacity it takes no more land, and it makes war on a

@@ -461,16 +461,6 @@ void PolitySystem::step(StepContext& ctx) {
     const std::size_t attempts = std::max<std::size_t>(1, w.cells_for(1));
     const double cell_share = std::min(1.0, w.cell_scale() * w.cell_scale());  // of a level-5 cell
     const double coarse = std::max(1.0, w.cell_scale() * w.cell_scale());       // level-5 cells in one
-    // What land is worth to a ruler: its people (farmers in full) and the
-    // trade through it, per km^2.
-    auto worth = [&](CellId c) {
-        const double people = static_cast<double>(s.cell_population[c]);
-        if (people <= 0.0) return 0.0;
-        const double farming = s.env.farming.size() == n ? s.env.farming[c] : 0.0;
-        const double trade = s.trade_value.size() == n ? s.trade_value[c] : 0.0;
-        return people * (kForagerWorth + (1.0 - kForagerWorth) * farming) *
-               (1.0 + std::min(3.0, trade / people / kTradePerPerson)) / w.grid.area_km2(c);
-    };
     std::vector<double> load = admin_loads(w, s, rule, reach);
     std::vector<std::pair<double, CellId>> frontier;
     for (std::size_t id = 1; id < np; ++id) {
@@ -478,12 +468,6 @@ void PolitySystem::step(StepContext& ctx) {
         // At the limit of what its administration can run, it takes no more.
         const double capacity = admin_capacity(w, s, static_cast<std::uint32_t>(id));
         if (load[id] >= capacity) continue;
-        double own = 0.0, own_area = 0.0;
-        for (CellId c : cells[id]) {
-            own += worth(c) * w.grid.area_km2(c);
-            own_area += w.grid.area_km2(c);
-        }
-        const double home = own_area > 0.0 ? own / own_area : 0.0;
         frontier.clear();
         for (CellId c : cells[id]) {
             for (CellId nb : w.grid.neighbors(c)) {
@@ -502,11 +486,6 @@ void PolitySystem::step(StepContext& ctx) {
         for (std::size_t k = 0; tried < attempts && k < frontier.size(); ++k) {
             const auto [best, target] = frontier[k];
             if (best < kMinControl) break;
-            // Worth taking this far out? Land poorer than its own is worth
-            // less trouble.
-            const double ratio = home > 0.0 ? worth(target) / home : 1.0;
-            const double needed = std::clamp(kMinControl / std::sqrt(std::max(1e-6, ratio)), kMinControl, kMaxWorthControl);
-            if (best < needed) continue;
             if (load[id] + cell_share / best > capacity) continue;
             ++tried;
             // Strength against the people of a level-5 cell's worth of land.
