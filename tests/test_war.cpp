@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "histsim/simulation.hpp"
+#include "histsim/systems/diplomacy.hpp"
 #include "histsim/systems/polity.hpp"
 #include "histsim/systems/war.hpp"
 #include "testing.hpp"
@@ -294,4 +295,65 @@ TEST(war_field_armies_march_fight_and_disband) {
         CHECK(t.armies[b.winner].polity != t.armies[b.loser].polity);
         CHECK(b.dead >= 0);
     }
+}
+
+TEST(diplomacy_neighbours_of_one_culture_and_faith_think_well_of_each_other) {
+    Setup x = two_polities();
+    SimState& s = x.s;
+    const std::vector<std::vector<std::uint32_t>> borders{{}, {2}, {1}};
+    update_relations(x.sim.world(), s, s.tick, borders);
+    CHECK_EQ(s.relations.size(), std::size_t{1});
+    const Relation* r = find_relation(s, 2, 1);
+    CHECK(r != nullptr);
+    CHECK(r->opinion > 0.3);  // culture and faith shared, met this year
+    CHECK(!cause_for_war(s, 1, 2));
+    // A war begun sours them at once, and its memory lingers after peace.
+    const double before = r->opinion;
+    note_war_begun(s, 1, 2, s.tick);
+    CHECK(opinion_between(s, 1, 2) < before - 0.25);
+    note_war_ended(s, 1, 2, s.tick);
+    const double remembered = opinion_target(x.sim.world(), s, *find_relation(s, 1, 2), s.tick);
+    const double forgotten = opinion_target(x.sim.world(), s, *find_relation(s, 1, 2), s.tick + 200 * kTicksPerYear);
+    CHECK(remembered < forgotten - 0.5);
+}
+
+TEST(diplomacy_lost_land_is_claimed_until_won_back_or_forgotten) {
+    Setup x = two_polities();
+    SimState& s = x.s;
+    const World& w = x.sim.world();
+    const std::vector<std::vector<std::uint32_t>> borders{{}, {2}, {1}};
+    update_relations(w, s, s.tick, borders);
+    const double calm = opinion_between(s, 1, 2);
+    // Polity 2 loses a cell to polity 1.
+    CellId lost = kInvalidCell;
+    for (CellId nb : w.grid.neighbors(x.victim)) {
+        if (s.polity_of[nb] == 1 && nb != x.heart) lost = nb;
+    }
+    CHECK(lost != kInvalidCell);
+    s.polity_of[lost] = 2;
+    note_land_lost(s, lost, 2, s.tick);
+    s.polity_of[lost] = 1;
+    s.tick += kTicksPerYear;
+    update_relations(w, s, s.tick, borders);
+    CHECK_EQ(claims_on(s, 2, 1), 1u);
+    CHECK_EQ(claims_on(s, 1, 2), 0u);
+    CHECK(cause_for_war(s, 2, 1));
+    CHECK(!cause_for_war(s, 1, 2));
+    for (int y = 0; y < 30; ++y) {
+        s.tick += kTicksPerYear;
+        update_relations(w, s, s.tick, borders);
+    }
+    CHECK(opinion_between(s, 1, 2) < calm - 0.1);
+    // Won back, the claim is dropped.
+    s.polity_of[lost] = 2;
+    s.tick += kTicksPerYear;
+    update_relations(w, s, s.tick, borders);
+    CHECK(s.claims.empty());
+    CHECK_EQ(claims_on(s, 2, 1), 0u);
+    // A claim not pressed lapses.
+    s.polity_of[lost] = 1;
+    note_land_lost(s, lost, 2, s.tick);
+    s.tick += (Diplomacy::kClaimYears + 1) * kTicksPerYear;
+    update_relations(w, s, s.tick, borders);
+    CHECK(s.claims.empty());
 }

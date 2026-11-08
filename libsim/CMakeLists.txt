@@ -34,6 +34,7 @@ add_library(histsim
     src/systems/bondage.cpp
     src/systems/technology.cpp
     src/systems/war.cpp
+    src/systems/diplomacy.cpp
     src/rng.cpp
     src/scheduler.cpp
     src/simulation.cpp

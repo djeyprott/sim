@@ -6,6 +6,7 @@
 
 #include "histsim/figures.hpp"
 #include "histsim/systems/bondage.hpp"
+#include "histsim/systems/diplomacy.hpp"
 #include "histsim/systems/polity.hpp"
 #include "histsim/systems/technology.hpp"
 
@@ -315,6 +316,7 @@ std::uint32_t start_war(const World&, SimState& s, Tick tick, std::uint32_t atta
     war.started = tick;
     war.attackers.push_back(attacker);
     war.defenders.push_back(defender);
+    note_war_begun(s, attacker, defender, tick);
     const Polity& d = s.polities[defender];
     // The defender's overlord, allies and vassals stand with it; the
     // attacker's vassals with the attacker.
@@ -410,6 +412,7 @@ void WarSystem::step(StepContext& ctx) {
         std::sort(b.begin(), b.end());
         b.erase(std::unique(b.begin(), b.end()), b.end());
     }
+    update_relations(w, s, tick, borders);
 
     // ---- The dead free their subjects and leave their alliances; truces run out.
     for (std::uint32_t id = 1; id < np; ++id) {
@@ -450,6 +453,7 @@ void WarSystem::step(StepContext& ctx) {
                 if (living(id)) s.armies[id].to = tick;
             }
             if (alive(s, lead_a) && alive(s, lead_d)) {
+                note_war_ended(s, lead_a, lead_d, tick);
                 const auto [x, y] = ordered(lead_a, lead_d);
                 s.truces.push_back({x, y, tick + kTruceYears * kTicksPerYear});
             }
@@ -717,6 +721,7 @@ void WarSystem::step(StepContext& ctx) {
             if (refuge != kInvalidCell) flee(s, target, refuge, kRefugees, rng, arrivals);
             // Settlers and garrisons from the conquering side move in.
             flee(s, from, target, kConquestSettlers, rng, arrivals);
+            note_land_lost(s, target, s.polity_of[target], tick);
             s.polity_of[target] = s.polity_of[from];
             s.strife[target] = 2;
             // The army moves into what it took.
@@ -927,7 +932,8 @@ void WarSystem::step(StepContext& ctx) {
             for (std::uint32_t b : *list) {
                 if (b == id || b == threat || s.polities[b].bond != Bond::None || ally_count[b] >= kMaxAllies) continue;
                 if (allies.allied(s, id, b) || allies.allied(s, threat, b) || war_between(s, id, b) != 0) continue;
-                const double score = power[b] * (s.cultures[s.polities[b].culture].root == root ? 2.0 : 1.0);
+                const double score = power[b] * (s.cultures[s.polities[b].culture].root == root ? 2.0 : 1.0) *
+                                     (1.0 + opinion_between(s, id, b));
                 if (score > best || (score == best && b < partner)) best = score, partner = b;
             }
         }
@@ -974,14 +980,18 @@ void WarSystem::step(StepContext& ctx) {
                 const Alliance& al = s.alliances[i];
                 defence += kAllyShare * power[al.a == b ? al.b : al.a];
             }
-            const double ratio = defence > 0.0 ? power[id] / defence : 0.0;
+            // What it can bring to bear at the enemy's capital.
+            const double bring = std::clamp(control_of(id, q.capital) / Diplomacy::kProjection, Diplomacy::kMinProjection, 1.0);
+            const double ratio = defence > 0.0 ? power[id] * bring / defence : 0.0;
             if (ratio < kDeclareRatio) continue;
+            const double mood = (cause_for_war(s, id, b) ? Diplomacy::kCause : Diplomacy::kNoCause) *
+                                (1.0 - Diplomacy::kOpinionWeight * opinion_between(s, id, b));
             // A martial ruler is readier for war, a peaceable one less so; an
             // ambitious one more again.
             const std::uint32_t king = s.polities[id].ruler;
             const double martial = king != 0 && king < s.rulers.size() ? s.rulers[king].martial : 0.5;
             const double ambition = trait_factor(reigning_person(s, id), &Figure::ambition);
-            if (rng.uniform() < kDeclare * (0.5 + warfare) * (0.5 + martial) * ambition * std::min(2.0, ratio - 1.0)) {
+            if (rng.uniform() < kDeclare * (0.5 + warfare) * (0.5 + martial) * ambition * std::min(2.0, ratio - 1.0) * mood) {
                 // Nomads raid farmers for tribute; a realm that cannot run more
                 // land fights for tribute too.
                 const bool tribute = (p.nomadic && !q.nomadic) ||
