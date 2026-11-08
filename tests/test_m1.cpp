@@ -38,17 +38,23 @@ struct Bench {
 
     // The richest cell whose neighbors are all habitable land, so spread
     // tests are not boxed in by a coastline.
+    // The richest lowland foraging cell, two rings inland if there is one
+    // (so the band is on a sizable landmass), else one ring.
     CellId best_land_cell() const {
-        CellId best = kInvalidCell;
-        for (CellId c = 0; c < world.cell_count(); ++c) {
-            // Lowland, so the frontier can spread over open country.
-            bool interior = world.forager_capacity[c] > 0.0 && world.elevation_m[c] < 500.0;
-            for (CellId nb : world.grid.neighbors(c)) interior = interior && world.forager_capacity[nb] > 0.0;
-            if (interior && (best == kInvalidCell || world.forager_capacity[c] > world.forager_capacity[best])) {
-                best = c;
+        for (const int rings : {2, 1}) {
+            CellId best = kInvalidCell;
+            for (CellId c = 0; c < world.cell_count(); ++c) {
+                bool interior = world.forager_capacity[c] > 0.0 && world.elevation_m[c] < 500.0;
+                for (CellId nb : world.grid.neighbors(c)) {
+                    interior = interior && world.forager_capacity[nb] > 0.0;
+                    if (rings < 2) continue;
+                    for (CellId nb2 : world.grid.neighbors(nb)) interior = interior && world.is_land[nb2];
+                }
+                if (interior && (best == kInvalidCell || world.forager_capacity[c] > world.forager_capacity[best])) best = c;
             }
+            if (best != kInvalidCell) return best;
         }
-        return best;
+        return kInvalidCell;
     }
 
     void place(CellId cell, std::uint32_t people) {

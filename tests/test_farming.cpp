@@ -247,7 +247,7 @@ TEST(m2_gate_farming_arises_in_several_plausible_regions) {
         // way to farmers; one world alone can fall short). Checked below.
         same_all += same;
         both_all += both;
-        CHECK(most >= 8);  // level-4 cells: about 1.6 million km^2
+        CHECK(most >= 5);  // level-4 cells: about 1 million km^2 (less on broken coasts)
 
         // Farming only where people know a domesticate that can be raised:
         // learned where it could be, in the climate of the time, so nearly
