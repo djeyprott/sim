@@ -1186,8 +1186,11 @@ void PolitySystem::step(StepContext& ctx) {
             const bool literate = writing_k < 64 && ((known >> writing_k) & 1u);
             const bool scribes = bureaucracy_k < 64 && ((known >> bureaucracy_k) & 1u);
             const double town = s.urban.empty() ? 0.0 : s.urban[c] * people;
+            // The fallen court is discredited and its city sacked or deserted,
+            // and every place's fortunes turn on its local strongmen.
+            const double luck = kSeatLuckMin + (1.0 - kSeatLuckMin) * 2.0 * rng.uniform();
             const double score = (town + kSeatRural * people) * hierarchy * (literate ? kSeatWriting : 1.0) *
-                                 (scribes ? kSeatBureaucracy : 1.0);
+                                 (scribes ? kSeatBureaucracy : 1.0) * (c == capital ? kFallenCapital : 1.0) * luck;
             // A seat in a fallen state held a province under it: it keeps at
             // least a province's reach (its governor's, or a local dynasty's).
             const double own = polity_reach_km(w, s, c);
