@@ -745,6 +745,8 @@ void WarSystem::step(StepContext& ctx) {
             flee(s, from, target, kConquestSettlers, rng, arrivals);
             note_land_lost(s, target, s.polity_of[target], tick);
             s.polity_of[target] = s.polity_of[from];
+            s.polities[s.polity_of[from]].infamy +=
+                Diplomacy::kInfamyLand / std::max(Diplomacy::kInfamyFloor, static_cast<double>(cells[s.polity_of[from]].size()));
             s.strife[target] = 2;
             // The army moves into what it took.
             if (at != kInvalidCell && close(at, target)) s.armies[mine_army].cell = target;
@@ -855,6 +857,7 @@ void WarSystem::step(StepContext& ctx) {
             return k;
         };
         auto annex = [&](std::uint32_t loser, std::uint32_t winner) {
+            s.polities[winner].infamy += Diplomacy::kInfamyRealm;
             for (CellId c = 0; c < n; ++c) {
                 if (s.polity_of[c] == loser) s.polity_of[c] = winner;
             }
@@ -945,6 +948,7 @@ void WarSystem::step(StepContext& ctx) {
                     war.terms = PeaceTerms::Annexed;
                 } else {
                     subjugate(s, loser, winner, Bond::Vassal, tick);
+                    s.polities[winner].infamy += Diplomacy::kInfamyRealm;
                     war.terms = PeaceTerms::Vassalage;
                 }
             }
@@ -1055,7 +1059,9 @@ void WarSystem::step(StepContext& ctx) {
         if (!alive(s, id) || s.polities[id].bond != Bond::None || ally_count[id] >= kMaxAllies) continue;
         std::uint32_t threat = 0;
         for (std::uint32_t b : borders[id]) {
-            if (power[b] > kThreat * power[id] && !allies.allied(s, id, b) && (threat == 0 || power[b] > power[threat])) {
+            const bool menacing = power[b] > kThreat * power[id] ||
+                                  (s.polities[b].infamy >= Diplomacy::kInfamous && power[b] > power[id]);
+            if (menacing && !allies.allied(s, id, b) && (threat == 0 || power[b] > power[threat])) {
                 threat = b;
             }
         }
@@ -1094,7 +1100,7 @@ void WarSystem::step(StepContext& ctx) {
         }
         RngStream rng = ctx.rng(Stream::War, kAllianceEntity | 0x08000000u | id);
         const bool related = s.cultures[s.polities[partner].culture].root == root;
-        if (rng.uniform() < kAlliance * (related ? 2.0 : 1.0)) {
+        if (rng.uniform() < kAlliance * (related ? 2.0 : 1.0) * (1.0 + s.polities[threat].infamy)) {
             const auto [x, y] = ordered(id, partner);
             s.alliances.push_back({x, y, tick, kNever});
             allies.add(s, s.alliances.size() - 1);

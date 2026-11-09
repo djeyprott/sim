@@ -237,6 +237,7 @@ struct Polity {
     // fragile polity breaks up. `shock` is the recent toll of war (decays).
     double stability = 0.6;
     double shock = 0.0;
+    double infamy = 0.0;  // alarm its recent conquests cause its neighbours (diplomacy.hpp)
     std::array<double, kPressureCount> pressure{};  // this year's pressures
     PolityFate fate = PolityFate::Living;
     std::uint8_t fate_cause = 0;

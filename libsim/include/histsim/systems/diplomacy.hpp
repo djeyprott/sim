@@ -59,6 +59,15 @@
 // (1 - opinion of the leader / 2)): a betrayal, costing kBetrayTrust trust
 // and kBetrayOpinion opinion with the leader and ending their alliance.
 // Allies who see a war through gain kLoyalTrust with the leader.
+//
+// Infamy (the balance of power): a realm that takes land in war gains
+// kInfamyLand x the cells taken / max(kInfamyFloor, its cells), and
+// kInfamyRealm for each realm it annexes or makes its vassal; it fades by
+// kInfamyDecay a year. Others think the worse of it (- kInfamyOpinion x
+// infamy, at most 1, on every relation's target), and a neighbour with
+// infamy at least kInfamous counts as a threat to ally against if it is
+// stronger at all (not only kThreat times stronger), with the chance of
+// finding an ally x (1 + infamy).
 
 #include <cstdint>
 #include <vector>
@@ -123,6 +132,13 @@ struct Diplomacy {
     static constexpr double kBetrayTrust = 0.3;
     static constexpr double kBetrayOpinion = 0.3;
     static constexpr double kLoyalTrust = 0.1;
+    // Infamy.
+    static constexpr double kInfamyLand = 1.0;
+    static constexpr double kInfamyFloor = 5.0;
+    static constexpr double kInfamyRealm = 0.3;
+    static constexpr double kInfamyDecay = 0.05;
+    static constexpr double kInfamyOpinion = 0.5;
+    static constexpr double kInfamous = 0.3;
 };
 
 // The relation between two realms, if they have one.

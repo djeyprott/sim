@@ -313,6 +313,7 @@ void serialize(Ar& ar, SimState& s) {
         ar.i64(p.bond_since);
         ar.f64(p.stability);
         ar.f64(p.shock);
+        ar.f64(p.infamy);
         for (double& x : p.pressure) ar.f64(x);
         u8(ar, p.fate);
         ar.u8(p.fate_cause);

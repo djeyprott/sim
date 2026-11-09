@@ -106,10 +106,12 @@ double opinion_target(const World&, const SimState& s, const Relation& r, Tick n
         if (al.ended == kNever && al.a == r.a && al.b == r.b) t += Diplomacy::kAllyOpinion;
     }
     if ((p.overlord == r.b && p.bond != Bond::None) || (q.overlord == r.a && q.bond != Bond::None)) t -= Diplomacy::kBondOpinion;
+    t -= Diplomacy::kInfamyOpinion * std::min(1.0, std::max(p.infamy, q.infamy));
     return std::clamp(t, -1.0, 1.0);
 }
 
 void update_relations(const World& w, SimState& s, Tick now, const std::vector<std::vector<std::uint32_t>>& borders) {
+    for (Polity& p : s.polities) p.infamy *= 1.0 - Diplomacy::kInfamyDecay;
     // Claims lapse, die with the claimant, or end when the land is won back.
     s.claims.erase(std::remove_if(s.claims.begin(), s.claims.end(),
                                   [&](const Claim& c) {
