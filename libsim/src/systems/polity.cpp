@@ -36,6 +36,7 @@ constexpr std::uint32_t kRebelEntity = 0x08000000u;     // Stream::Figures
 constexpr std::uint32_t kGeneralEntity = 0x04000000u;   // Stream::Figures
 constexpr std::uint32_t kPriestEntity = 0x02000000u;    // Stream::Figures
 constexpr std::uint32_t kCoupEntity = 0xD0000000u;
+constexpr std::uint32_t kRecallEntity = 0xE0000000u;
 
 std::size_t trait_index(const Content& c, const char* id) {
     for (std::size_t t = 0; t < c.traits.size(); ++t) {
@@ -739,17 +740,48 @@ void PolitySystem::step(StepContext& ctx) {
             const std::uint32_t q = s.polity_of[c];
             if (q == 0 || q >= np || !provincial[q]) s.province_of[c] = 0;
         }
-        // Governors, loyalty and revolts.
+        // Governors, loyalty and revolts. How the war each crown leads is
+        // going for it (its war score against it, 0-1).
+        std::vector<double> losing(np, 0.0), crown_at_war(np, 0.0);
+        for (std::size_t wi = 1; wi < s.wars.size(); ++wi) {
+            const War& war = s.wars[wi];
+            if (war.ended != kNever) continue;
+            for (std::uint32_t q : war.attackers) if (q < np) crown_at_war[q] = 1.0;
+            for (std::uint32_t q : war.defenders) if (q < np) crown_at_war[q] = 1.0;
+            const std::uint32_t a = war.attackers.front(), d = war.defenders.front();
+            if (a < np) losing[a] = std::max(losing[a], -war.score);
+            if (d < np) losing[d] = std::max(losing[d], war.score);
+        }
+        std::vector<std::uint32_t> defiant;  // provinces whose governors refused recall
         for (std::size_t id = 1; id < np; ++id) {
             if (!provincial[id]) continue;
+            const Polity& crown = s.polities[id];
+            const Ruler* king = crown.ruler != 0 && crown.ruler < s.rulers.size() ? &s.rulers[crown.ruler] : nullptr;
+            const bool new_reign = king != nullptr && king->reign_start + kTicksPerYear > ctx.tick && king->reign_start <= ctx.tick;
             for (std::uint32_t v : seats_of[id]) {
                 Province& pv = s.provinces[v];
                 if (pv.ended != kNever) continue;
+                // A strong crown at peace recalls a wayward governor.
+                if (pv.governor != 0 && pv.loyalty >= 0.0 && pv.loyalty < kAutonomyBelow && crown.stability >= kRecallStability &&
+                    crown_at_war[id] == 0.0) {
+                    RngStream rr = ctx.rng(Stream::Polity, kRecallEntity | v);
+                    if (rr.uniform() < kRecall) {
+                        const double ambition = s.figures[pv.governor].ambition;
+                        if (ambition > kDefiant && rr.uniform() < 2.0 * (ambition - kDefiant)) {
+                            defiant.push_back(v);
+                        } else {
+                            pv.governor = 0;
+                            pv.loyalty = -1.0;  // the new governor starts at the target
+                        }
+                    }
+                }
                 if (pv.governor == 0 || !figure_alive(s.figures[pv.governor], ctx.tick)) {
                     RngStream fr = ctx.rng(Stream::Figures, kGovernorEntity | v);
                     pv.governor = record_person(s, content, pv.seat, ctx.tick, 30, 55, kRoleGovernor, fr);
+                    pv.governor_since = ctx.tick;
                     s.figures[pv.governor].polity = static_cast<std::uint32_t>(id);
                 }
+                if (new_reign && pv.loyalty >= 0.0) pv.loyalty = std::max(0.0, pv.loyalty - kNewReignLoyalty);
                 const Polity& pol = s.polities[id];
                 const Figure& gov = s.figures[pv.governor];
                 const Cohort* lead = lead_cohort(s, pv.seat);
@@ -757,7 +789,11 @@ void PolitySystem::step(StepContext& ctx) {
                 const bool same_faith = !s.faith_of.empty() && s.faith_of[pv.seat] == pol.religion;
                 const double target = kLoyaltyBase + kLoyaltyStability * pol.stability + kLoyaltyControl * control_of(id, pv.seat) +
                                       (same_people ? kLoyaltyPeople : 0.0) + (same_faith ? kLoyaltyFaith : 0.0) +
-                                      kLoyaltyAmbition * (0.5 - gov.ambition);
+                                      kLoyaltyAmbition * (0.5 - gov.ambition) +
+                                      kLoyaltyAbility * ((king != nullptr ? king->ability : 0.5) - 0.5) -
+                                      kLoyaltyDefeat * std::clamp(losing[id], 0.0, 1.0) -
+                                      kLoyaltyTenure * std::min(1.0, static_cast<double>(ctx.tick - pv.governor_since) /
+                                                                         (kTenureYears * kTicksPerYear));
                 pv.loyalty = std::clamp(pv.loyalty < 0.0 ? target : pv.loyalty + kLoyaltyRate * (target - pv.loyalty), 0.0, 1.0);
             }
         }
@@ -765,10 +801,11 @@ void PolitySystem::step(StepContext& ctx) {
             if (!provincial[id]) continue;
             for (std::uint32_t v : seats_of[id]) {
                 Province& pv = s.provinces[v];
-                if (pv.ended != kNever || pv.loyalty >= kRevoltBelow || s.polities[id].ended != kNever) continue;
+                const bool refused = std::find(defiant.begin(), defiant.end(), v) != defiant.end();
+                if (pv.ended != kNever || (pv.loyalty >= kRevoltBelow && !refused) || s.polities[id].ended != kNever) continue;
                 RngStream rng = ctx.rng(Stream::Polity, kRevoltEntity | v);
                 const double ambition = s.figures[pv.governor].ambition;
-                if (rng.uniform() >= kRevolt * (kRevoltBelow - pv.loyalty) / kRevoltBelow * (0.5 + ambition)) continue;
+                if (!refused && rng.uniform() >= kRevolt * (kRevoltBelow - pv.loyalty) / kRevoltBelow * (0.5 + ambition)) continue;
                 // The governor breaks away with the province and founds a house.
                 const std::uint32_t rebel = found(pv.seat, static_cast<std::uint32_t>(id), s.polities[id].nomadic);
                 s.polities[rebel].founder = pv.governor;
@@ -1016,6 +1053,8 @@ void PolitySystem::step(StepContext& ctx) {
         for (CellId c = 0; c < n; ++c) {
             if (s.polity_of[c] == id) mine.push_back(c);
         }
+        // Does an heir hold the old capital and its core?
+        const bool heir_holds = cause == kSuccessionCrisis || rng.uniform() < kHeirHolds;
         Polity& pol = s.polities[id];
         pol.ended = ctx.tick;
         pol.fate = PolityFate::Collapsed;
@@ -1034,7 +1073,7 @@ void PolitySystem::step(StepContext& ctx) {
                 Province* pv = v != 0 && v < s.provinces.size() && s.provinces[v].polity == id && s.provinces[v].ended == kNever
                                    ? &s.provinces[v]
                                    : nullptr;
-                if (pv == nullptr || pv->loyalty >= kStayLoyal) {
+                if (pv == nullptr || (heir_holds && pv->loyalty >= kStayLoyal)) {
                     s.polity_of[c] = rump;
                     continue;
                 }
@@ -1067,7 +1106,7 @@ void PolitySystem::step(StepContext& ctx) {
         // market town its valley), lesser places with farming and chiefs
         // become chiefdoms, and the rest fall back to villages.
         std::vector<CellId> core, rest;
-        for (CellId c : mine) (state && (control_of(id, c) >= kCoreControl || c == capital) ? core : rest).push_back(c);
+        for (CellId c : mine) (state && heir_holds && (control_of(id, c) >= kCoreControl || c == capital) ? core : rest).push_back(c);
         struct Seat {
             CellId cell;
             double score, reach;
@@ -1108,7 +1147,7 @@ void PolitySystem::step(StepContext& ctx) {
         for (const Seat& cand : candidates) {
             if (held_by(cand.cell) == seats.size()) seats.push_back(cand);
         }
-        if (state) {
+        if (state && heir_holds) {
             const std::uint32_t heir = found(capital, static_cast<std::uint32_t>(id), nomadic);
             s.polities[heir].stability = kSuccessorStability;
             for (CellId c : core) s.polity_of[c] = heir;

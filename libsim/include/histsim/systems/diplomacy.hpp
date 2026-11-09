@@ -68,6 +68,12 @@
 // infamy at least kInfamous counts as a threat to ally against if it is
 // stronger at all (not only kThreat times stronger), with the chance of
 // finding an ally x (1 + infamy).
+//
+// Restoration: for kRestoreYears after a realm falls, the realms that rose
+// from it (its successors, and provinces that broke away from it) are rival
+// heirs: each has cause for war on the others (to restore the realm), they
+// think kRivalHeirs the worse of each other, and land one takes from another
+// costs only kRestoreInfamy of the usual infamy.
 
 #include <cstdint>
 #include <vector>
@@ -140,6 +146,10 @@ struct Diplomacy {
     static constexpr double kInfamyDecay = 0.05;
     static constexpr double kInfamyOpinion = 0.5;
     static constexpr double kInfamous = 0.3;
+    // Restoration.
+    static constexpr double kRestoreYears = 200.0;
+    static constexpr double kRestoreInfamy = 0.25;
+    static constexpr double kRivalHeirs = 0.2;
 };
 
 // The relation between two realms, if they have one.
@@ -151,8 +161,10 @@ struct Diplomacy {
 [[nodiscard]] double trust_between(const SimState& state, std::uint32_t a, std::uint32_t b);
 // Cells of `of` that `by` claims.
 [[nodiscard]] std::uint32_t claims_on(const SimState& state, std::uint32_t by, std::uint32_t of);
-// Whether `a` has cause for war on `b`: a claim, a holy war, or tribute `b`
-// withheld from it.
+// Whether `a` has cause for war on `b`: a claim, a holy war, tribute `b`
+// withheld from it, or the restoration of a fallen realm both rose from.
+// Whether `a` and `b` rose from the same fallen realm within kRestoreYears.
+[[nodiscard]] bool restoration(const SimState& state, std::uint32_t a, std::uint32_t b);
 // Whether `b` withheld tribute owed to `a` within kGrievanceYears.
 [[nodiscard]] bool tribute_withheld(const SimState& state, std::uint32_t a, std::uint32_t b);
 [[nodiscard]] bool cause_for_war(const SimState& state, std::uint32_t a, std::uint32_t b);

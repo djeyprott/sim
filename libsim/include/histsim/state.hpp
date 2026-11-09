@@ -287,6 +287,7 @@ struct Province {
     CellId seat = kInvalidCell;
     std::string name;
     std::uint32_t governor = 0;  // a figure (SimState::figures)
+    Tick governor_since = 0;     // when the governor took office
     double loyalty = 0.7;        // 0-1
     double unrest = 0.0;         // 0-1: of its people
     Tick founded = 0;

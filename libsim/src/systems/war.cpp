@@ -179,7 +179,13 @@ Armies raise_armies(const World& w, const SimState& s, const RuleField* given = 
         if (id == 0 || !alive(s, id) || s.cell_population[c] == 0) continue;
         const Polity& p = s.polities[id];
         const double control = polity_control(rule.km(w, s, id, c), reach[id]);
-        a.levy[id] += static_cast<double>(s.cell_population[c]) * control * WarSystem::kLevy *
+        // A province gone its own way in all but name sends few soldiers.
+        const std::uint32_t v = s.province_of.size() == w.cell_count() ? s.province_of[c] : 0;
+        const double sent = v != 0 && v < s.provinces.size() && s.provinces[v].polity == id && s.provinces[v].ended == kNever &&
+                                    s.provinces[v].loyalty >= 0.0 && s.provinces[v].loyalty < PolitySystem::kAutonomyBelow
+                                ? PolitySystem::kAutonomousLevy
+                                : 1.0;
+        a.levy[id] += sent * static_cast<double>(s.cell_population[c]) * control * WarSystem::kLevy *
                       (0.5 + cell_trait(s, c, i_warfare)) * (p.nomadic ? WarSystem::kNomadLevy : 1.0);
     }
     std::vector<double> people(np, 0.0);
@@ -743,10 +749,12 @@ void WarSystem::step(StepContext& ctx) {
             if (refuge != kInvalidCell) flee(s, target, refuge, kRefugees, rng, arrivals);
             // Settlers and garrisons from the conquering side move in.
             flee(s, from, target, kConquestSettlers, rng, arrivals);
+            const bool restoring = restoration(s, s.polity_of[from], s.polity_of[target]);
             note_land_lost(s, target, s.polity_of[target], tick);
             s.polity_of[target] = s.polity_of[from];
             s.polities[s.polity_of[from]].infamy +=
-                Diplomacy::kInfamyLand / std::max(Diplomacy::kInfamyFloor, static_cast<double>(cells[s.polity_of[from]].size()));
+                (restoring ? Diplomacy::kRestoreInfamy : 1.0) * Diplomacy::kInfamyLand /
+                std::max(Diplomacy::kInfamyFloor, static_cast<double>(cells[s.polity_of[from]].size()));
             s.strife[target] = 2;
             // The army moves into what it took.
             if (at != kInvalidCell && close(at, target)) s.armies[mine_army].cell = target;
@@ -857,7 +865,7 @@ void WarSystem::step(StepContext& ctx) {
             return k;
         };
         auto annex = [&](std::uint32_t loser, std::uint32_t winner) {
-            s.polities[winner].infamy += Diplomacy::kInfamyRealm;
+            s.polities[winner].infamy += (restoration(s, winner, loser) ? Diplomacy::kRestoreInfamy : 1.0) * Diplomacy::kInfamyRealm;
             for (CellId c = 0; c < n; ++c) {
                 if (s.polity_of[c] == loser) s.polity_of[c] = winner;
             }

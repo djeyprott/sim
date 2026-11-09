@@ -70,6 +70,14 @@ std::uint32_t claims_on(const SimState& s, std::uint32_t by, std::uint32_t of) {
     return by == r->a ? r->claims_ab : r->claims_ba;
 }
 
+bool restoration(const SimState& s, std::uint32_t a, std::uint32_t b) {
+    if (a == 0 || b == 0 || a >= s.polities.size() || b >= s.polities.size()) return false;
+    const std::uint32_t pa = s.polities[a].parent, pb = s.polities[b].parent;
+    if (pa == 0 || pa != pb || pa >= s.polities.size()) return false;
+    const Tick fell = s.polities[pa].ended;
+    return fell != kNever && static_cast<double>(s.tick - fell) < Diplomacy::kRestoreYears * kTicksPerYear;
+}
+
 bool tribute_withheld(const SimState& s, std::uint32_t a, std::uint32_t b) {
     const Relation* r = find_relation(s, a, b);
     return r != nullptr && r->withheld_by == b && r->withheld != kNever &&
@@ -77,7 +85,7 @@ bool tribute_withheld(const SimState& s, std::uint32_t a, std::uint32_t b) {
 }
 
 bool cause_for_war(const SimState& s, std::uint32_t a, std::uint32_t b) {
-    if (claims_on(s, a, b) > 0 || tribute_withheld(s, a, b)) return true;
+    if (claims_on(s, a, b) > 0 || tribute_withheld(s, a, b) || restoration(s, a, b)) return true;
     // Holy war: a zealous high priest against another faith.
     const std::uint32_t pr = s.polities[a].priest;
     return s.polities[a].religion != s.polities[b].religion && pr != 0 && pr < s.figures.size() &&
@@ -107,6 +115,7 @@ double opinion_target(const World&, const SimState& s, const Relation& r, Tick n
     }
     if ((p.overlord == r.b && p.bond != Bond::None) || (q.overlord == r.a && q.bond != Bond::None)) t -= Diplomacy::kBondOpinion;
     t -= Diplomacy::kInfamyOpinion * std::min(1.0, std::max(p.infamy, q.infamy));
+    if (restoration(s, r.a, r.b)) t -= Diplomacy::kRivalHeirs;
     return std::clamp(t, -1.0, 1.0);
 }
 

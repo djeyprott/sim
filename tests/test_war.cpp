@@ -429,3 +429,25 @@ TEST(diplomacy_peace_gives_back_land_taken_in_the_war_but_not_before) {
     CHECK_EQ(s.polity_of[taken], 2u);
     CHECK_EQ(s.polity_of[old], 1u);
 }
+
+TEST(diplomacy_heirs_of_a_fallen_realm_fight_to_restore_it_for_two_centuries) {
+    Setup x = two_polities();
+    SimState& s = x.s;
+    // Polities 1 and 2 both rose from polity 3, which fell this year.
+    s.polities.resize(4);
+    s.polities[3].id = 3;
+    s.polities[3].name = "Old";
+    s.polities[3].ended = s.tick;
+    s.polities[1].parent = s.polities[2].parent = 3;
+    CHECK(restoration(s, 1, 2));
+    CHECK(cause_for_war(s, 1, 2) && cause_for_war(s, 2, 1));
+    const std::vector<std::vector<std::uint32_t>> borders{{}, {2}, {1}, {}};
+    update_relations(x.sim.world(), s, s.tick, borders);
+    const double rivals = opinion_between(s, 1, 2);
+    s.polities[2].parent = 0;
+    CHECK(!restoration(s, 1, 2));
+    CHECK(opinion_target(x.sim.world(), s, *find_relation(s, 1, 2), s.tick) > rivals);
+    s.polities[2].parent = 3;
+    s.tick += static_cast<Tick>(Diplomacy::kRestoreYears + 1) * kTicksPerYear;
+    CHECK(!restoration(s, 1, 2));
+}

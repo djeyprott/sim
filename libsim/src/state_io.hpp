@@ -417,6 +417,7 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(v.seat);
         str(ar, v.name);
         ar.u32(v.governor);
+        ar.i64(v.governor_since);
         ar.f64(v.loyalty);
         ar.f64(v.unrest);
         ar.i64(v.founded);
