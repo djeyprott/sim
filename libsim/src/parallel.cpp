@@ -74,9 +74,18 @@ private:
         if (static_cast<int>(workers_.size()) == helpers) return;
         stop();
         quit_ = false;
+        // New workers wait for the next job: a worker that started out with
+        // seen = 0 after earlier jobs would run at once, with the last job's
+        // body and range, while run() sets up the new one, and could take
+        // chunks of the new job with the old body (they were never done).
+        std::uint64_t current = 0;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            current = generation_;
+        }
         for (int i = 0; i < helpers; ++i) {
-            workers_.emplace_back([this] {
-                std::uint64_t seen = 0;
+            workers_.emplace_back([this, current] {
+                std::uint64_t seen = current;
                 for (;;) {
                     {
                         std::unique_lock<std::mutex> lock(mutex_);

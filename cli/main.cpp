@@ -742,12 +742,13 @@ int wars(const Options& o) {
             std::printf("\nSubjects: %zu subjugated, %zu offered tribute, %zu withheld it, %zu wars of independence, "
                         "%zu left to fend for themselves; %zu relations, %zu land claims standing\n",
                         subjugated, submitted, withheld, independence, abandoned, s.relations.size(), s.claims.size());
-            std::size_t terms[9] = {}, betrayals = 0;
-            for (std::size_t i = 1; i < s.wars.size(); ++i) ++terms[static_cast<std::size_t>(s.wars[i].terms) % 9];
+            std::size_t terms[11] = {}, betrayals = 0;
+            for (std::size_t i = 1; i < s.wars.size(); ++i) ++terms[static_cast<std::size_t>(s.wars[i].terms) % 11];
             for (const histsim::Event& e : s.events) betrayals += e.type == histsim::EventType::Betrayal ? 1 : 0;
             std::printf("Peace: %zu white peaces, %zu kept their gains, %zu took back their land, %zu tribute, %zu vassalage, "
                         "%zu annexed, %zu independence, %zu dynasties, %zu other; %zu separate peaces (betrayals)\n",
                         terms[1], terms[2], terms[3], terms[4], terms[5], terms[6], terms[7], terms[8], terms[0], betrayals);
+            std::printf("Wars of succession: %zu won outright, %zu left the realm divided\n", terms[9], terms[10]);
         }
         std::printf("\nField armies: %zu raised, %zu broken in the field; %zu battles. Bloodiest:\n", raised, broke, s.battles.size());
         for (std::size_t i = 0; i < by_dead.size() && i < 10; ++i) {

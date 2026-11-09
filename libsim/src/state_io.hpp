@@ -307,6 +307,7 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(p.culture);
         ar.u32(p.language);
         ar.u32(p.parent);
+        ar.u32(p.pretender_to);
         flag(ar, p.nomadic);
         ar.u32(p.overlord);
         u8(ar, p.bond);
@@ -417,6 +418,7 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(v.seat);
         str(ar, v.name);
         ar.u32(v.governor);
+        ar.i64(v.governor_since);
         ar.f64(v.loyalty);
         ar.f64(v.unrest);
         ar.i64(v.founded);

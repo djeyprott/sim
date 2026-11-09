@@ -179,7 +179,13 @@ Armies raise_armies(const World& w, const SimState& s, const RuleField* given = 
         if (id == 0 || !alive(s, id) || s.cell_population[c] == 0) continue;
         const Polity& p = s.polities[id];
         const double control = polity_control(rule.km(w, s, id, c), reach[id]);
-        a.levy[id] += static_cast<double>(s.cell_population[c]) * control * WarSystem::kLevy *
+        // A province gone its own way in all but name sends few soldiers.
+        const std::uint32_t v = s.province_of.size() == w.cell_count() ? s.province_of[c] : 0;
+        const double sent = v != 0 && v < s.provinces.size() && s.provinces[v].polity == id && s.provinces[v].ended == kNever &&
+                                    s.provinces[v].loyalty >= 0.0 && s.provinces[v].loyalty < PolitySystem::kAutonomyBelow
+                                ? PolitySystem::kAutonomousLevy
+                                : 1.0;
+        a.levy[id] += sent * static_cast<double>(s.cell_population[c]) * control * WarSystem::kLevy *
                       (0.5 + cell_trait(s, c, i_warfare)) * (p.nomadic ? WarSystem::kNomadLevy : 1.0);
     }
     std::vector<double> people(np, 0.0);
@@ -303,6 +309,7 @@ const char* war_goal_name(WarGoal g) {
         case WarGoal::Conquest: return "conquest";
         case WarGoal::Tribute: return "tribute";
         case WarGoal::Independence: return "independence";
+        case WarGoal::Succession: return "succession";
     }
     return "";
 }
@@ -354,7 +361,9 @@ std::uint32_t start_war(const World&, SimState& s, Tick tick, std::uint32_t atta
         war.cells_d += o == defender ? 1 : 0;
     }
     const std::string& a = s.polities[attacker].name;
-    war.name = goal == WarGoal::Independence ? a + " War of Independence" : a + "-" + d.name + " War";
+    war.name = goal == WarGoal::Independence ? a + " War of Independence"
+               : goal == WarGoal::Succession ? "War of the " + d.name + " Succession"
+                                             : a + "-" + d.name + " War";
     s.events.push_back({tick, EventType::WarBegan, s.polities[attacker].capital, static_cast<std::int64_t>(war.id)});
     s.wars.push_back(std::move(war));
     return s.wars.back().id;
@@ -743,10 +752,12 @@ void WarSystem::step(StepContext& ctx) {
             if (refuge != kInvalidCell) flee(s, target, refuge, kRefugees, rng, arrivals);
             // Settlers and garrisons from the conquering side move in.
             flee(s, from, target, kConquestSettlers, rng, arrivals);
+            const bool restoring = restoration(s, s.polity_of[from], s.polity_of[target]);
             note_land_lost(s, target, s.polity_of[target], tick);
             s.polity_of[target] = s.polity_of[from];
             s.polities[s.polity_of[from]].infamy +=
-                Diplomacy::kInfamyLand / std::max(Diplomacy::kInfamyFloor, static_cast<double>(cells[s.polity_of[from]].size()));
+                (restoring ? Diplomacy::kRestoreInfamy : 1.0) * Diplomacy::kInfamyLand /
+                std::max(Diplomacy::kInfamyFloor, static_cast<double>(cells[s.polity_of[from]].size()));
             s.strife[target] = 2;
             // The army moves into what it took.
             if (at != kInvalidCell && close(at, target)) s.armies[mine_army].cell = target;
@@ -857,7 +868,7 @@ void WarSystem::step(StepContext& ctx) {
             return k;
         };
         auto annex = [&](std::uint32_t loser, std::uint32_t winner) {
-            s.polities[winner].infamy += Diplomacy::kInfamyRealm;
+            s.polities[winner].infamy += (restoration(s, winner, loser) ? Diplomacy::kRestoreInfamy : 1.0) * Diplomacy::kInfamyRealm;
             for (CellId c = 0; c < n; ++c) {
                 if (s.polity_of[c] == loser) s.polity_of[c] = winner;
             }
@@ -874,8 +885,9 @@ void WarSystem::step(StepContext& ctx) {
         if (outcome == WarOutcome::Stalemate) {
             give_back(war.defenders, war.attackers);
             give_back(war.attackers, war.defenders);
-            war.terms = PeaceTerms::WhitePeace;
-        } else if (outcome == WarOutcome::DefendersWon && !capital_fell && war.goal != WarGoal::Independence) {
+            war.terms = war.goal == WarGoal::Succession ? PeaceTerms::Divided : PeaceTerms::WhitePeace;
+        } else if (outcome == WarOutcome::DefendersWon && !capital_fell && war.goal != WarGoal::Independence &&
+                   war.goal != WarGoal::Succession) {
             war.terms = give_back(war.defenders, war.attackers) ? PeaceTerms::LandReturned : PeaceTerms::LandKept;
         }
         // Allies who saw it through are trusted the more.
@@ -907,7 +919,24 @@ void WarSystem::step(StepContext& ctx) {
             }
             s.polities[loser].shock += kShockDefeat;
             s.polities[winner].shock = std::max(0.0, s.polities[winner].shock - kVictoryRelief);
-            if (war.goal == WarGoal::Independence) {
+            if (war.goal == WarGoal::Succession) {
+                // The victor rules the whole realm: the claimant from the old
+                // capital, or the crown takes back the claimant's land.
+                if (winner == lead_a) {
+                    const CellId seat = s.polities[lead_d].capital;
+                    annex(lead_d, lead_a);
+                    s.polities[lead_a].capital = seat;
+                } else {
+                    annex(lead_a, lead_d);
+                }
+                s.polities[winner].infamy = std::max(0.0, s.polities[winner].infamy - Diplomacy::kInfamyRealm);
+                s.polities[loser].fate = PolityFate::Absorbed;
+                s.polities[lead_a].pretender_to = 0;
+                for (Polity& q : s.polities) {  // the loser's subjects serve the victor
+                    if (q.overlord == loser && q.ended == kNever) q.overlord = winner;
+                }
+                war.terms = PeaceTerms::Throne;
+            } else if (war.goal == WarGoal::Independence) {
                 if (winner == lead_a) {
                     Polity& rebel = s.polities[lead_a];
                     if (rebel.overlord == lead_d) rebel.overlord = 0, rebel.bond = Bond::None;

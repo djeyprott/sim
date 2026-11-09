@@ -243,7 +243,16 @@ public:
     //   kLoyaltyBase + kLoyaltyStability x stability + kLoyaltyControl x
     //   control at its seat + kLoyaltyPeople (its people are the rulers')
     //   + kLoyaltyFaith (and their faith) + kLoyaltyAmbition x (0.5 -
-    //   governor's ambition).
+    //   governor's ambition) + kLoyaltyAbility x (the ruler's ability - 0.5)
+    //   - kLoyaltyDefeat x how badly a war the crown leads is going (its war
+    //   score against it) - kLoyaltyTenure x min(1, years in office /
+    //   kTenureYears) (a governor long in office makes the province his own).
+    // A new ruler costs every province kNewReignLoyalty at once.
+    // A province below kAutonomyBelow goes its own way in all but name: it
+    // sends the crown only kAutonomousLevy of its soldiers. (A crown at least
+    // kRecallStability stable and at peace may recall the governor of such a
+    // province, kRecall a year, unless an ambitious one, above kDefiant,
+    // refuses and breaks away; kRecall is 0: recalls kept empires too large.)
     // Below kRevoltBelow, it breaks away with chance kRevolt x (kRevoltBelow -
     // loyalty) / kRevoltBelow x (0.5 + ambition) a year, the governor
     // founding a house, and fights for independence; the realm loses
@@ -266,6 +275,30 @@ public:
     static constexpr double kRevoltShock = 0.05;
     static constexpr double kRevoltContagion = 0.05;
     static constexpr double kStayLoyal = 0.6;
+    static constexpr double kLoyaltyAbility = 0.3;
+    static constexpr double kLoyaltyDefeat = 0.3;
+    static constexpr double kLoyaltyTenure = 0.15;
+    static constexpr double kTenureYears = 30.0;
+    static constexpr double kNewReignLoyalty = 0.1;
+    static constexpr double kAutonomyBelow = 0.45;
+    static constexpr double kAutonomousLevy = 0.3;
+    static constexpr double kRecallStability = 0.6;
+    static constexpr double kRecall = 0.0;
+    static constexpr double kDefiant = 0.7;
+    // When a state breaks up, its heir at the old capital keeps the core (or,
+    // with provinces, the loyal ones) with chance kHeirHolds (always after a
+    // disputed succession: a claimant holds the capital); otherwise the old
+    // capital is one claimant among the rest, with its own reach.
+    static constexpr double kHeirHolds = 0.5;
+    // A disputed succession in a free realm of at least kPretenderMinCells
+    // (level-5) cells is fought out instead of breaking it up: the
+    // claimant's party takes the provinces below kStayLoyal (at least the
+    // least loyal one; without provinces, the half of the realm farthest from
+    // the capital) and fights a war of succession (WarGoal::Succession). The
+    // victor rules the whole realm (a claimant from the old capital); a war
+    // that ends in neither's favour leaves the realm divided, the two rival
+    // heirs (diplomacy.hpp) with cause for war on each other.
+    static constexpr std::size_t kPretenderMinCells = 2;
     // Peasant uprisings, in states. Each province, and the crown's own land,
     // has an unrest that moves kUnrestRate of the way a year toward
     //   kUnrestHunger x (share of its people beyond what its land feeds) +

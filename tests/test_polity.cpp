@@ -319,7 +319,8 @@ TEST(polity_provinces_governors_and_revolts) {
         if (pv.ended == kNever) {
             ++living;
             CHECK(pv.polity != 0 && s.polities[pv.polity].ended == kNever);
-            CHECK_EQ(s.polity_of[pv.seat], pv.polity);
+            // (Unless war took the seat this year; the province ends next year.)
+            CHECK(s.polity_of[pv.seat] == pv.polity || s.strife[pv.seat] != 0);
             CHECK(pv.governor != 0 && pv.governor < s.figures.size());
             CHECK(s.figures[pv.governor].roles & kRoleGovernor);
         }
@@ -330,8 +331,10 @@ TEST(polity_provinces_governors_and_revolts) {
             const Polity& rebel = s.polities[pv.became];
             CHECK_EQ(rebel.parent, pv.polity);
             // Founded by its governor, or by the leader of a peasant uprising.
+            // (or a claimant to the throne, whose party took the province).
             CHECK(rebel.founder == pv.governor ||
-                  (rebel.founder != 0 && (s.figures[rebel.founder].roles & kRoleRebel)));
+                  (rebel.founder != 0 && (s.figures[rebel.founder].roles & kRoleRebel)) || rebel.pretender_to == pv.polity ||
+                  (rebel.founder != 0 && (s.figures[rebel.founder].roles & kRoleClaimant)));
             // The governor reigned, unless he died before his first year.
             if (rebel.ruler != 0 && rebel.founder != 0 && s.rulers[rebel.ruler].figure == rebel.founder) {
                 CHECK(s.figures[rebel.founder].roles & kRoleRuler);
@@ -342,7 +345,7 @@ TEST(polity_provinces_governors_and_revolts) {
         const std::uint32_t v = s.province_of[c];
         if (v == 0) continue;
         CHECK(v < s.provinces.size());
-        CHECK_EQ(s.provinces[v].polity, s.polity_of[c]);
+        CHECK(s.provinces[v].polity == s.polity_of[c] || s.strife[c] != 0);
         CHECK(s.provinces[v].ended == kNever);
     }
     CHECK(living > 0);
