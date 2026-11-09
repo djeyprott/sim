@@ -198,7 +198,7 @@ const ColorScale& opinion_scale() {  // hostile (red) through indifferent (grey)
 }
 
 const ColorScale& infamy_scale() {  // none (pale) to feared (dark red)
-    static const ColorScale s({{0.0, hex("#ece6d6")}, {0.1, hex("#f2c89a")}, {0.3, hex("#e0784f")}, {1.0, hex("#7a1712")}});
+    static const ColorScale s({{0.0, hex("#aeb4bf")}, {0.1, hex("#f2c89a")}, {0.3, hex("#e0784f")}, {1.0, hex("#7a1712")}});
     return s;
 }
 
@@ -208,7 +208,7 @@ const Rgba kDiplomacySubject = hex("#b9a3d6");
 const Rgba kDiplomacyAlly = hex("#3b7dd8");
 const Rgba kDiplomacyEnemy = hex("#c0392b");
 const Rgba kDiplomacyTruce = hex("#e8a23a");
-const Rgba kDiplomacyStranger = hex("#e6e2d6");
+const Rgba kDiplomacyStranger = hex("#aeb4bf");
 
 const ColorScale& stability_scale() {  // fragile (red) to steady (green)
     static const ColorScale s({{0, hex("#9e1f1a")},
