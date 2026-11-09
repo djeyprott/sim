@@ -61,6 +61,7 @@ const char* event_kind(EventType type) {
         case EventType::Submitted:
         case EventType::TributeWithheld:
         case EventType::Abandoned:
+        case EventType::Betrayal:
         case EventType::Absorbed:
         case EventType::ConquestDynasty:
         case EventType::CityFounded:
@@ -174,7 +175,19 @@ std::string describe_event(const Simulation& sim, const Event& e) {
                 const char* how = war.outcome == WarOutcome::AttackersWon   ? ": the attackers win"
                                   : war.outcome == WarOutcome::DefendersWon ? ": the defenders hold"
                                                                             : " in a stalemate";
-                return "The " + war.name + " ends" + how + " (" + commas(war.deaths) + " dead)";
+                const char* terms = "";
+                switch (war.terms) {
+                    case PeaceTerms::WhitePeace: terms = "; a white peace, all taken land given back"; break;
+                    case PeaceTerms::LandKept: terms = war.cells_taken > 0 ? "; the victors keep what they took" : ""; break;
+                    case PeaceTerms::LandReturned: terms = "; the lost land is taken back"; break;
+                    case PeaceTerms::Tribute: terms = "; the vanquished pay tribute"; break;
+                    case PeaceTerms::Vassalage: terms = "; the vanquished become vassals"; break;
+                    case PeaceTerms::Annexed: terms = "; the vanquished are annexed"; break;
+                    case PeaceTerms::Independence: terms = "; independence won"; break;
+                    case PeaceTerms::Dynasty: terms = "; the conquerors found a dynasty"; break;
+                    case PeaceTerms::None: break;
+                }
+                return "The " + war.name + " ends" + how + terms + " (" + commas(war.deaths) + " dead)";
             }
             return "";
         case EventType::AllianceFormed:
@@ -197,6 +210,10 @@ std::string describe_event(const Simulation& sim, const Event& e) {
             return "";
         case EventType::TributeWithheld:
             return polity_name(s, static_cast<std::int64_t>(static_cast<std::uint64_t>(v) >> 32)) + " withholds its tribute from " +
+                   polity_name(s, static_cast<std::int64_t>(static_cast<std::uint64_t>(v) & 0xffffffffu));
+        case EventType::Betrayal:
+            return polity_name(s, static_cast<std::int64_t>(static_cast<std::uint64_t>(v) >> 32)) +
+                   " makes a separate peace, abandoning " +
                    polity_name(s, static_cast<std::int64_t>(static_cast<std::uint64_t>(v) & 0xffffffffu));
         case EventType::Abandoned:
             return polity_name(s, static_cast<std::int64_t>(static_cast<std::uint64_t>(v) & 0xffffffffu)) +
@@ -377,6 +394,7 @@ bool event_involves(const SimState& s, const Event& e, std::uint32_t p) {
         case EventType::Submitted: return v == p || (index < s.polities.size() && s.polities[index].overlord == p);
         case EventType::TributeWithheld:
         case EventType::Abandoned:
+        case EventType::Betrayal:
             return static_cast<std::uint64_t>(v) >> 32 == p || (static_cast<std::uint64_t>(v) & 0xffffffffu) == p;
         case EventType::WarBegan:
         case EventType::WarEnded:

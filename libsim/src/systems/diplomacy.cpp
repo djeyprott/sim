@@ -59,6 +59,11 @@ double opinion_between(const SimState& s, std::uint32_t a, std::uint32_t b) {
     return r != nullptr ? r->opinion : 0.0;
 }
 
+double trust_between(const SimState& s, std::uint32_t a, std::uint32_t b) {
+    const Relation* r = find_relation(s, a, b);
+    return r != nullptr ? r->trust : 0.5;
+}
+
 std::uint32_t claims_on(const SimState& s, std::uint32_t by, std::uint32_t of) {
     const Relation* r = find_relation(s, by, of);
     if (r == nullptr) return 0;
@@ -101,10 +106,12 @@ double opinion_target(const World&, const SimState& s, const Relation& r, Tick n
         if (al.ended == kNever && al.a == r.a && al.b == r.b) t += Diplomacy::kAllyOpinion;
     }
     if ((p.overlord == r.b && p.bond != Bond::None) || (q.overlord == r.a && q.bond != Bond::None)) t -= Diplomacy::kBondOpinion;
+    t -= Diplomacy::kInfamyOpinion * std::min(1.0, std::max(p.infamy, q.infamy));
     return std::clamp(t, -1.0, 1.0);
 }
 
 void update_relations(const World& w, SimState& s, Tick now, const std::vector<std::vector<std::uint32_t>>& borders) {
+    for (Polity& p : s.polities) p.infamy *= 1.0 - Diplomacy::kInfamyDecay;
     // Claims lapse, die with the claimant, or end when the land is won back.
     s.claims.erase(std::remove_if(s.claims.begin(), s.claims.end(),
                                   [&](const Claim& c) {
@@ -175,6 +182,20 @@ void note_war_begun(SimState& s, std::uint32_t a, std::uint32_t b, Tick now) {
 }
 
 void note_war_ended(SimState& s, std::uint32_t a, std::uint32_t b, Tick now) { relation_of(s, a, b, now).last_war = now; }
+
+bool return_war_gains(SimState& s, Tick since, const std::vector<std::uint32_t>& to,
+                      const std::vector<std::uint32_t>& from) {
+    auto in = [](const std::vector<std::uint32_t>& v, std::uint32_t p) { return std::find(v.begin(), v.end(), p) != v.end(); };
+    bool any = false;
+    for (const Claim& c : s.claims) {
+        if (c.until - Diplomacy::kClaimYears * kTicksPerYear < since || !alive(s, c.by) || !in(to, c.by)) continue;
+        if (c.cell >= s.polity_of.size() || !in(from, s.polity_of[c.cell])) continue;
+        s.polity_of[c.cell] = c.by;
+        if (c.cell < s.strife.size()) s.strife[c.cell] = std::max<std::uint8_t>(s.strife[c.cell], 1);
+        any = true;
+    }
+    return any;
+}
 
 void note_land_lost(SimState& s, CellId cell, std::uint32_t loser, Tick now) {
     if (!alive(s, loser)) return;

@@ -41,6 +41,33 @@
 // x kKinSubmit for a related culture), if the neighbour is a state (it
 // writes), free itself, could bring at least kSubmitRatio times the realm's
 // strength to its capital, and has the capacity to rule more.
+//
+// War and peace (stage C). Each war keeps a score from the attackers' side,
+// from -1 to 1: kLandScore x the land gained (cells taken less cells lost,
+// over the cells the losing leader held when it began), + kBattleScore x
+// (field battles won less lost) / (all battles + 2), + kCapitalScore for a
+// field army at the gates of the enemy capital (less for the enemy's at its
+// own). Each year the war may end by exhaustion (war.hpp kPeace), or the
+// side the score is against sues for peace: kSue x |score| a year once
+// |score| >= kSueScore. The terms follow the score: within kWhite of 0 a
+// white peace (land taken in the war is given back both ways); otherwise
+// the victors keep what they took and, if they fought for tribute and the
+// score is at least kTributeScore (or the capital fell), the loser pays it; defenders who prevail take back the land they lost in the war.
+// (A fallen capital still means vassalage or annexation.) An ally of a
+// side's leader (not its vassal or overlord) with the score at least
+// kSeparateScore against it may make a separate peace (kSeparate a year x
+// (1 - opinion of the leader / 2)): a betrayal, costing kBetrayTrust trust
+// and kBetrayOpinion opinion with the leader and ending their alliance.
+// Allies who see a war through gain kLoyalTrust with the leader.
+//
+// Infamy (the balance of power): a realm that takes land in war gains
+// kInfamyLand x the cells taken / max(kInfamyFloor, its cells), and
+// kInfamyRealm for each realm it annexes or makes its vassal; it fades by
+// kInfamyDecay a year. Others think the worse of it (- kInfamyOpinion x
+// infamy, at most 1, on every relation's target), and a neighbour with
+// infamy at least kInfamous counts as a threat to ally against if it is
+// stronger at all (not only kThreat times stronger), with the chance of
+// finding an ally x (1 + infamy).
 
 #include <cstdint>
 #include <vector>
@@ -93,6 +120,26 @@ struct Diplomacy {
     static constexpr double kSubmit = 0.02;
     static constexpr double kKinSubmit = 1.5;
     static constexpr double kSubmitRatio = 3.0;
+    // War score and peace.
+    static constexpr double kLandScore = 2.0;
+    static constexpr double kBattleScore = 0.4;
+    static constexpr double kCapitalScore = 0.3;
+    static constexpr double kWhite = 0.1;
+    static constexpr double kTributeScore = 0.4;  // a war for tribute must be won by this much to impose it
+    static constexpr double kSueScore = 0.5;
+    static constexpr double kSue = 0.3;
+    static constexpr double kSeparateScore = 0.5;
+    static constexpr double kSeparate = 0.08;
+    static constexpr double kBetrayTrust = 0.3;
+    static constexpr double kBetrayOpinion = 0.3;
+    static constexpr double kLoyalTrust = 0.1;
+    // Infamy.
+    static constexpr double kInfamyLand = 1.0;
+    static constexpr double kInfamyFloor = 5.0;
+    static constexpr double kInfamyRealm = 0.3;
+    static constexpr double kInfamyDecay = 0.05;
+    static constexpr double kInfamyOpinion = 0.5;
+    static constexpr double kInfamous = 0.3;
 };
 
 // The relation between two realms, if they have one.
@@ -100,6 +147,8 @@ struct Diplomacy {
 [[nodiscard]] Relation& relation_of(SimState& state, std::uint32_t a, std::uint32_t b, Tick now);
 // Their opinion of each other (0 if they have no relation).
 [[nodiscard]] double opinion_between(const SimState& state, std::uint32_t a, std::uint32_t b);
+// Their trust in each other (a half if they have no relation).
+[[nodiscard]] double trust_between(const SimState& state, std::uint32_t a, std::uint32_t b);
 // Cells of `of` that `by` claims.
 [[nodiscard]] std::uint32_t claims_on(const SimState& state, std::uint32_t by, std::uint32_t of);
 // Whether `a` has cause for war on `b`: a claim, a holy war, or tribute `b`
@@ -119,6 +168,10 @@ void update_relations(const World& world, SimState& state, Tick now,
 void note_war_begun(SimState& state, std::uint32_t a, std::uint32_t b, Tick now);
 void note_war_ended(SimState& state, std::uint32_t a, std::uint32_t b, Tick now);
 // `loser` lost `cell` in war: it claims it for kClaimYears.
+// Land lost since `since` goes back to those of `to` who lost it (and claim
+// it), from whoever of `from` holds it now; whether any did.
+bool return_war_gains(SimState& state, Tick since, const std::vector<std::uint32_t>& to,
+                      const std::vector<std::uint32_t>& from);
 void note_land_lost(SimState& state, CellId cell, std::uint32_t loser, Tick now);
 
 }  // namespace histsim

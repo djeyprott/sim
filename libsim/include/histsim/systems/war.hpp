@@ -118,7 +118,8 @@ public:
     // Nomad raids: chance a year, reach (from any cell the nomads hold),
     // share of goods taken, share of people killed, and chance a successful
     // raid makes the victim's ruler pay tribute (if the nomads are at least
-    // kRaidTributeRatio times as strong). The raiders' strength falls with
+    // kRaidTributeRatio times as strong, their hold on it at least twice its
+    // strength, and it has not withheld tribute from them; diplomacy.hpp). The raiders' strength falls with
     // their control at the distance; defenders fight with their ruler's
     // control there, or with the villagers' own levy.
     static constexpr double kRaid = 0.3;

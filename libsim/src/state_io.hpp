@@ -313,6 +313,7 @@ void serialize(Ar& ar, SimState& s) {
         ar.i64(p.bond_since);
         ar.f64(p.stability);
         ar.f64(p.shock);
+        ar.f64(p.infamy);
         for (double& x : p.pressure) ar.f64(x);
         u8(ar, p.fate);
         ar.u8(p.fate_cause);
@@ -352,6 +353,12 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(w.cells_lost);
         ar.u32(w.army_a);
         ar.u32(w.army_d);
+        ar.u32(w.cells_a);
+        ar.u32(w.cells_d);
+        ar.u32(w.wins_a);
+        ar.u32(w.wins_d);
+        ar.f64(w.score);
+        u8(ar, w.terms);
     });
     vec(ar, s.alliances, [&](Alliance& a) {
         ar.u32(a.a);
