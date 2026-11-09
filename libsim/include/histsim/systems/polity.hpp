@@ -249,12 +249,10 @@ public:
     //   kTenureYears) (a governor long in office makes the province his own).
     // A new ruler costs every province kNewReignLoyalty at once.
     // A province below kAutonomyBelow goes its own way in all but name: it
-    // sends the crown only kAutonomousLevy of its soldiers. A crown at
-    // least kRecallStability stable and at peace recalls the governor of a
-    // province below kAutonomyBelow (kRecall a year): a new governor takes
-    // office at the province's target loyalty, unless the old one, ambitious
-    // (ambition above kDefiant), refuses (chance 2 x (ambition - kDefiant))
-    // and breaks away at once.
+    // sends the crown only kAutonomousLevy of its soldiers. (A crown at least
+    // kRecallStability stable and at peace may recall the governor of such a
+    // province, kRecall a year, unless an ambitious one, above kDefiant,
+    // refuses and breaks away; kRecall is 0: recalls kept empires too large.)
     // Below kRevoltBelow, it breaks away with chance kRevolt x (kRevoltBelow -
     // loyalty) / kRevoltBelow x (0.5 + ambition) a year, the governor
     // founding a house, and fights for independence; the realm loses

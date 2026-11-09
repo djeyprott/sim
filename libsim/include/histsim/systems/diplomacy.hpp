@@ -73,7 +73,9 @@
 // from it (its successors, and provinces that broke away from it) are rival
 // heirs: each has cause for war on the others (to restore the realm), they
 // think kRivalHeirs the worse of each other, and land one takes from another
-// costs only kRestoreInfamy of the usual infamy.
+// costs kRestoreInfamy of the usual infamy (1: a lower value let reunifiers
+// snowball). The same holds between a claimant's party and the crown it
+// claims, after a war of succession that left the realm divided.
 
 #include <cstdint>
 #include <vector>
