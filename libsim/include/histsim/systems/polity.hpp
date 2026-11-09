@@ -151,6 +151,13 @@ public:
     static constexpr double kFormation = 0.01;
     // Expansion: chance a year of taking the best stateless neighbour.
     static constexpr double kAnnex = 0.03;
+    // Worth: a settled realm (its capital not living mostly by herds) takes
+    // only land worth ruling: where crops (farming x (1 - herding)) are at
+    // least kWorthCrops of the food, or trade passing through is worth at
+    // least kTradePerPerson a head. Herders' and foragers' land it leaves
+    // alone: little to tax, and people who can move away from tax
+    // collectors. Herding realms and nomads take pasture as before.
+    static constexpr double kWorthCrops = 0.25;
     // Direct rule only as far as the realm can manage it. Capacity: ruling a cell directly takes 1 / control of the realm's
     // administration (a level-5 cell's worth of land); a realm runs at most
     // kAdminLoad x (1 + administration) x (1 + 0.3 contact) (x kNomadReach

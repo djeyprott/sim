@@ -489,12 +489,16 @@ void MigrationSystem::step(StepContext& ctx) {
             const double dearth = s.recent_capacity[c] / usual;
             if (dearth < kDearth) chance = kExodusFamine * std::min(1.0, (kDearth - dearth) / kDearthSpan);
         }
+        if (strife == 1 && kExodusFront > chance) chance = kExodusFront, cause = MigrationCause::War;
         if (strife == 2 && kExodusWar > chance) chance = kExodusWar, cause = MigrationCause::War;
         if (strife == 3 && kExodusRaid > chance) chance = kExodusRaid, cause = MigrationCause::Raid;
         if (chance <= 0.0) continue;
         Cohort* folk = largest_cohort(c, false);
         if (folk == nullptr) continue;
-        // Mobile peoples take to the road more readily.
+        // Mobile peoples take to the road more readily, and more of them go;
+        // only they leave ahead of the fighting.
+        const double mobile = i_mobility < kMaxTraits ? folk->traits[i_mobility] : 0.5;
+        if (strife == 1 && cause == MigrationCause::War) chance *= mobile * mobile;
         chance = std::min(1.0, chance * restless(*folk, kMobileExodus));
         RngStream rng = ctx.rng(Stream::Migration, kExodusEntity | c);
         if (rng.uniform() >= chance) continue;
@@ -509,7 +513,7 @@ void MigrationSystem::step(StepContext& ctx) {
         const std::uint32_t enemy = cause == MigrationCause::War && !s.polity_of.empty() ? s.polity_of[c] : 0;
         const CellId to = refuge(c, kInvalidCell, enemy);
         if (to == kInvalidCell) continue;
-        Cohort band = split_off(*folk, to, kExodusShare, rng);
+        Cohort band = split_off(*folk, to, std::min(kMaxExodusShare, kExodusShare * (1.0 + kMobileExodusShare * mobile)), rng);
         if (band.total() <= 0) continue;
         arrivals.push_back(band);
         moved += band.total();
@@ -599,17 +603,27 @@ void MigrationSystem::step(StepContext& ctx) {
             std::int64_t gone = 0;
             std::size_t next = 0;
             std::vector<std::int64_t> come(lands.size(), 0);
-            // Room in each new land: up to kTrekRoom x what it feeds.
+            // Room in each new land: up to (kTrekRoom + kTrekRoomMobile x
+            // mobility) x what it feeds: a horde crowds in on the locals and
+            // drives them off, where farmers on the move must find space.
             std::vector<double> room(lands.size(), 0.0);
+            const double crowd = kTrekRoom + kTrekRoomMobile * mobility_of(p);
             for (std::size_t li = 0; li < lands.size(); ++li) {
-                room[li] = std::max(0.0, kTrekRoom * s.env.capacity[lands[li]] -
+                room[li] = std::max(0.0, crowd * s.env.capacity[lands[li]] -
                                              static_cast<double>(s.cell_population[lands[li]]));
             }
             for (CellId c : held[p]) {
                 const std::uint32_t known = s.domesticates.empty() ? 0 : s.domesticates[c];
                 for (auto i = s.cohort_begin[c]; i < s.cohort_begin[c + 1]; ++i) {
                     Cohort& co = s.cohorts[i];
-                    if (s.cultures[co.culture].root != root || co.total() <= 0) continue;
+                    if (co.total() <= 0) continue;
+                    // The rulers' people go, the more of them the more mobile
+                    // they are; other peoples of the realm who live on the
+                    // move (herders under the horde) follow as mobile as they are.
+                    const double mob = i_mobility < kMaxTraits ? co.traits[i_mobility] : 0.5;
+                    const bool kin = s.cultures[co.culture].root == root;
+                    if (!kin && mob < kFollowMobility) continue;
+                    const double goes = kin ? share + (1.0 - share) * kMobileTrek * mob : share * mob;
                     // The next land with room (round robin), not where it is.
                     std::size_t slot = lands.size();
                     for (std::size_t tries = 0; tries < lands.size(); ++tries) {
@@ -621,7 +635,7 @@ void MigrationSystem::step(StepContext& ctx) {
                     }
                     if (slot == lands.size()) continue;  // no room anywhere: they stay
                     const double fits = (room[slot] - static_cast<double>(come[slot])) / static_cast<double>(co.total());
-                    Cohort band = split_off(co, lands[slot], std::min(share, fits), rng);
+                    Cohort band = split_off(co, lands[slot], std::min(goes, fits), rng);
                     if (band.total() <= 0) continue;
                     gone += band.total();
                     // Deaths on the way: hunger, cold, thirst and fighting.
