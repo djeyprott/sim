@@ -390,7 +390,7 @@ void EconomySystem::step(StepContext& ctx) {
     // realm that fed it falls or loses its provinces.
     if (s.polity_of.size() == n && s.polities.size() > 1) {
         const std::size_t np = s.polities.size();
-        std::vector<double> reach(np, -1.0), bread(np, 0.0);
+        std::vector<double> reach(np, -1.0), bread(np, 0.0), kept(s.provinces.size(), 0.0);
         for (std::size_t m = 0; m < nm; ++m) {
             const CellId c = cell_of[m];
             const std::uint32_t p = s.polity_of[c];
@@ -400,9 +400,21 @@ void EconomySystem::step(StepContext& ctx) {
             const double spare = s.env.capacity[c] + imported[m] - pop[m];
             if (spare <= 0.0) continue;
             const double control = polity_control(w.grid.distance_km(s.polities[p].capital, c), reach[p]);
-            const double tax = kAnnona * spare * control;
+            // The tax law: the crown's own collectors take more; governors
+            // keep what they hold back, or all of it.
+            const std::uint8_t law = s.polities[p].laws[Laws::Taxes];
+            const std::uint32_t v = s.province_of.size() == n ? s.province_of[c] : 0;
+            const bool province = v != 0 && v < s.provinces.size() && s.provinces[v].polity == p && s.provinces[v].ended == kNever;
+            const double tax = kAnnona * spare * control * (law == 0 ? Laws::kDirectTax : 1.0);
+            const double governor = province ? (law == 2 ? 1.0 : s.provinces[v].held_back) : 0.0;
             imported[m] -= tax;
-            bread[p] += tax * (1.0 - kHaulLoss * (1.0 - control));
+            bread[p] += tax * (1.0 - governor) * (1.0 - kHaulLoss * (1.0 - control));
+            if (province) kept[v] += tax * governor;
+        }
+        for (std::size_t v = 1; v < kept.size(); ++v) {
+            if (kept[v] <= 0.0) continue;
+            const std::uint32_t mv = market[s.provinces[v].seat];
+            if (mv != kNone) imported[mv] += kept[v];
         }
         for (std::size_t p = 1; p < np; ++p) {
             if (bread[p] <= 0.0) continue;

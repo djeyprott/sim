@@ -114,6 +114,73 @@ struct Institutions {
     static constexpr double kArmyOverreach = 0.7;
     static constexpr double kArmyStrength = 1.25;
 };
+
+// Laws (Polity::laws): what the crown may do, each 0 (most central) to 2.
+//   tenure: governors appointed and rotated every kTermYears (0; needs
+//     writing), for life (1), or hereditary (2: an heir keeps the office,
+//     its years and its power base);
+//   taxes: the crown collects (0; needs scribes: x kDirectTax of the grain,
+//     and governors hold back at most kHoldCap[0]), governors collect and
+//     remit (1), or governors keep their provinces' grain (2);
+//   army: a royal army (0; needs a standing army) raises the provinces'
+//     soldiers whatever their governors hold back; governors' levies (1);
+//     governors' private armies (2: the crown gets kPrivateLevy);
+//   succession: an heir (0), elective (1; needs a council: disputes x
+//     kElectiveDispute, no child is chosen), or partible (2: at a ruler's
+//     death a realm with provinces is shared out among the sons with chance
+//     kPartition, the far half going to a younger son).
+// Loyalty target + kAppointedLoyalty with appointed governors and
+// - kHereditaryLoyalty with hereditary ones.
+// Governors hold back: each year a governor's share held back moves
+// kHoldRate of the way to clamp(ambition - loyalty, 0, kHoldCap[taxes]);
+// the grain held back feeds his seat (economy.cpp), the soldiers stay home
+// (war.cpp).
+// The tug of war, once a year in a realm with provinces:
+//   reform: a crown at least kReformStability stable, at peace, under an
+//     adult ruler moves one law a step toward the centre (taxes, army,
+//     tenure, succession, the first that can move) with chance kReform x
+//     ability x stability; every province loses kReformLoyalty;
+//   concession: a weak crown (a child ruler, a war going badly, or
+//     stability below kWeakStability) moves one law a step outward
+//     (tenure, taxes, army, succession) with chance kConcede x weakness;
+//     every province gains kConcessionLoyalty;
+//   pacts: the governors below kPactLoyalty loyalty with at least
+//     kPactAmbition ambition band together. If at least two, and their
+//     provinces' people x (0.5 + held back) are at least kPactRatio of the
+//     rest of the realm's, they press the crown (kPactAct a year): a crown
+//     no stronger than they, or one that yields (kYield), concedes a law
+//     and their loyalty rises by kConcessionLoyalty; otherwise they rise
+//     together as one realm under the most ambitious of them, at war for
+//     independence.
+// A law whose prerequisite is lost (writing, scribes, the army, the
+// council) falls back a step.
+struct Laws {
+    enum Law : std::uint8_t { Tenure = 0, Taxes = 1, Army = 2, Succession = 3 };
+    static constexpr std::int64_t kTermYears = 10;
+    static constexpr double kAppointedLoyalty = 0.05;
+    static constexpr double kHereditaryLoyalty = 0.1;
+    static constexpr double kDirectTax = 1.3;
+    static constexpr std::array<double, 3> kHoldCap{0.1, 0.5, 1.0};
+    static constexpr double kHoldRate = 0.1;
+    static constexpr double kPrivateLevy = 0.4;
+    static constexpr double kElectiveDispute = 0.5;
+    static constexpr double kPartition = 0.5;
+    static constexpr double kReformStability = 0.6;
+    static constexpr double kReform = 0.03;
+    static constexpr double kReformLoyalty = 0.1;
+    static constexpr double kWeakStability = 0.4;
+    static constexpr double kConcede = 0.05;
+    static constexpr double kConcessionLoyalty = 0.15;
+    static constexpr double kPactLoyalty = 0.5;
+    static constexpr double kPactAmbition = 0.5;
+    static constexpr double kPactRatio = 0.5;
+    static constexpr double kPactAct = 0.1;
+    static constexpr double kYield = 0.5;
+};
+
+// "governors appointed" etc.: a law's level in words.
+const char* law_name(Laws::Law law);
+const char* law_level_name(Laws::Law law, std::uint8_t level);
 const char* institution_name(Institution i);
 
 // A ruler's name with regnal number ("Kimo II"), and his or her age now.

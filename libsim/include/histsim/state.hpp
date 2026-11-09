@@ -255,6 +255,10 @@ struct Polity {
     std::uint32_t ruler = 0;        // current ruler (0 = none yet)
     std::uint8_t institutions = 0;  // bits of Institution
     bool contested = false;         // a disputed succession this year threatens to break it up
+    // Its laws (systems/polity.hpp Laws): for each of tenure, taxes, army and
+    // succession, 0 (most central) to 2. New realms start at {1, 1, 1, 0}.
+    std::array<std::uint8_t, 4> laws{1, 1, 1, 0};
+    bool divide = false;            // a partible inheritance: the realm is shared out next year
     CellId trek_to = kInvalidCell;  // where it is going, while on the move
     std::uint32_t trek_record = 0;  // its movement in SimState::migrations (index + 1)
     std::uint32_t founder = 0;      // a figure who founds its first house (a governor who broke away), 0 if none
@@ -290,6 +294,7 @@ struct Province {
     std::uint32_t governor = 0;  // a figure (SimState::figures)
     Tick governor_since = 0;     // when the governor took office
     double loyalty = 0.7;        // 0-1
+    double held_back = 0.0;      // 0-1: share of its grain tax and soldiers the governor keeps for himself
     double unrest = 0.0;         // 0-1: of its people
     Tick founded = 0;
     Tick ended = kNever;
@@ -611,6 +616,10 @@ enum class EventType : std::uint32_t {
                               // cell = the subject's capital; value = subject << 32 | overlord
     Betrayal = 39,            // an ally made a separate peace, leaving a losing side; cell = its capital;
                               // value = ally << 32 | the side's leader
+    LawChanged = 40,          // a realm changed a law; cell = its capital;
+                              // value = polity << 16 | law << 8 | new level (Laws::Law)
+    GovernorsRise = 41,       // disloyal governors rose together as one realm; cell = its seat; value = its id
+    RealmDivided = 42,        // a realm was shared out among a ruler's sons; cell = the new realm's seat; value = its id
 };
 
 struct Event {
