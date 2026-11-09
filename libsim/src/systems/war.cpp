@@ -965,6 +965,15 @@ void WarSystem::step(StepContext& ctx) {
         for (std::uint32_t q : war.attackers) fighting[q] = 1;
         for (std::uint32_t q : war.defenders) fighting[q] = 1;
     }
+    // The hold `lord` has (or would have) over `id`: what it can bring to its
+    // seat, less when it is busy elsewhere or has failed its subjects.
+    auto hold_over = [&](std::uint32_t lord, std::uint32_t id) {
+        const Polity& p = s.polities[id];
+        const double rival = power[lord] - (p.overlord == lord && p.bond == Bond::Vassal ? kVassalShare * armies.strength[id] : 0.0);
+        const bool distracted = fighting[lord] && war_between(s, id, lord) == 0;
+        return rival * std::clamp(control_of(lord, p.capital) / Diplomacy::kProjection, Diplomacy::kMinHold, 1.0) *
+               (distracted ? Diplomacy::kDistracted : 1.0) * (0.5 + trust_between(s, id, lord));
+    };
     auto new_reign = [&](std::uint32_t id) {
         const std::uint32_t k = s.polities[id].ruler;
         return k != 0 && k < s.rulers.size() && s.rulers[k].reign_start + kTicksPerYear > tick;
@@ -991,16 +1000,9 @@ void WarSystem::step(StepContext& ctx) {
             s.env.food_store[s.polities[lord].capital] += q;
         }
         RngStream rng = ctx.rng(Stream::War, kDiplomacyEntity | id);
-        const double rival = power[lord] - (p.bond == Bond::Vassal ? kVassalShare * armies.strength[id] : 0.0);
-        // The hold the overlord has here: what it can bring to the subject's
-        // seat, less when it is busy elsewhere or has failed its subjects.
-        const Relation* rel = find_relation(s, id, lord);
-        const double trust = rel != nullptr ? rel->trust : 0.5;
-        const double opinion = rel != nullptr ? rel->opinion : 0.0;
+        const double opinion = opinion_between(s, id, lord);
         const bool at_war_with_lord = war_between(s, id, lord) != 0;
-        const double hold = rival *
-                            std::clamp(control_of(lord, p.capital) / Diplomacy::kProjection, Diplomacy::kMinHold, 1.0) *
-                            (fighting[lord] && !at_war_with_lord ? Diplomacy::kDistracted : 1.0) * (0.5 + trust);
+        const double hold = hold_over(lord, id);
         const Polity& o = s.polities[lord];
         const double unrest = std::clamp((1.0 - opinion) *
                               (s.cultures[p.culture].root != s.cultures[o.culture].root ? Diplomacy::kForeign : 1.0) *
@@ -1230,8 +1232,11 @@ void WarSystem::step(StepContext& ctx) {
                 }
             }
         }
-        // The victim's ruler buys peace with tribute.
+        // The victim's ruler buys peace with tribute, if the raiders' hold on it
+        // would be firm enough that it could not soon stop paying, and it has
+        // not just stopped paying them (that is for a war to settle).
         if (owner != 0 && s.polities[owner].bond == Bond::None && power[id] > kRaidTributeRatio * power[owner] &&
+            armies.strength[owner] < Diplomacy::kWithholdRatio * hold_over(id, owner) && !tribute_withheld(s, id, owner) &&
             war_between(s, id, owner) == 0 && rng.uniform() < kRaidTribute) {
             subjugate(s, owner, id, herder_tribe(w, s, owner) ? Bond::Vassal : Bond::Tributary, tick);
             allies.build(s, np);  // the new subject's alliances ended
