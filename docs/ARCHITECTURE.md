@@ -441,7 +441,16 @@ already in the forager life table, so this counts only war between polities.
 `histsim wars` prints the timeline, the deadliest wars and the largest realms
 with their subjects and allies (nomads starred); the realms map shows nomad
 confederations in browns, and the war map marks cells raided in the last 20
-years.
+years. `histsim diplomacy [--id POLITY]` prints how the leading realms stand
+(infamy, subjects, allies, friends and foes, wars with their scores), one
+realm's relations in full (opinion, trust, wars, claims, truces, grievances,
+rival heirs) and the last 25 dealings. The diplomacy map colors the realm
+ruling the clicked cell gold, its overlord and subjects purple, allies blue,
+enemies red, realms under truce orange and the rest by its opinion of them
+(red to green, pale where they have no dealings); with no cell chosen, it
+shows each realm's infamy (`histsim map --mode diplomacy` centres on the
+realm `--id`, else the largest). The inspector lists a realm's relations,
+claims, grievances and infamy.
 
 ### Historical figures
 

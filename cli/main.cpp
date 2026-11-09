@@ -9,6 +9,7 @@
 //   histsim polities [--seed N] [--level L] [--years Y]
 //   histsim trade [--seed N] [--level L] [--years Y]
 //   histsim wars [--seed N] [--level L] [--years Y]
+//   histsim diplomacy [--seed N] [--level L] [--years Y] [--id POLITY]
 //   histsim migrations [--seed N] [--level L] [--years Y]
 //   histsim religions [--seed N] [--level L] [--years Y]
 //   histsim slavery [--seed N] [--level L] [--years Y]
@@ -43,6 +44,7 @@
 #include "histsim/figures.hpp"
 #include "histsim/simulation.hpp"
 #include "histsim/systems/culture.hpp"
+#include "histsim/systems/diplomacy.hpp"
 #include "histsim/systems/economy.hpp"
 #include "histsim/systems/polity.hpp"
 #include "histsim/systems/bondage.hpp"
@@ -101,6 +103,7 @@ struct Options {
                  "                 species capacity game temp_anomaly median_age language\n"
                  "                 language_family culture farming domesticates disease\n"
                  "                 technology polity towns realms war stability provinces unrest\n"
+                 "                 diplomacy (around the realm --id, else the largest)\n"
                  "                 trade resources\n"
                  "                 (polity borders are drawn on all, trade routes on trade\n"
                  "                 and resources, the last 50 years' folk migrations on\n"
@@ -118,6 +121,10 @@ struct Options {
                  "  histsim wars [--seed N] [--level L] [--years Y]\n"
                  "                 war and diplomacy every 500 years, the deadliest wars, and\n"
                  "                 the largest realms with their subjects and allies\n"
+                 "  histsim diplomacy [--seed N] [--level L] [--years Y] [--id POLITY]\n"
+                 "                 how realms stand with each other: the leading realms'\n"
+                 "                 allies, subjects, wars, claims and infamy; one realm's\n"
+                 "                 relations in full (the largest, or POLITY); recent dealings\n"
                  "  histsim migrations [--seed N] [--level L] [--years Y]\n"
                  "                 colonists and folk migrations every 500 years, the largest\n"
                  "                 movements with the chains they set off, and how the language\n"
@@ -422,7 +429,21 @@ int map_images(const Options& o) {
     const std::vector<histsim::view::RouteLine> routes = histsim::view::route_lines(sim);
     const std::vector<histsim::view::RouteLine> moves = histsim::view::migration_lines(sim);
     for (const auto& id : modes) {
-        histsim::view::color_cells(sim, id, colors);
+        // The diplomacy map around a chosen realm (--id), else the largest.
+        histsim::CellId focus = histsim::kInvalidCell;
+        if (id == "diplomacy") {
+            const histsim::SimState& s = sim.state();
+            std::uint32_t p = o.id > 0 ? static_cast<std::uint32_t>(o.id) : 0;
+            if (p == 0) {
+                std::vector<std::size_t> cells(s.polities.size(), 0);
+                for (std::uint32_t q : s.polity_of) ++cells[q];
+                for (std::uint32_t q = 1; q < cells.size(); ++q) {
+                    if (s.polities[q].ended == histsim::kNever && (p == 0 || cells[q] > cells[p])) p = q;
+                }
+            }
+            if (p != 0 && p < s.polities.size() && s.polities[p].ended == histsim::kNever) focus = s.polities[p].capital;
+        }
+        histsim::view::color_cells(sim, id, colors, focus);
         ro.routes = id == "trade" || id == "resources" ? &routes : nullptr;
         const bool peoples = id == "language" || id == "language_family" || id == "culture" || id == "population";
         ro.migrations = peoples ? &moves : nullptr;
@@ -549,6 +570,127 @@ int farming(const Options& o) {
 }
 
 // Towns, cities and polities: a timeline, then the largest polities now.
+// How realms stand with each other.
+int diplomacy(const Options& o) {
+    using namespace histsim;
+    Simulation sim = Simulation::create(o.params);
+    apply_due_now(sim, o, true);
+    advance(sim, o.years, o, true);
+    const SimState& s = sim.state();
+    const World& w = sim.world();
+    auto stance = [](double op) {
+        return op >= 0.6 ? "close" : op >= 0.2 ? "friendly" : op > -0.2 ? "indifferent" : op > -0.6 ? "wary" : "hostile";
+    };
+    auto at_war = [&](std::uint32_t id) {
+        std::string out;
+        for (std::size_t i = 1; i < s.wars.size(); ++i) {
+            const War& war = s.wars[i];
+            if (war.ended != kNever) continue;
+            const bool att = std::find(war.attackers.begin(), war.attackers.end(), id) != war.attackers.end();
+            const bool def = std::find(war.defenders.begin(), war.defenders.end(), id) != war.defenders.end();
+            if (att || def) out += (out.empty() ? "" : "; ") + war.name + (att ? " (attacking" : " (defending") + 
+                                   ", score " + std::to_string(static_cast<int>(std::lround(100.0 * (att ? war.score : -war.score)))) + "%)";
+        }
+        return out;
+    };
+    // Realms answering to no one, by land with their subjects.
+    std::vector<double> area(s.polities.size(), 0.0);
+    for (CellId c = 0; c < w.cell_count(); ++c) {
+        const std::uint32_t top = top_overlord(s, s.polity_of[c]);
+        if (top != 0) area[top] += w.grid.area_km2(c);
+    }
+    std::vector<std::uint32_t> realms;
+    for (std::uint32_t id = 1; id < s.polities.size(); ++id) {
+        if (s.polities[id].ended == kNever && s.polities[id].overlord == 0 && area[id] > 0.0) realms.push_back(id);
+    }
+    std::stable_sort(realms.begin(), realms.end(), [&](auto a, auto b) { return area[a] > area[b]; });
+    std::printf("Diplomacy in year %lld: %zu relations, %zu alliances, %zu land claims, %zu truces\n\n",
+                static_cast<long long>(sim.year()), s.relations.size(),
+                static_cast<std::size_t>(std::count_if(s.alliances.begin(), s.alliances.end(),
+                                                       [](const Alliance& a) { return a.ended == kNever; })),
+                s.claims.size(),
+                static_cast<std::size_t>(std::count_if(s.truces.begin(), s.truces.end(), [&](const Truce& t) { return t.until > s.tick; })));
+    std::printf("Leading realms (with their subjects' land):\n");
+    for (std::size_t i = 0; i < realms.size() && i < 10; ++i) {
+        const std::uint32_t id = realms[i];
+        const Polity& p = s.polities[id];
+        std::size_t subjects = 0, allies = 0, friends = 0, foes = 0;
+        for (std::uint32_t q = 1; q < s.polities.size(); ++q) {
+            if (s.polities[q].ended != kNever) continue;
+            subjects += s.polities[q].overlord == id ? 1 : 0;
+            allies += q != id && allied(s, id, q) ? 1 : 0;
+        }
+        for (const Relation& r : s.relations) {
+            if (r.a != id && r.b != id) continue;
+            friends += r.opinion >= 0.2 ? 1 : 0;
+            foes += r.opinion <= -0.2 ? 1 : 0;
+        }
+        const std::string wars = at_war(id);
+        std::printf("  %-16s %-13s %9.0f km^2  infamy %3.0f%%  %zu subjects, %zu allies, %zu friendly, %zu hostile%s%s\n",
+                    (p.name + (p.nomadic ? "*" : "")).c_str(), polity_level(w, s, id), area[id], 100.0 * p.infamy, subjects,
+                    allies, friends, foes, wars.empty() ? "" : "; at war: ", wars.c_str());
+    }
+    // One realm in full.
+    std::uint32_t focus = o.id > 0 ? static_cast<std::uint32_t>(o.id) : (realms.empty() ? 0 : realms.front());
+    if (focus != 0 && focus < s.polities.size()) {
+        const Polity& p = s.polities[focus];
+        std::printf("\n%s (%s%s)%s\n", p.name.c_str(), p.ended == kNever ? polity_level(w, s, focus) : "fallen",
+                    p.nomadic ? ", nomads" : "",
+                    p.overlord != 0 ? ((p.bond == Bond::Vassal ? ", vassal of " : ", tributary of ") + s.polities[p.overlord].name).c_str() : "");
+        std::vector<const Relation*> ties;
+        for (const Relation& r : s.relations) {
+            if (r.a == focus || r.b == focus) ties.push_back(&r);
+        }
+        std::stable_sort(ties.begin(), ties.end(), [](const Relation* a, const Relation* b) { return a->opinion > b->opinion; });
+        if (ties.empty()) std::printf("  no dealings with any realm\n");
+        for (const Relation* r : ties) {
+            const std::uint32_t other = r->a == focus ? r->b : r->a;
+            const Polity& q = s.polities[other];
+            std::string notes;
+            auto note = [&](const std::string& n) { notes += (notes.empty() ? "" : ", ") + n; };
+            if (war_between(s, focus, other) != 0) note("at war");
+            if (allied(s, focus, other)) note("allied");
+            if (q.overlord == focus && q.bond != Bond::None) note(q.bond == Bond::Vassal ? "its vassal" : "pays it tribute");
+            if (p.overlord == other && p.bond != Bond::None) note("its overlord");
+            for (const Truce& t : s.truces) {
+                if (t.until > s.tick && ((t.a == focus && t.b == other) || (t.a == other && t.b == focus))) {
+                    note("truce until " + std::to_string(t.until / kTicksPerYear));
+                }
+            }
+            const std::uint32_t mine = claims_on(s, focus, other), theirs = claims_on(s, other, focus);
+            if (mine > 0) note("claims " + std::to_string(mine) + " of its cells");
+            if (theirs > 0) note("it claims " + std::to_string(theirs) + " of ours");
+            if (tribute_withheld(s, focus, other)) note("withheld tribute from us");
+            if (tribute_withheld(s, other, focus)) note("we withheld tribute from it");
+            if (restoration(s, focus, other)) note("rival heir");
+            if (r->wars > 0) note(std::to_string(r->wars) + (r->wars == 1 ? " war" : " wars") +
+                                  (r->last_war != kNever ? ", last ended " + std::to_string(r->last_war / kTicksPerYear) : ""));
+            std::printf("  %-16s %-12s opinion %+4.0f%%  trust %3.0f%%  infamy %3.0f%%%s%s\n", q.name.c_str(), stance(r->opinion),
+                        100.0 * r->opinion, 100.0 * r->trust, 100.0 * q.infamy, notes.empty() ? "" : "  ", notes.c_str());
+        }
+    }
+    // Recent dealings.
+    std::printf("\nRecent dealings:\n");
+    std::vector<const Event*> recent;
+    for (auto e = s.events.rbegin(); e != s.events.rend() && recent.size() < 25; ++e) {
+        switch (e->type) {
+            case EventType::AllianceFormed:
+            case EventType::Subjugated:
+            case EventType::Submitted:
+            case EventType::TributeWithheld:
+            case EventType::Abandoned:
+            case EventType::Betrayal:
+            case EventType::WarEnded: recent.push_back(&*e); break;
+            default: break;
+        }
+    }
+    for (auto it = recent.rbegin(); it != recent.rend(); ++it) {
+        std::printf("  year %5lld  %s\n", static_cast<long long>((*it)->tick / kTicksPerYear),
+                    view::describe_event(sim, **it).c_str());
+    }
+    return 0;
+}
+
 int polities(const Options& o) {
     Simulation sim = Simulation::create(o.params);
     apply_due_now(sim, o, true);
@@ -1474,6 +1616,9 @@ int main(int argc, char** argv) {
         }
         if (cmd == "wars") {
             return wars(parse(args, 2));
+        }
+        if (cmd == "diplomacy") {
+            return diplomacy(parse(args, 2));
         }
         if (cmd == "trade") {
             return trade(parse(args, 2));

@@ -97,6 +97,10 @@ ctest --test-dir build --output-on-failure
 # Wars, alliances and the largest realms after 9,000 years
 ./build/cli/histsim wars --years 9000
 
+# Diplomacy: how the leading realms stand, one realm's relations in full
+# (the largest, or --id N), and the latest dealings
+./build/cli/histsim diplomacy --years 9000
+
 # Colonists, folk migrations and their chain reactions, and how language
 # families spread, over 9,000 years
 ./build/cli/histsim migrations --years 9000
