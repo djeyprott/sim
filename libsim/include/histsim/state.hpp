@@ -453,6 +453,19 @@ enum class WarOutcome : std::uint8_t {
     Stalemate = 3,
 };
 
+// What a peace settled (diplomacy.hpp).
+enum class PeaceTerms : std::uint8_t {
+    None = 0,        // still at war, or ended with a side gone
+    WhitePeace = 1,  // neither prevailed: land taken in the war is given back
+    LandKept = 2,    // the victors keep what they took
+    LandReturned = 3,  // the defenders prevailed and took back what they had lost
+    Tribute = 4,     // the loser pays tribute
+    Vassalage = 5,   // the loser becomes a vassal
+    Annexed = 6,     // the loser is taken whole
+    Independence = 7,  // a subject won its freedom
+    Dynasty = 8,     // nomads took the state and rule it
+};
+
 // A war between two sides; the first polity on each side leads it.
 struct War {
     std::uint32_t id = 0;
@@ -467,6 +480,10 @@ struct War {
     std::uint32_t cells_taken = 0;  // by the attackers
     std::uint32_t cells_lost = 0;   // retaken by the defenders
     std::uint32_t army_a = 0, army_d = 0;  // the leaders' field armies now (SimState::armies), 0 if none
+    std::uint32_t cells_a = 0, cells_d = 0;  // the leaders' cells when it began
+    std::uint32_t wins_a = 0, wins_d = 0;    // battles won by each side's field army
+    double score = 0.0;                      // -1 (defenders prevail) .. 1 (attackers prevail)
+    PeaceTerms terms = PeaceTerms::None;
 };
 
 // A field army (WarSystem): raised by a war's leading realm on each side,
@@ -585,6 +602,8 @@ enum class EventType : std::uint32_t {
     Submitted = 37,           // a realm offered tribute to a stronger neighbour; cell = its capital; value = its id
     Abandoned = 38,           // an overlord at war elsewhere left an attacked subject to fend for itself;
                               // cell = the subject's capital; value = subject << 32 | overlord
+    Betrayal = 39,            // an ally made a separate peace, leaving a losing side; cell = its capital;
+                              // value = ally << 32 | the side's leader
 };
 
 struct Event {

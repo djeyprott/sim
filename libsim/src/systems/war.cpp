@@ -349,6 +349,10 @@ std::uint32_t start_war(const World&, SimState& s, Tick tick, std::uint32_t atta
         if (p.overlord == attacker) add_to(war.attackers, war.defenders, id);
         if (p.overlord == defender) add_to(war.defenders, war.attackers, id);
     }
+    for (std::uint32_t o : s.polity_of) {
+        war.cells_a += o == attacker ? 1 : 0;
+        war.cells_d += o == defender ? 1 : 0;
+    }
     const std::string& a = s.polities[attacker].name;
     war.name = goal == WarGoal::Independence ? a + " War of Independence" : a + "-" + d.name + " War";
     s.events.push_back({tick, EventType::WarBegan, s.polities[attacker].capital, static_cast<std::int64_t>(war.id)});
@@ -601,6 +605,7 @@ void WarSystem::step(StepContext& ctx) {
             win.men -= lost_w;
             ++win.victories;
             ++lose.defeats;
+            ++(a_wins ? war.wins_a : war.wins_d);
             Battle b;
             b.tick = tick;
             b.cell = lose.cell;
@@ -788,14 +793,60 @@ void WarSystem::step(StepContext& ctx) {
         } else if (side[s.polity_of[cap_a]] == 2) {
             outcome = WarOutcome::DefendersWon;
             capital_fell = true;
-        } else if (rng.uniform() < kPeace * (1.0 + years / 10.0) * (broken ? kNoArmyPeace : 1.0)) {
-            outcome = war.cells_taken > war.cells_lost   ? WarOutcome::AttackersWon
-                      : war.cells_lost > war.cells_taken ? WarOutcome::DefendersWon
-                                                         : WarOutcome::Stalemate;
+        } else {
+            // The war score: land, battles, and armies at the gates.
+            const double gained = static_cast<double>(war.cells_taken) - static_cast<double>(war.cells_lost);
+            const double land = gained / std::max(1.0, static_cast<double>(gained >= 0.0 ? war.cells_d : war.cells_a));
+            const double fights = (static_cast<double>(war.wins_a) - static_cast<double>(war.wins_d)) /
+                                  (static_cast<double>(war.wins_a + war.wins_d) + 2.0);
+            double gates = 0.0;
+            if (living(war.army_a) && close(s.armies[war.army_a].cell, cap_d)) gates += 1.0;
+            if (living(war.army_d) && close(s.armies[war.army_d].cell, cap_a)) gates -= 1.0;
+            war.score = std::clamp(Diplomacy::kLandScore * land + Diplomacy::kBattleScore * fights +
+                                       Diplomacy::kCapitalScore * gates,
+                                   -1.0, 1.0);
+            const double margin = std::abs(war.score);
+            // Exhaustion, or the side the war goes against sues for peace.
+            const double tired = kPeace * (1.0 + years / 10.0) * (broken ? kNoArmyPeace : 1.0);
+            const double sue = margin >= Diplomacy::kSueScore ? Diplomacy::kSue * margin : 0.0;
+            if (rng.uniform() < tired + sue) {
+                outcome = war.score > Diplomacy::kWhite    ? WarOutcome::AttackersWon
+                          : war.score < -Diplomacy::kWhite ? WarOutcome::DefendersWon
+                                                           : WarOutcome::Stalemate;
+            }
         }
         for (std::uint32_t p : war.attackers) side[p] = 0;
         for (std::uint32_t p : war.defenders) side[p] = 0;
-        if (outcome == WarOutcome::Ongoing) continue;
+        if (outcome == WarOutcome::Ongoing) {
+            // An ally on the losing side may make a separate peace.
+            const double margin = std::abs(war.score);
+            if (margin >= Diplomacy::kSeparateScore) {
+                std::vector<std::uint32_t>& losing = war.score > 0.0 ? war.defenders : war.attackers;
+                const std::vector<std::uint32_t>& winning = war.score > 0.0 ? war.attackers : war.defenders;
+                const std::uint32_t leader = losing.front();
+                for (std::size_t i = 1; i < losing.size();) {
+                    const std::uint32_t ally = losing[i];
+                    const Polity& ap = s.polities[ally];
+                    const bool bound = (ap.overlord == leader && ap.bond != Bond::None) || s.polities[leader].overlord == ally;
+                    if (bound || rng.uniform() >= Diplomacy::kSeparate * (1.0 - 0.5 * opinion_between(s, ally, leader))) {
+                        ++i;
+                        continue;
+                    }
+                    Relation& r = relation_of(s, ally, leader, tick);
+                    r.trust = std::max(0.0, r.trust - Diplomacy::kBetrayTrust);
+                    r.opinion = std::max(-1.0, r.opinion - Diplomacy::kBetrayOpinion);
+                    for (Alliance& al : s.alliances) {
+                        if (al.ended == kNever && ((al.a == ally && al.b == leader) || (al.a == leader && al.b == ally))) al.ended = tick;
+                    }
+                    const auto [x, y] = ordered(ally, winning.front());
+                    s.truces.push_back({x, y, tick + kTruceYears * kTicksPerYear});
+                    s.events.push_back({tick, EventType::Betrayal, ap.capital,
+                                        static_cast<std::int64_t>((static_cast<std::uint64_t>(ally) << 32) | leader)});
+                    losing.erase(losing.begin() + static_cast<std::ptrdiff_t>(i));
+                }
+            }
+            continue;
+        }
 
         // Terms.
         auto own_cells = [&](std::uint32_t id) {
@@ -811,6 +862,27 @@ void WarSystem::step(StepContext& ctx) {
         };
         const std::uint32_t winner = outcome == WarOutcome::AttackersWon ? lead_a : lead_d;
         const std::uint32_t loser = outcome == WarOutcome::AttackersWon ? lead_d : lead_a;
+        // Land taken in this war goes back to those who lost it (who claim it
+        // since then), from whoever on the other side holds it now.
+        auto give_back = [&](const std::vector<std::uint32_t>& to, const std::vector<std::uint32_t>& from) {
+            return return_war_gains(s, war.started, to, from);
+        };
+        war.terms = capital_fell ? PeaceTerms::None : PeaceTerms::LandKept;
+        if (outcome == WarOutcome::Stalemate) {
+            give_back(war.defenders, war.attackers);
+            give_back(war.attackers, war.defenders);
+            war.terms = PeaceTerms::WhitePeace;
+        } else if (outcome == WarOutcome::DefendersWon && !capital_fell && war.goal != WarGoal::Independence) {
+            war.terms = give_back(war.defenders, war.attackers) ? PeaceTerms::LandReturned : PeaceTerms::LandKept;
+        }
+        // Allies who saw it through are trusted the more.
+        for (const auto* v : {&war.attackers, &war.defenders}) {
+            for (std::size_t i = 1; i < v->size(); ++i) {
+                if (!alive(s, (*v)[i])) continue;
+                Relation& r = relation_of(s, (*v)[i], v->front(), tick);
+                r.trust = std::min(1.0, r.trust + Diplomacy::kLoyalTrust);
+            }
+        }
         if (outcome != WarOutcome::Stalemate) {
             // The generals: fame for the victor, blame for the vanquished.
             auto general_of = [&](std::uint32_t p) -> Commander* {
@@ -836,10 +908,13 @@ void WarSystem::step(StepContext& ctx) {
                 if (winner == lead_a) {
                     Polity& rebel = s.polities[lead_a];
                     if (rebel.overlord == lead_d) rebel.overlord = 0, rebel.bond = Bond::None;
+                    war.terms = PeaceTerms::Independence;
                 } else if (own_cells(lead_a) <= w.cells_for(kAnnexBelowCells)) {
                     annex(lead_a, lead_d);
+                    war.terms = PeaceTerms::Annexed;
                 } else {
                     subjugate(s, lead_a, lead_d, Bond::Vassal, tick);
+                    war.terms = PeaceTerms::Vassalage;
                 }
             } else if (winner == lead_a && war.goal == WarGoal::Tribute) {
                 Polity& nomads = s.polities[lead_a];
@@ -855,17 +930,22 @@ void WarSystem::step(StepContext& ctx) {
                     nomads.capital = seat;
                     nomads.settling_since = tick;
                     s.events.push_back({tick, EventType::ConquestDynasty, seat, static_cast<std::int64_t>(lead_a)});
+                    war.terms = PeaceTerms::Dynasty;
                 } else if (!nomads.nomadic || nomad_reach_factor(w, s, lead_a) >= PolitySystem::kNomadReach) {
                     // Herder tribes join the confederation as clans; others pay.
                     // (Riders without bronze arms take plunder, not subjects.)
-                    subjugate(s, lead_d, lead_a,
-                              nomads.nomadic && herder_tribe(w, s, lead_d) ? Bond::Vassal : Bond::Tributary, tick);
+                    const Bond bond = nomads.nomadic && herder_tribe(w, s, lead_d) ? Bond::Vassal : Bond::Tributary;
+                    if (subjugate(s, lead_d, lead_a, bond, tick)) {
+                        war.terms = bond == Bond::Vassal ? PeaceTerms::Vassalage : PeaceTerms::Tribute;
+                    }
                 }
             } else if (winner == lead_a && capital_fell) {
                 if (own_cells(loser) <= w.cells_for(kAnnexBelowCells)) {
                     annex(loser, winner);
+                    war.terms = PeaceTerms::Annexed;
                 } else {
                     subjugate(s, loser, winner, Bond::Vassal, tick);
+                    war.terms = PeaceTerms::Vassalage;
                 }
             }
         }
@@ -989,7 +1069,7 @@ void WarSystem::step(StepContext& ctx) {
                 if (b == id || b == threat || s.polities[b].bond != Bond::None || ally_count[b] >= kMaxAllies) continue;
                 if (allies.allied(s, id, b) || allies.allied(s, threat, b) || war_between(s, id, b) != 0) continue;
                 const double score = power[b] * (s.cultures[s.polities[b].culture].root == root ? 2.0 : 1.0) *
-                                     (1.0 + opinion_between(s, id, b));
+                                     (1.0 + opinion_between(s, id, b)) * (0.5 + trust_between(s, id, b));
                 if (score > best || (score == best && b < partner)) best = score, partner = b;
             }
         }

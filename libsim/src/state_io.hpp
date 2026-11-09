@@ -352,6 +352,12 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(w.cells_lost);
         ar.u32(w.army_a);
         ar.u32(w.army_d);
+        ar.u32(w.cells_a);
+        ar.u32(w.cells_d);
+        ar.u32(w.wins_a);
+        ar.u32(w.wins_d);
+        ar.f64(w.score);
+        u8(ar, w.terms);
     });
     vec(ar, s.alliances, [&](Alliance& a) {
         ar.u32(a.a);

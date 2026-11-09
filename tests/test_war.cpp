@@ -115,6 +115,9 @@ TEST(war_the_strong_take_the_weak_and_the_dead_are_counted) {
     CHECK(war.ended != kNever);
     CHECK(war.outcome == WarOutcome::AttackersWon);
     CHECK_EQ(s.polity_of[x.victim], 1u);  // a one-cell polity is annexed outright
+    CHECK(war.terms == PeaceTerms::Annexed);
+    CHECK(war.score >= 0.0 && war.score <= 1.0);
+    CHECK(war.cells_a > 1 && war.cells_d == 1);
     CHECK(war.deaths > 0);
     // Deaths are in the ledger; refugees only moved.
     CHECK_EQ(s.ledger.deaths - deaths, s.war_deaths_total);
@@ -399,4 +402,30 @@ TEST(diplomacy_withheld_tribute_is_cause_for_war_for_a_generation) {
     CHECK(!cause_for_war(s, 2, 1));
     s.tick += static_cast<Tick>(Diplomacy::kGrievanceYears + 1) * kTicksPerYear;
     CHECK(!cause_for_war(s, 1, 2));
+}
+
+TEST(diplomacy_peace_gives_back_land_taken_in_the_war_but_not_before) {
+    Setup x = two_polities();
+    SimState& s = x.s;
+    const World& w = x.sim.world();
+    CellId old = kInvalidCell, taken = kInvalidCell;
+    for (CellId nb : w.grid.neighbors(x.heart)) {
+        if (s.polity_of[nb] != 1) continue;
+        if (old == kInvalidCell) {
+            old = nb;
+        } else if (taken == kInvalidCell) {
+            taken = nb;
+        }
+    }
+    CHECK(taken != kInvalidCell);
+    // Polity 2 lost `old` long ago and `taken` in this war.
+    note_land_lost(s, old, 2, s.tick);
+    s.tick += 10 * kTicksPerYear;
+    const Tick began = s.tick;
+    s.tick += kTicksPerYear;
+    note_land_lost(s, taken, 2, s.tick);
+    CHECK(!return_war_gains(s, began, {1}, {2}));  // nothing of polity 1's was taken
+    CHECK(return_war_gains(s, began, {2}, {1}));
+    CHECK_EQ(s.polity_of[taken], 2u);
+    CHECK_EQ(s.polity_of[old], 1u);
 }
