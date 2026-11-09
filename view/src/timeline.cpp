@@ -58,6 +58,9 @@ const char* event_kind(EventType type) {
         case EventType::PolityFounded:
         case EventType::PolityEnded:
         case EventType::Subjugated:
+        case EventType::Submitted:
+        case EventType::TributeWithheld:
+        case EventType::Abandoned:
         case EventType::Absorbed:
         case EventType::ConquestDynasty:
         case EventType::CityFounded:
@@ -187,6 +190,18 @@ std::string describe_event(const Simulation& sim, const Event& e) {
             return "";
         case EventType::Absorbed:
             return index < s.polities.size() ? s.polities[index].name + " is absorbed by its overlord" : "";
+        case EventType::Submitted:
+            if (index < s.polities.size()) {
+                return s.polities[index].name + " offers tribute to " + polity_name(s, s.polities[index].overlord);
+            }
+            return "";
+        case EventType::TributeWithheld:
+            return polity_name(s, static_cast<std::int64_t>(static_cast<std::uint64_t>(v) >> 32)) + " withholds its tribute from " +
+                   polity_name(s, static_cast<std::int64_t>(static_cast<std::uint64_t>(v) & 0xffffffffu));
+        case EventType::Abandoned:
+            return polity_name(s, static_cast<std::int64_t>(static_cast<std::uint64_t>(v) & 0xffffffffu)) +
+                   ", at war elsewhere, leaves " + polity_name(s, static_cast<std::int64_t>(static_cast<std::uint64_t>(v) >> 32)) +
+                   " to fend for itself";
         case EventType::Raid: return polity_name(s, v) + " nomads raid" + place(sim, e.cell);
         case EventType::ConquestDynasty:
             return polity_name(s, v) + " nomads take" + place(sim, e.cell) + " and found a conquest dynasty";
@@ -358,7 +373,11 @@ bool event_involves(const SimState& s, const Event& e, std::uint32_t p) {
         case EventType::PolityWandered:
         case EventType::Raid:
         case EventType::ConquestDynasty: return v == p;
-        case EventType::Subjugated: return v == p || (index < s.polities.size() && s.polities[index].overlord == p);
+        case EventType::Subjugated:
+        case EventType::Submitted: return v == p || (index < s.polities.size() && s.polities[index].overlord == p);
+        case EventType::TributeWithheld:
+        case EventType::Abandoned:
+            return static_cast<std::uint64_t>(v) >> 32 == p || (static_cast<std::uint64_t>(v) & 0xffffffffu) == p;
         case EventType::WarBegan:
         case EventType::WarEnded:
             if (index < s.wars.size()) {

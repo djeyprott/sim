@@ -424,6 +424,8 @@ struct Relation {
     Tick last_war = kNever;      // when the last of them ended
     Tick since = 0;              // first met
     std::uint32_t claims_ab = 0, claims_ba = 0;  // cells of b that a claims, of a that b claims (this year)
+    Tick withheld = kNever;        // when one last withheld tribute owed to the other
+    std::uint32_t withheld_by = 0;  // which one
 };
 
 // A realm's claim on land it lost in war, until `until`.
@@ -579,6 +581,10 @@ enum class EventType : std::uint32_t {
     ProvinceRevolt = 33,      // a province broke away with its governor; cell = its seat; value = province id
     PeasantUprising = 34,     // the people rose; cell = where; value = index into SimState::uprisings
     BattleFought = 35,        // two field armies met; cell = where; value = index into SimState::battles
+    TributeWithheld = 36,     // a tributary stopped paying; cell = its capital; value = subject << 32 | overlord
+    Submitted = 37,           // a realm offered tribute to a stronger neighbour; cell = its capital; value = its id
+    Abandoned = 38,           // an overlord at war elsewhere left an attacked subject to fend for itself;
+                              // cell = the subject's capital; value = subject << 32 | overlord
 };
 
 struct Event {

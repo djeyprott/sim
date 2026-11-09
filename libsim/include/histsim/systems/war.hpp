@@ -23,7 +23,8 @@
 // ally among its other neighbours, more readily one of related culture.
 // Tributaries send kTribute of their goods to their overlord each year;
 // vassals also fight for it. A subject that grows strong against its
-// overlord rebels (a war for independence); a vassal held firmly is absorbed.
+// overlord's hold on it rebels (a war for independence; diplomacy.hpp); a
+// vassal held firmly is absorbed.
 // Civil wars (polity.hpp) are wars for independence too.
 //
 // Nomads. On open pasture where herds feed most people, horses are ridden and
@@ -89,7 +90,6 @@ public:
     static constexpr double kAllianceEnd = 0.01;   // chance a year an alliance lapses
     static constexpr std::size_t kMaxAllies = 3;
     static constexpr double kTribute = 0.1;        // share of a subject's goods sent each year
-    static constexpr double kRebelRatio = 0.7;     // subjects rebel when this strong against their overlord
     static constexpr double kRebellion = 0.03;
     // Chance a year a firmly held vassal is absorbed: its capital within the
     // overlord's control kAbsorbControl, the distance counted less the cell

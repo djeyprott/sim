@@ -21,6 +21,26 @@
 // another faith) gives a realm cause for war. (Hostility alone does not:
 // the victors of the last war would then have the most cause for the
 // next, and conquest would snowball; it weighs through opinion instead.)
+//
+// Subjects and overlords (stage B). Each year a subject weighs the hold its
+// overlord has on it: the overlord's strength x clamp(its control at the
+// subject's capital / kProjection, kMinHold, 1), x kDistracted if it is at
+// war with someone else, x (0.5 + trust). A subject at least kRebelHold
+// times as strong as that rebels (kRebellion a year); a tributary at
+// least kWithholdRatio as strong withholds its tribute (kWithhold a year),
+// both x unrest = (1 - opinion) x kForeign for another culture root and
+// again for another faith, x kNewReign in the year either ruler came to
+// the throne (between kMinUnrest and kMaxUnrest). Tribute withheld gives the overlord cause for a war to
+// restore it for kGrievanceYears.
+// An overlord already at war elsewhere does not come to the aid of an
+// attacked subject: trust falls by kAbandonTrust and opinion by
+// kAbandonOpinion; one that does, trust rises by kAidTrust. Trust drifts
+// back toward a half by kTrustDrift a year.
+// A free realm with a threatening neighbour (war.hpp kThreat) and no ally
+// to be found may offer it tribute instead (kSubmit a year x (1 + opinion),
+// x kKinSubmit for a related culture), if the neighbour is a state (it
+// writes), free itself, could bring at least kSubmitRatio times the realm's
+// strength to its capital, and has the capacity to rule more.
 
 #include <cstdint>
 #include <vector>
@@ -55,6 +75,24 @@ struct Diplomacy {
     static constexpr double kOpinionWeight = 0.5;
     static constexpr double kProjection = 0.2;
     static constexpr double kMinProjection = 0.85;
+    // Subjects.
+    static constexpr double kMinHold = 0.5;
+    static constexpr double kDistracted = 0.6;
+    static constexpr double kWithholdRatio = 0.5;
+    static constexpr double kRebelHold = 1.0;
+    static constexpr double kWithhold = 0.04;
+    static constexpr double kForeign = 1.5;
+    static constexpr double kMinUnrest = 0.5, kMaxUnrest = 2.0;
+    static constexpr double kNewReign = 2.0;
+    static constexpr double kWithheldShock = 0.2;
+    static constexpr double kGrievanceYears = 30.0;
+    static constexpr double kAbandonTrust = 0.25;
+    static constexpr double kAbandonOpinion = 0.2;
+    static constexpr double kAidTrust = 0.1;
+    static constexpr double kTrustDrift = 0.02;
+    static constexpr double kSubmit = 0.02;
+    static constexpr double kKinSubmit = 1.5;
+    static constexpr double kSubmitRatio = 3.0;
 };
 
 // The relation between two realms, if they have one.
@@ -64,7 +102,10 @@ struct Diplomacy {
 [[nodiscard]] double opinion_between(const SimState& state, std::uint32_t a, std::uint32_t b);
 // Cells of `of` that `by` claims.
 [[nodiscard]] std::uint32_t claims_on(const SimState& state, std::uint32_t by, std::uint32_t of);
-// Whether `a` has cause for war on `b`: a claim or holy war.
+// Whether `a` has cause for war on `b`: a claim, a holy war, or tribute `b`
+// withheld from it.
+// Whether `b` withheld tribute owed to `a` within kGrievanceYears.
+[[nodiscard]] bool tribute_withheld(const SimState& state, std::uint32_t a, std::uint32_t b);
 [[nodiscard]] bool cause_for_war(const SimState& state, std::uint32_t a, std::uint32_t b);
 // The opinion two realms drift toward this year.
 [[nodiscard]] double opinion_target(const World& world, const SimState& state, const Relation& r, Tick now);

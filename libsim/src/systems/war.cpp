@@ -319,8 +319,25 @@ std::uint32_t start_war(const World&, SimState& s, Tick tick, std::uint32_t atta
     note_war_begun(s, attacker, defender, tick);
     const Polity& d = s.polities[defender];
     // The defender's overlord, allies and vassals stand with it; the
-    // attacker's vassals with the attacker.
-    if (alive(s, d.overlord) && d.overlord != attacker) add_to(war.defenders, war.attackers, d.overlord);
+    // attacker's vassals with the attacker. An overlord already at war
+    // elsewhere leaves its subject to fend for itself, and is not forgiven.
+    if (alive(s, d.overlord) && d.overlord != attacker) {
+        bool elsewhere = false;
+        for (std::size_t i = 1; i < s.wars.size() && !elsewhere; ++i) {
+            const War& other = s.wars[i];
+            elsewhere = other.ended == kNever && (on(other.attackers, d.overlord) || on(other.defenders, d.overlord));
+        }
+        Relation& r = relation_of(s, defender, d.overlord, tick);
+        if (elsewhere) {
+            r.trust = std::max(0.0, r.trust - Diplomacy::kAbandonTrust);
+            r.opinion = std::max(-1.0, r.opinion - Diplomacy::kAbandonOpinion);
+            s.events.push_back({tick, EventType::Abandoned, d.capital,
+                                static_cast<std::int64_t>((static_cast<std::uint64_t>(defender) << 32) | d.overlord)});
+        } else {
+            r.trust = std::min(1.0, r.trust + Diplomacy::kAidTrust);
+            add_to(war.defenders, war.attackers, d.overlord);
+        }
+    }
     for (const Alliance& al : s.alliances) {
         if (al.ended != kNever) continue;
         if (al.a == defender && alive(s, al.b)) add_to(war.defenders, war.attackers, al.b);
@@ -855,7 +872,18 @@ void WarSystem::step(StepContext& ctx) {
         finish(outcome);
     }
 
-    // ---- Subjects: tribute, rebellion, absorption.
+    // ---- Subjects: tribute, rebellion, withheld tribute, absorption.
+    std::vector<std::uint8_t> fighting(np, 0);
+    for (std::size_t wi = 1; wi < s.wars.size(); ++wi) {
+        const War& war = s.wars[wi];
+        if (war.ended != kNever) continue;
+        for (std::uint32_t q : war.attackers) fighting[q] = 1;
+        for (std::uint32_t q : war.defenders) fighting[q] = 1;
+    }
+    auto new_reign = [&](std::uint32_t id) {
+        const std::uint32_t k = s.polities[id].ruler;
+        return k != 0 && k < s.rulers.size() && s.rulers[k].reign_start + kTicksPerYear > tick;
+    };
     for (std::uint32_t id = 1; id < np; ++id) {
         Polity& p = s.polities[id];
         if (!alive(s, id) || p.bond == Bond::None || !alive(s, p.overlord)) continue;
@@ -879,16 +907,44 @@ void WarSystem::step(StepContext& ctx) {
         }
         RngStream rng = ctx.rng(Stream::War, kDiplomacyEntity | id);
         const double rival = power[lord] - (p.bond == Bond::Vassal ? kVassalShare * armies.strength[id] : 0.0);
-        if (armies.strength[id] >= kRebelRatio * rival && war_between(s, id, lord) == 0) {
-            if (rng.uniform() < kRebellion) start_war(w, s, tick, id, lord, WarGoal::Independence);
+        // The hold the overlord has here: what it can bring to the subject's
+        // seat, less when it is busy elsewhere or has failed its subjects.
+        const Relation* rel = find_relation(s, id, lord);
+        const double trust = rel != nullptr ? rel->trust : 0.5;
+        const double opinion = rel != nullptr ? rel->opinion : 0.0;
+        const bool at_war_with_lord = war_between(s, id, lord) != 0;
+        const double hold = rival *
+                            std::clamp(control_of(lord, p.capital) / Diplomacy::kProjection, Diplomacy::kMinHold, 1.0) *
+                            (fighting[lord] && !at_war_with_lord ? Diplomacy::kDistracted : 1.0) * (0.5 + trust);
+        const Polity& o = s.polities[lord];
+        const double unrest = std::clamp((1.0 - opinion) *
+                              (s.cultures[p.culture].root != s.cultures[o.culture].root ? Diplomacy::kForeign : 1.0) *
+                              (p.religion != o.religion ? Diplomacy::kForeign : 1.0) *
+                              (new_reign(id) || new_reign(lord) ? Diplomacy::kNewReign : 1.0),
+                                         Diplomacy::kMinUnrest, Diplomacy::kMaxUnrest);
+        const double draw = rng.uniform();
+        if (armies.strength[id] >= Diplomacy::kRebelHold * hold && !at_war_with_lord) {
+            if (draw < kRebellion * unrest) start_war(w, s, tick, id, lord, WarGoal::Independence);
+        } else if (p.bond == Bond::Tributary && armies.strength[id] >= Diplomacy::kWithholdRatio * hold && !at_war_with_lord) {
+            if (draw < Diplomacy::kWithhold * unrest) {
+                // The tribute stops; the overlord may come to collect it.
+                Relation& r = relation_of(s, id, lord, tick);
+                r.withheld = tick;
+                r.withheld_by = id;
+                r.opinion = std::max(-1.0, r.opinion - Diplomacy::kWithheldShock);
+                p.overlord = 0;
+                p.bond = Bond::None;
+                s.events.push_back({tick, EventType::TributeWithheld, p.capital,
+                                    static_cast<std::int64_t>((static_cast<std::uint64_t>(id) << 32) | lord)});
+            }
         } else if (p.bond == Bond::Vassal && war_between(s, id, lord) == 0 &&
                    // Distance counted as for conquest (less the cell spacing beyond
                    // kConquestNearKm), so a bordering vassal can be held at any grid level.
                    ((polity_control(std::max(0.0, rule_km_of(lord, p.capital) - slack), reach[lord]) >= kAbsorbControl &&
-                     rng.uniform() < kAbsorb) ||
+                     draw < kAbsorb) ||
                     // A herder clan bordering its confederation merges into it.
                     (s.polities[lord].nomadic && herder_tribe(w, s, id) &&
-                     std::binary_search(borders[id].begin(), borders[id].end(), lord) && rng.uniform() < kClanAbsorb))) {
+                     std::binary_search(borders[id].begin(), borders[id].end(), lord) && draw < kClanAbsorb))) {
             for (CellId c : cells[id]) {
                 if (s.polity_of[c] == id) s.polity_of[c] = lord;
             }
@@ -937,7 +993,25 @@ void WarSystem::step(StepContext& ctx) {
                 if (score > best || (score == best && b < partner)) best = score, partner = b;
             }
         }
-        if (partner == 0) continue;
+        if (partner == 0) {
+            // No ally to be had: perhaps better to pay than to be conquered.
+            const Polity& p = s.polities[id];
+            const Polity& t = s.polities[threat];
+            if (p.nomadic || t.bond != Bond::None || war_between(s, id, threat) != 0 || !polity_has_writing(w, s, threat) ||
+                load[threat] >= admin_capacity(w, s, threat)) {
+                continue;
+            }
+            const double brought = power[threat] * std::min(1.0, control_of(threat, p.capital) / Diplomacy::kProjection);
+            if (brought < Diplomacy::kSubmitRatio * power[id]) continue;
+            RngStream rng = ctx.rng(Stream::War, kAllianceEntity | 0x04000000u | id);
+            const bool kin = s.cultures[p.culture].root == s.cultures[t.culture].root;
+            if (rng.uniform() < Diplomacy::kSubmit * (1.0 + opinion_between(s, id, threat)) * (kin ? Diplomacy::kKinSubmit : 1.0) &&
+                subjugate(s, id, threat, Bond::Tributary, tick)) {
+                s.events.back().type = EventType::Submitted;
+                ++ally_count[id];  // bound now; it seeks no allies
+            }
+            continue;
+        }
         RngStream rng = ctx.rng(Stream::War, kAllianceEntity | 0x08000000u | id);
         const bool related = s.cultures[s.polities[partner].culture].root == root;
         if (rng.uniform() < kAlliance * (related ? 2.0 : 1.0)) {
@@ -994,7 +1068,7 @@ void WarSystem::step(StepContext& ctx) {
             if (rng.uniform() < kDeclare * (0.5 + warfare) * (0.5 + martial) * ambition * std::min(2.0, ratio - 1.0) * mood) {
                 // Nomads raid farmers for tribute; a realm that cannot run more
                 // land fights for tribute too.
-                const bool tribute = (p.nomadic && !q.nomadic) ||
+                const bool tribute = (p.nomadic && !q.nomadic) || tribute_withheld(s, id, b) ||
                                      load[id] >= PolitySystem::kTributeLoad * admin_capacity(w, s, id);
                 start_war(w, s, tick, id, b, tribute ? WarGoal::Tribute : WarGoal::Conquest);
                 busy[id] = busy[b] = 1;

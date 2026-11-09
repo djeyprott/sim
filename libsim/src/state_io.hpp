@@ -437,6 +437,8 @@ void serialize(Ar& ar, SimState& s) {
         ar.i64(r.since);
         ar.u32(r.claims_ab);
         ar.u32(r.claims_ba);
+        ar.i64(r.withheld);
+        ar.u32(r.withheld_by);
     });
     vec(ar, s.claims, [&](Claim& c) {
         ar.u32(c.cell);

@@ -65,8 +65,14 @@ std::uint32_t claims_on(const SimState& s, std::uint32_t by, std::uint32_t of) {
     return by == r->a ? r->claims_ab : r->claims_ba;
 }
 
+bool tribute_withheld(const SimState& s, std::uint32_t a, std::uint32_t b) {
+    const Relation* r = find_relation(s, a, b);
+    return r != nullptr && r->withheld_by == b && r->withheld != kNever &&
+           static_cast<double>(s.tick - r->withheld) < Diplomacy::kGrievanceYears * kTicksPerYear;
+}
+
 bool cause_for_war(const SimState& s, std::uint32_t a, std::uint32_t b) {
-    if (claims_on(s, a, b) > 0) return true;
+    if (claims_on(s, a, b) > 0 || tribute_withheld(s, a, b)) return true;
     // Holy war: a zealous high priest against another faith.
     const std::uint32_t pr = s.polities[a].priest;
     return s.polities[a].religion != s.polities[b].religion && pr != 0 && pr < s.figures.size() &&
@@ -158,6 +164,7 @@ void update_relations(const World& w, SimState& s, Tick now, const std::vector<s
     for (Relation& r : s.relations) {
         const double target = opinion_target(w, s, r, now);
         r.opinion = r.since == now && r.wars == 0 ? target : r.opinion + Diplomacy::kDrift * (target - r.opinion);
+        r.trust += std::clamp(0.5 - r.trust, -Diplomacy::kTrustDrift, Diplomacy::kTrustDrift);
     }
 }
 
