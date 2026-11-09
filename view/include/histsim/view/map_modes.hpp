@@ -40,8 +40,11 @@ const std::vector<MapModeInfo>& map_modes();
 // Throws std::invalid_argument for an unknown id.
 const MapModeInfo& map_mode(std::string_view id);
 
-// One color per cell for the given mode.
+// One color per cell for the given mode. The diplomacy mode shows the
+// realm ruling `focus` (a cell) and how every other realm stands with it;
+// without a focus it shows each realm's infamy.
 void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rgba>& out);
+void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rgba>& out, CellId focus);
 
 // The fixed part of a mode's legend.
 Legend legend(std::string_view mode_id);

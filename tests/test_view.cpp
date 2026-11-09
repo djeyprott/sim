@@ -76,7 +76,7 @@ TEST(view_every_mode_colors_every_cell_and_has_a_legend) {
                            mode.id == "disease" || mode.id == "polity" || mode.id == "towns";
         // No polities, so no realms or wars, this early: land and sea only.
         const bool quiet = mode.id == "realms" || mode.id == "war" || mode.id == "stability" || mode.id == "bondage" ||
-                           mode.id == "provinces" || mode.id == "unrest";
+                           mode.id == "provinces" || mode.id == "unrest" || mode.id == "diplomacy";
         CHECK(distinct.size() > (quiet ? 1u : early ? 2u : 5u));
         const Legend l = legend(sim, mode.id);
         CHECK(!l.title.empty());

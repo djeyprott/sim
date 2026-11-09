@@ -223,5 +223,6 @@ private:
     bool highlight_on_ = false;
     std::vector<std::uint8_t> focus_;
     bool focus_on_ = false;
+    histsim::CellId focus_cell_ = histsim::kInvalidCell;  // the kept cell, for the diplomacy map
     histsim::view::Rgba focus_color_{255, 255, 255, 255};
 };

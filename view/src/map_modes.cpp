@@ -11,6 +11,7 @@
 #include "histsim/language.hpp"
 #include "histsim/view/timeline.hpp"
 #include "histsim/systems/bondage.hpp"
+#include "histsim/systems/diplomacy.hpp"
 #include "histsim/systems/economy.hpp"
 #include "histsim/systems/people.hpp"
 #include "histsim/systems/polity.hpp"
@@ -187,6 +188,28 @@ const ColorScale& trait_scale() {  // low pole (teal) - middle (gray) - high pol
                                {1, hex("#a8461e")}});
     return s;
 }
+const ColorScale& opinion_scale() {  // hostile (red) through indifferent (grey) to friendly (green)
+    static const ColorScale s({{-1.0, hex("#8e2b1f")},
+                               {-0.4, hex("#e0835f")},
+                               {0.0, hex("#c8c1ae")},
+                               {0.4, hex("#93c47d")},
+                               {1.0, hex("#2f7a3d")}});
+    return s;
+}
+
+const ColorScale& infamy_scale() {  // none (pale) to feared (dark red)
+    static const ColorScale s({{0.0, hex("#ece6d6")}, {0.1, hex("#f2c89a")}, {0.3, hex("#e0784f")}, {1.0, hex("#7a1712")}});
+    return s;
+}
+
+const Rgba kDiplomacySelf = hex("#f2c14e");
+const Rgba kDiplomacyOverlord = hex("#6a4c93");
+const Rgba kDiplomacySubject = hex("#b9a3d6");
+const Rgba kDiplomacyAlly = hex("#3b7dd8");
+const Rgba kDiplomacyEnemy = hex("#c0392b");
+const Rgba kDiplomacyTruce = hex("#e8a23a");
+const Rgba kDiplomacyStranger = hex("#e6e2d6");
+
 const ColorScale& stability_scale() {  // fragile (red) to steady (green)
     static const ColorScale s({{0, hex("#9e1f1a")},
                                {0.3, hex("#e0784f")},
@@ -320,6 +343,7 @@ const std::vector<MapModeInfo> kModes = {
     {"war", "War", "Wars, battles, conquests and nomad raids this year", "Power"},
     {"stability", "Stability", "How steady each polity is against famine, war, overreach and other pressures", "Power"},
     {"provinces", "Provinces", "Provinces of the larger realms, by their governors' loyalty; the crown's own land in gold", "Power"},
+    {"diplomacy", "Diplomacy", "Click a realm: its allies, overlord, subjects and enemies, and how others regard it. Otherwise: how alarming each realm's conquests are", "Power"},
     {"unrest", "Unrest", "Unrest of the people of each state's provinces and crown land: hunger, land hunger, war, plague, tribute, foreign rule", "Power"},
 };
 
@@ -636,6 +660,10 @@ Rgba way_of_life_color(const World& w, const SimState& s, CellId c, std::size_t 
 }  // namespace
 
 void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rgba>& out) {
+    color_cells(sim, mode_id, out, kInvalidCell);
+}
+
+void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rgba>& out, CellId focus) {
     const World& w = sim.world();
     const SimState& s = sim.state();
     const std::size_t n = w.cell_count();
@@ -661,9 +689,48 @@ void color_cells(const Simulation& sim, std::string_view mode_id, std::vector<Rg
             for (std::uint32_t p : s.wars[i].defenders) at_war[p] = 1;
         }
     }
+    // How each realm stands with the focused one (for the diplomacy map).
+    std::vector<Rgba> stance;
+    if (id == "diplomacy") {
+        const std::uint32_t me = focus < n && s.polity_of.size() == n ? s.polity_of[focus] : 0;
+        stance.assign(s.polities.size(), kDiplomacyStranger);
+        for (std::uint32_t p = 1; p < s.polities.size(); ++p) {
+            const Polity& q = s.polities[p];
+            if (q.ended != kNever) continue;
+            if (me == 0) {
+                stance[p] = infamy_scale()(std::min(1.0, q.infamy));
+                continue;
+            }
+            const Relation* r = find_relation(s, me, p);
+            bool truce = false;
+            for (const Truce& t : s.truces) {
+                truce = truce || (t.until > s.tick && ((t.a == me && t.b == p) || (t.a == p && t.b == me)));
+            }
+            if (p == me) {
+                stance[p] = kDiplomacySelf;
+            } else if (war_between(s, me, p) != 0) {
+                stance[p] = kDiplomacyEnemy;
+            } else if (s.polities[me].bond != Bond::None && (s.polities[me].overlord == p || top_overlord(s, me) == p)) {
+                stance[p] = kDiplomacyOverlord;
+            } else if (q.bond != Bond::None && (q.overlord == me || top_overlord(s, p) == me)) {
+                stance[p] = kDiplomacySubject;
+            } else if (allied(s, me, p)) {
+                stance[p] = kDiplomacyAlly;
+            } else if (truce) {
+                stance[p] = kDiplomacyTruce;
+            } else if (r != nullptr) {
+                stance[p] = opinion_scale()(r->opinion);
+            }
+        }
+    }
     for (CellId c = 0; c < n; ++c) {
         const bool land = w.is_land[c] != 0;
         const bool inhabited = s.cell_population[c] > 0;
+        if (id == "diplomacy" && land) {
+            const std::uint32_t p = s.polity_of.size() == n ? s.polity_of[c] : 0;
+            out[c] = !inhabited ? kEmptyLand : p == 0 ? kStateless : stance[p];
+            continue;
+        }
         if (id == "plates") {
             if (w.plate.size() != n) {
                 out[c] = land ? kEmptyLand : kOceanNeutral;
@@ -947,6 +1014,16 @@ Legend legend(std::string_view mode_id) {
                   {"80%", stability_scale()(0.8)}, {"100%", stability_scale()(1.0)}};
         l.swatches = {{"The crown's own land", kCrownLand}, {"Realm too small for provinces", kSmallRealm},
                       {"No ruler", kStateless}, {"Uninhabited", kEmptyLand}, {"Ocean", kOceanNeutral}};
+    } else if (id == "diplomacy") {
+        l.title = "Diplomacy: click a realm. Others by its opinion of them; unselected, realms by infamy";
+        l.ramp = {{"hostile", opinion_scale()(-1.0)}, {"wary", opinion_scale()(-0.4)}, {"indifferent", opinion_scale()(0.0)},
+                  {"friendly", opinion_scale()(0.4)}, {"close", opinion_scale()(1.0)}};
+        l.swatches = {{"The chosen realm", kDiplomacySelf}, {"Its overlord", kDiplomacyOverlord},
+                      {"Its subjects", kDiplomacySubject}, {"Allies", kDiplomacyAlly}, {"At war with it", kDiplomacyEnemy},
+                      {"Under truce", kDiplomacyTruce}, {"No dealings", kDiplomacyStranger},
+                      {"Infamy (no realm chosen): none", infamy_scale()(0.0)}, {"some", infamy_scale()(0.2)},
+                      {"feared", infamy_scale()(0.8)}, {"No ruler", kStateless}, {"Uninhabited", kEmptyLand},
+                      {"Ocean", kOceanNeutral}};
     } else if (id == "war") {
         l.title = "War this year";
         l.swatches = {{"Field army (dot; white heart: winning)", hex("#d64541")}, {"Changed hands in war", kTaken},
@@ -1452,6 +1529,45 @@ std::vector<Row> describe_cell_rows(const Simulation& sim, CellId c,
                     with_commas(static_cast<long long>(war.started / kTicksPerYear)) + ")";
         }
         if (!wars.empty()) f.push_back({"At war", wars});
+        // How it stands with the realms it deals with.
+        {
+            struct Tie {
+                std::uint32_t other;
+                const Relation* r;
+            };
+            std::vector<Tie> ties;
+            for (const Relation& r : s.relations) {
+                if (r.a == ruler || r.b == ruler) ties.push_back({r.a == ruler ? r.b : r.a, &r});
+            }
+            std::stable_sort(ties.begin(), ties.end(), [](const Tie& x, const Tie& y) {
+                return std::fabs(x.r->opinion) > std::fabs(y.r->opinion);
+            });
+            auto word = [](double o) {
+                return o >= 0.6 ? "close" : o >= 0.2 ? "friendly" : o > -0.2 ? "indifferent" : o > -0.6 ? "wary" : "hostile";
+            };
+            std::string list, claims, grievances;
+            for (std::size_t i = 0; i < ties.size(); ++i) {
+                const Relation& r = *ties[i].r;
+                const std::string& name = s.polities[ties[i].other].name;
+                if (i < 6) {
+                    list += (list.empty() ? "" : "; ") + name + " " + word(r.opinion) + fmt(" (%+.0f%%", 100.0 * r.opinion) +
+                            fmt(", trust %.0f%%)", 100.0 * r.trust);
+                }
+                const std::uint32_t mine = claims_on(s, ruler, ties[i].other), theirs = claims_on(s, ties[i].other, ruler);
+                if (mine > 0) claims += (claims.empty() ? "" : "; ") + std::to_string(mine) + " cells of " + name;
+                if (theirs > 0) claims += (claims.empty() ? "" : "; ") + name + " claims " + std::to_string(theirs) + " of its cells";
+                if (tribute_withheld(s, ruler, ties[i].other)) grievances += (grievances.empty() ? "" : "; ") + name + " withheld its tribute";
+                if (tribute_withheld(s, ties[i].other, ruler)) grievances += std::string(grievances.empty() ? "" : "; ") + "withheld tribute from " + name;
+                if (restoration(s, ruler, ties[i].other)) grievances += std::string(grievances.empty() ? "" : "; ") + "rival heir with " + name;
+            }
+            if (!list.empty()) f.push_back({"Relations", list + (ties.size() > 6 ? "; and " + std::to_string(ties.size() - 6) + " more" : std::string())});
+            if (!claims.empty()) f.push_back({"Claims", claims});
+            if (!grievances.empty()) f.push_back({"Grievances", grievances});
+            if (pol.infamy >= 0.05) {
+                f.push_back({"Infamy", fmt("%.0f%%", 100.0 * pol.infamy) +
+                                           (pol.infamy >= Diplomacy::kInfamous ? " (its neighbours band together against it)" : "")});
+            }
+        }
         // Its field armies.
         for (std::size_t i = 1; i < s.armies.size(); ++i) {
             const Army& a = s.armies[i];
@@ -1830,7 +1946,7 @@ std::vector<MapMarker> capital_markers(const Simulation& sim, std::string_view m
             field.push_back(m);
         }
     }
-    if (!realms && id != "polity" && id != "stability" && id != "provinces") {
+    if (!realms && id != "polity" && id != "stability" && id != "provinces" && id != "diplomacy") {
         std::stable_sort(field.begin(), field.end(), [](const MapMarker& a, const MapMarker& b) { return a.radius < b.radius; });
         return field;
     }

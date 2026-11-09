@@ -265,7 +265,7 @@ HistSimWorld::MapJob HistSimWorld::make_map_job(const std::string& mode, bool co
     ensure_raster();
     job.raster = raster_;
     job.world = &sim_->world();
-    histsim::view::color_cells(*sim_, mode, job.colors);
+    histsim::view::color_cells(*sim_, mode, job.colors, focus_cell_);
     job.coastlines = coastlines;
     job.rivers = rivers;
     const std::size_t n = sim_->world().cell_count();
@@ -685,6 +685,10 @@ PackedInt64Array HistSimWorld::get_event_years(const String& kind) const {
 bool HistSimWorld::set_focus(const String& mode, int64_t cell) {
     const auto guard = hold();
     focus_on_ = false;
+    focus_cell_ = histsim::kInvalidCell;
+    if (sim_ && cell >= 0 && static_cast<std::size_t>(cell) < sim_->world().cell_count()) {
+        focus_cell_ = static_cast<histsim::CellId>(cell);  // the diplomacy map colors around it
+    }
     if (!sim_ || cell < 0 || static_cast<std::size_t>(cell) >= sim_->world().cell_count()) return false;
     try {
         focus_on_ = histsim::view::same_group_cells(*sim_, to_std(mode), static_cast<histsim::CellId>(cell), focus_,
