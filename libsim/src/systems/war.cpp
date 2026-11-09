@@ -919,7 +919,8 @@ void WarSystem::step(StepContext& ctx) {
                     subjugate(s, lead_a, lead_d, Bond::Vassal, tick);
                     war.terms = PeaceTerms::Vassalage;
                 }
-            } else if (winner == lead_a && war.goal == WarGoal::Tribute) {
+            } else if (winner == lead_a && war.goal == WarGoal::Tribute &&
+                       (capital_fell || war.score >= Diplomacy::kTributeScore)) {
                 Polity& nomads = s.polities[lead_a];
                 const CellId seat = s.polities[lead_d].capital;
                 const bool civilised = polity_has_writing(w, s, lead_d) || s.city_of[seat] != 0;

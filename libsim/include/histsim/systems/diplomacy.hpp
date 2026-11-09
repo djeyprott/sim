@@ -51,8 +51,8 @@
 // side the score is against sues for peace: kSue x |score| a year once
 // |score| >= kSueScore. The terms follow the score: within kWhite of 0 a
 // white peace (land taken in the war is given back both ways); otherwise
-// the victors keep what they took and, if they fought for tribute, the loser
-// pays it; defenders who prevail take back the land they lost in the war.
+// the victors keep what they took and, if they fought for tribute and the
+// score is at least kTributeScore (or the capital fell), the loser pays it; defenders who prevail take back the land they lost in the war.
 // (A fallen capital still means vassalage or annexation.) An ally of a
 // side's leader (not its vassal or overlord) with the score at least
 // kSeparateScore against it may make a separate peace (kSeparate a year x
@@ -125,6 +125,7 @@ struct Diplomacy {
     static constexpr double kBattleScore = 0.4;
     static constexpr double kCapitalScore = 0.3;
     static constexpr double kWhite = 0.1;
+    static constexpr double kTributeScore = 0.4;  // a war for tribute must be won by this much to impose it
     static constexpr double kSueScore = 0.5;
     static constexpr double kSue = 0.3;
     static constexpr double kSeparateScore = 0.5;
