@@ -755,6 +755,7 @@ void WarSystem::step(StepContext& ctx) {
             const bool restoring = restoration(s, s.polity_of[from], s.polity_of[target]);
             note_land_lost(s, target, s.polity_of[target], tick);
             s.polity_of[target] = s.polity_of[from];
+            if (s.polities[s.polity_of[from]].nomadic) s.settling.push_back({from, target, s.polity_of[from]});
             s.polities[s.polity_of[from]].infamy +=
                 (restoring ? Diplomacy::kRestoreInfamy : 1.0) * Diplomacy::kInfamyLand /
                 std::max(Diplomacy::kInfamyFloor, static_cast<double>(cells[s.polity_of[from]].size()));

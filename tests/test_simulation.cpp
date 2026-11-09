@@ -210,5 +210,5 @@ TEST(sim_golden_hash) {
     p.grid_level = 5;
     Simulation sim = Simulation::create(p);
     sim.step_years(200);
-    CHECK_EQ(sim.state_hash(), 0xdd38fdfe479981cull);
+    CHECK_EQ(sim.state_hash(), 0xca57f161556c77b2ull);
 }

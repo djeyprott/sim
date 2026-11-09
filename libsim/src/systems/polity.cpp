@@ -494,11 +494,21 @@ void PolitySystem::step(StepContext& ctx) {
         frontier.erase(std::unique(frontier.begin(), frontier.end()), frontier.end());
         RngStream rng = ctx.rng(Stream::Polity, static_cast<std::uint32_t>(id));
         const double warfare = cell_trait(s, s.polities[id].capital, i_warfare);
+        const CellId seat = s.polities[id].capital;
+        const bool herding = s.polities[id].nomadic || (!s.env.pastoral.empty() && s.env.pastoral[seat] >= 0.5);
         std::size_t tried = 0;
         for (std::size_t k = 0; tried < attempts && k < frontier.size(); ++k) {
             const auto [best, target] = frontier[k];
             if (best < kMinControl) break;
             if (load[id] + cell_share / best > capacity) continue;
+            if (!herding) {
+                // Worth ruling? Crops to tax, or trade passing through.
+                const double farming = s.env.farming.empty() ? 0.0 : s.env.farming[target];
+                const double herds = s.env.pastoral.empty() ? 0.0 : s.env.pastoral[target];
+                const double trade = s.trade_value.empty() ? 0.0 : s.trade_value[target];
+                const double people = static_cast<double>(s.cell_population[target]);
+                if (farming * (1.0 - herds) < kWorthCrops && trade < kTradePerPerson * people) continue;
+            }
             ++tried;
             // Strength against the people of a level-5 cell's worth of land.
             const double people = static_cast<double>(s.cell_population[target]) / cell_share;

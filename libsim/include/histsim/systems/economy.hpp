@@ -66,6 +66,11 @@ public:
     // capacity, at most kMaxFoodExport of the sender's capacity in all.
     static constexpr double kFoodShare = 0.5;
     static constexpr double kMaxFoodExport = 0.25;
+    // The capital's bread: a literate realm carries kAnnona of each cell's
+    // surplus (what it grows beyond its people's needs, x control there) to
+    // its capital, losing kHaulLoss x (1 - control) on the way (economy.cpp).
+    static constexpr double kAnnona = 0.3;
+    static constexpr double kHaulLoss = 0.5;
     // Food stores, after this year's harvest and food trade (in people fed
     // for a year). A good year's surplus (what the land feeds beyond its
     // people) is put by: kStoreShare of it, x (kForagerStore + (1 -

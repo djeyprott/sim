@@ -383,6 +383,34 @@ void EconomySystem::step(StepContext& ctx) {
         }
     }
 
+    // ---- The capital's bread: a literate realm takes kAnnona of what each of
+    // its cells grows beyond its own people's needs (x its control there)
+    // and carries it to the capital, losing kHaulLoss x (1 - control) on the
+    // way. A great capital can so outgrow its own land, and starve when the
+    // realm that fed it falls or loses its provinces.
+    if (s.polity_of.size() == n && s.polities.size() > 1) {
+        const std::size_t np = s.polities.size();
+        std::vector<double> reach(np, -1.0), bread(np, 0.0);
+        for (std::size_t m = 0; m < nm; ++m) {
+            const CellId c = cell_of[m];
+            const std::uint32_t p = s.polity_of[c];
+            if (p == 0 || s.polities[p].ended != kNever || s.polities[p].capital == c) continue;
+            if (reach[p] < 0.0) reach[p] = polity_has_writing(w, s, p) ? polity_reach(w, s, p) : 0.0;
+            if (reach[p] <= 0.0) continue;
+            const double spare = s.env.capacity[c] + imported[m] - pop[m];
+            if (spare <= 0.0) continue;
+            const double control = polity_control(w.grid.distance_km(s.polities[p].capital, c), reach[p]);
+            const double tax = kAnnona * spare * control;
+            imported[m] -= tax;
+            bread[p] += tax * (1.0 - kHaulLoss * (1.0 - control));
+        }
+        for (std::size_t p = 1; p < np; ++p) {
+            if (bread[p] <= 0.0) continue;
+            const std::uint32_t mc = market[s.polities[p].capital];
+            if (mc != kNone) imported[mc] += bread[p];
+        }
+    }
+
     // ---- Use, spoilage, what is on each market, and prices for next year.
     parallel_for(nm, [&](std::size_t m_begin, std::size_t m_end) {
     for (std::size_t m = m_begin; m < m_end; ++m) {

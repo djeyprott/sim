@@ -114,6 +114,13 @@ public:
     static constexpr std::int64_t kFolkMinPeople = 500;
     static constexpr double kExodusWar = 0.3;
     static constexpr double kExodusRaid = 0.1;
+    // Along a fighting front (strife 1) the mobile leave ahead of the
+    // fighting: kExodusFront x mobility^2. Those who go take kExodusShare x
+    // (1 + kMobileExodusShare x mobility) of the people, at most
+    // kMaxExodusShare.
+    static constexpr double kExodusFront = 0.1;
+    static constexpr double kMobileExodusShare = 1.0;
+    static constexpr double kMaxExodusShare = 0.6;
     // Famine: when the land has lately fed less than it usually does (capacity
     // smoothed by kRecentRate a year, below kDearth of capacity smoothed by
     // kUsualRate) and the people are beyond what it feeds now, chance
@@ -175,11 +182,20 @@ public:
     static constexpr double kTrekKm = 30.0;
     static constexpr double kTrekKmMobile = 120.0;
     static constexpr double kTrekShare = 0.9;
+    // Who goes on a wandering: of the rulers' people share + (1 - share) x
+    // kMobileTrek x mobility (nearly all of a herding people); of the realm's
+    // other peoples, those at least kFollowMobility mobile (herders under the
+    // horde), share x mobility.
+    static constexpr double kMobileTrek = 0.7;
+    static constexpr double kFollowMobility = 0.6;
     static constexpr double kLevel5SpacingKm = 225.0;
     // A step moves no more of the people into a cell than fill it to
-    // kTrekRoom x what it feeds (with those already there); the rest stay
-    // behind where they were, as real migrations shed people on the way.
+    // (kTrekRoom + kTrekRoomMobile x mobility) x what it feeds (with those
+    // already there: a horde crowds in on the locals and drives them off);
+    // the rest stay behind where they were, as real migrations shed people
+    // on the way.
     static constexpr double kTrekRoom = 1.1;
+    static constexpr double kTrekRoomMobile = 1.0;
     // The march kills: kMarchDeaths of those who take a step die on the way,
     // x kMarchHarsh into desert (half that into dry scrub or tundra), x
     // kMarchHostile into land held by another people (fighting through).
@@ -191,6 +207,11 @@ public:
     static constexpr double kWanderRoam = 0.006;
     static constexpr double kWanderRoamMobility = 0.4;
     static constexpr double kWanderThreatSpan = 6.0;  // to the rulers of land the newcomers take
+    // Herders follow their horde: when a nomad confederation takes land in
+    // war, next year kSettleShare x mobility of the largest group of its own
+    // people in the cell it struck from move into it (filling it to at most
+    // (kTrekRoom + kTrekRoomMobile x mobility) x what it feeds).
+    static constexpr double kSettleShare = 0.3;
     // Folk migrations of at least this many people are recorded.
     static constexpr std::int64_t kFolkRecordPeople = 1000;
 };
