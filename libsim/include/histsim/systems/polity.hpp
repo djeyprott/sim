@@ -290,6 +290,13 @@ public:
     // disputed succession: a claimant holds the capital); otherwise the old
     // capital is one claimant among the rest, with its own reach.
     static constexpr double kHeirHolds = 0.5;
+    // In a break-up (where no heir keeps the capital), each would-be seat's
+    // score is x kFallenCapital at the old capital (the fallen court is
+    // discredited, its city sacked or deserted) and x a random factor
+    // between kSeatLuckMin and 2 - kSeatLuckMin (its local strongmen), so
+    // the old capital no longer always chooses first.
+    static constexpr double kFallenCapital = 0.6;
+    static constexpr double kSeatLuckMin = 0.4;
     // A disputed succession in a free realm of at least kPretenderMinCells
     // (level-5) cells is fought out instead of breaking it up: the
     // claimant's party takes the provinces below kStayLoyal (at least the
