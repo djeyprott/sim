@@ -228,6 +228,7 @@ struct Polity {
     std::uint32_t culture = 0;   // of the founders
     std::uint32_t language = 0;
     std::uint32_t parent = 0;    // the polity it broke away from, if any
+    std::uint32_t pretender_to = 0;  // the realm whose throne it claims (a claimant's party in a succession war)
     bool nomadic = false;        // a confederation of mounted herders
     std::uint32_t overlord = 0;  // the polity it is bound to (0 = none)
     Bond bond = Bond::None;
@@ -447,6 +448,7 @@ enum class WarGoal : std::uint8_t {
     Conquest = 0,      // take land; the loser may become a vassal
     Tribute = 1,       // make the loser a tributary (nomads against farmers)
     Independence = 2,  // a subject or rebel province fights its overlord
+    Succession = 3,    // a claimant's party fights for the throne of the realm it rose in
 };
 enum class WarOutcome : std::uint8_t {
     Ongoing = 0,
@@ -466,6 +468,8 @@ enum class PeaceTerms : std::uint8_t {
     Annexed = 6,     // the loser is taken whole
     Independence = 7,  // a subject won its freedom
     Dynasty = 8,     // nomads took the state and rule it
+    Throne = 9,      // a war of succession won: the victor rules the whole realm
+    Divided = 10,    // a war of succession ended with the realm divided between the claimants
 };
 
 // A war between two sides; the first polity on each side leads it.

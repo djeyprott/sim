@@ -1036,6 +1036,70 @@ void PolitySystem::step(StepContext& ctx) {
         RngStream rng = ctx.rng(Stream::Polity, kCollapseEntity | static_cast<std::uint32_t>(id));
         const double roll = rng.uniform();
         if (roll >= crisis + succession) continue;
+        // A disputed succession is fought out: the claimant's party
+        // takes the provinces least loyal to the crown (or the half of the
+        // realm farthest from the capital) and fights for the throne.
+        if (roll >= crisis && succession > 0.0 && s.polities[id].bond == Bond::None) {
+            const std::uint32_t realm = static_cast<std::uint32_t>(id);
+            std::vector<CellId> land;
+            for (CellId c = 0; c < n; ++c) {
+                if (s.polity_of[c] == realm) land.push_back(c);
+            }
+            if (land.size() >= std::max<std::size_t>(2, w.cells_for(kPretenderMinCells))) {
+                const CellId capital = s.polities[id].capital;
+                std::vector<CellId> theirs;
+                CellId seat = kInvalidCell;
+                if (provincial[id]) {
+                    // Provinces below kStayLoyal side with the claimant; at least the least loyal one.
+                    std::uint32_t worst = 0;
+                    for (const Province& pv : s.provinces) {
+                        if (pv.id == 0 || pv.polity != realm || pv.ended != kNever) continue;
+                        if (worst == 0 || pv.loyalty < s.provinces[worst].loyalty) worst = pv.id;
+                    }
+                    for (CellId c : land) {
+                        const std::uint32_t v = s.province_of[c];
+                        if (v != 0 && v < s.provinces.size() && (v == worst || s.provinces[v].loyalty < kStayLoyal)) theirs.push_back(c);
+                    }
+                    if (worst != 0) seat = s.provinces[worst].seat;
+                }
+                if (theirs.empty()) {
+                    std::vector<std::pair<double, CellId>> by_distance;
+                    for (CellId c : land) by_distance.emplace_back(w.grid.distance_km(capital, c), c);
+                    std::stable_sort(by_distance.begin(), by_distance.end(),
+                                     [](const auto& a, const auto& b) { return a.first > b.first; });
+                    for (std::size_t i = 0; i < by_distance.size() / 2; ++i) theirs.push_back(by_distance[i].second);
+                }
+                if (seat == kInvalidCell || std::find(theirs.begin(), theirs.end(), seat) == theirs.end()) {
+                    seat = theirs.front();
+                    for (CellId c : theirs) {
+                        if (s.cell_population[c] > s.cell_population[seat]) seat = c;
+                    }
+                }
+                std::uint32_t claimant = 0;
+                for (auto e = s.events.rbegin(); e != s.events.rend() && e->tick == ctx.tick; ++e) {
+                    if (e->type == EventType::SuccessionDisputed && e->cell == capital) {
+                        claimant = static_cast<std::uint32_t>(e->value);
+                        break;
+                    }
+                }
+                const std::uint32_t pretender = found(seat, realm, s.polities[id].nomadic);
+                s.polities[pretender].founder = claimant;
+                s.polities[pretender].pretender_to = realm;
+                s.polities[pretender].stability = kSuccessorStability;
+                for (CellId c : theirs) {
+                    s.polity_of[c] = pretender;
+                    if (s.province_of.size() == n) s.province_of[c] = 0;
+                }
+                for (Province& pv : s.provinces) {
+                    if (pv.id != 0 && pv.polity == realm && pv.ended == kNever && s.polity_of[pv.seat] == pretender) {
+                        pv.ended = ctx.tick;
+                        pv.became = pretender;
+                    }
+                }
+                start_war(w, s, ctx.tick, pretender, realm, WarGoal::Succession);
+                continue;
+            }
+        }
         // The cause: the heaviest pressure, unless the polity was sound.
         std::uint8_t cause = kSuccessionCrisis;
         if (roll < crisis) {

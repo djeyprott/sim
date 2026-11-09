@@ -185,6 +185,8 @@ std::string describe_event(const Simulation& sim, const Event& e) {
                     case PeaceTerms::Annexed: terms = "; the vanquished are annexed"; break;
                     case PeaceTerms::Independence: terms = "; independence won"; break;
                     case PeaceTerms::Dynasty: terms = "; the conquerors found a dynasty"; break;
+                    case PeaceTerms::Throne: terms = "; the victor rules the whole realm"; break;
+                    case PeaceTerms::Divided: terms = "; the realm stays divided between the claimants"; break;
                     case PeaceTerms::None: break;
                 }
                 return "The " + war.name + " ends" + how + terms + " (" + commas(war.deaths) + " dead)";

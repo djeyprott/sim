@@ -309,6 +309,7 @@ const char* war_goal_name(WarGoal g) {
         case WarGoal::Conquest: return "conquest";
         case WarGoal::Tribute: return "tribute";
         case WarGoal::Independence: return "independence";
+        case WarGoal::Succession: return "succession";
     }
     return "";
 }
@@ -360,7 +361,9 @@ std::uint32_t start_war(const World&, SimState& s, Tick tick, std::uint32_t atta
         war.cells_d += o == defender ? 1 : 0;
     }
     const std::string& a = s.polities[attacker].name;
-    war.name = goal == WarGoal::Independence ? a + " War of Independence" : a + "-" + d.name + " War";
+    war.name = goal == WarGoal::Independence ? a + " War of Independence"
+               : goal == WarGoal::Succession ? "War of the " + d.name + " Succession"
+                                             : a + "-" + d.name + " War";
     s.events.push_back({tick, EventType::WarBegan, s.polities[attacker].capital, static_cast<std::int64_t>(war.id)});
     s.wars.push_back(std::move(war));
     return s.wars.back().id;
@@ -882,8 +885,9 @@ void WarSystem::step(StepContext& ctx) {
         if (outcome == WarOutcome::Stalemate) {
             give_back(war.defenders, war.attackers);
             give_back(war.attackers, war.defenders);
-            war.terms = PeaceTerms::WhitePeace;
-        } else if (outcome == WarOutcome::DefendersWon && !capital_fell && war.goal != WarGoal::Independence) {
+            war.terms = war.goal == WarGoal::Succession ? PeaceTerms::Divided : PeaceTerms::WhitePeace;
+        } else if (outcome == WarOutcome::DefendersWon && !capital_fell && war.goal != WarGoal::Independence &&
+                   war.goal != WarGoal::Succession) {
             war.terms = give_back(war.defenders, war.attackers) ? PeaceTerms::LandReturned : PeaceTerms::LandKept;
         }
         // Allies who saw it through are trusted the more.
@@ -915,7 +919,24 @@ void WarSystem::step(StepContext& ctx) {
             }
             s.polities[loser].shock += kShockDefeat;
             s.polities[winner].shock = std::max(0.0, s.polities[winner].shock - kVictoryRelief);
-            if (war.goal == WarGoal::Independence) {
+            if (war.goal == WarGoal::Succession) {
+                // The victor rules the whole realm: the claimant from the old
+                // capital, or the crown takes back the claimant's land.
+                if (winner == lead_a) {
+                    const CellId seat = s.polities[lead_d].capital;
+                    annex(lead_d, lead_a);
+                    s.polities[lead_a].capital = seat;
+                } else {
+                    annex(lead_a, lead_d);
+                }
+                s.polities[winner].infamy = std::max(0.0, s.polities[winner].infamy - Diplomacy::kInfamyRealm);
+                s.polities[loser].fate = PolityFate::Absorbed;
+                s.polities[lead_a].pretender_to = 0;
+                for (Polity& q : s.polities) {  // the loser's subjects serve the victor
+                    if (q.overlord == loser && q.ended == kNever) q.overlord = winner;
+                }
+                war.terms = PeaceTerms::Throne;
+            } else if (war.goal == WarGoal::Independence) {
                 if (winner == lead_a) {
                     Polity& rebel = s.polities[lead_a];
                     if (rebel.overlord == lead_d) rebel.overlord = 0, rebel.bond = Bond::None;

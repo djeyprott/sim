@@ -292,6 +292,15 @@ public:
     // disputed succession: a claimant holds the capital); otherwise the old
     // capital is one claimant among the rest, with its own reach.
     static constexpr double kHeirHolds = 0.5;
+    // A disputed succession in a free realm of at least kPretenderMinCells
+    // (level-5) cells is fought out instead of breaking it up: the
+    // claimant's party takes the provinces below kStayLoyal (at least the
+    // least loyal one; without provinces, the half of the realm farthest from
+    // the capital) and fights a war of succession (WarGoal::Succession). The
+    // victor rules the whole realm (a claimant from the old capital); a war
+    // that ends in neither's favour leaves the realm divided, the two rival
+    // heirs (diplomacy.hpp) with cause for war on each other.
+    static constexpr std::size_t kPretenderMinCells = 2;
     // Peasant uprisings, in states. Each province, and the crown's own land,
     // has an unrest that moves kUnrestRate of the way a year toward
     //   kUnrestHunger x (share of its people beyond what its land feeds) +

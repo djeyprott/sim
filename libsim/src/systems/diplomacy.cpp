@@ -72,6 +72,13 @@ std::uint32_t claims_on(const SimState& s, std::uint32_t by, std::uint32_t of) {
 
 bool restoration(const SimState& s, std::uint32_t a, std::uint32_t b) {
     if (a == 0 || b == 0 || a >= s.polities.size() || b >= s.polities.size()) return false;
+    // A divided realm: a claimant's party and the crown it claims.
+    const Polity& x = s.polities[a];
+    const Polity& y = s.polities[b];
+    if ((x.pretender_to == b && static_cast<double>(s.tick - x.founded) < Diplomacy::kRestoreYears * kTicksPerYear) ||
+        (y.pretender_to == a && static_cast<double>(s.tick - y.founded) < Diplomacy::kRestoreYears * kTicksPerYear)) {
+        return true;
+    }
     const std::uint32_t pa = s.polities[a].parent, pb = s.polities[b].parent;
     if (pa == 0 || pa != pb || pa >= s.polities.size()) return false;
     const Tick fell = s.polities[pa].ended;

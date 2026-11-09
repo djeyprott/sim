@@ -307,6 +307,7 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(p.culture);
         ar.u32(p.language);
         ar.u32(p.parent);
+        ar.u32(p.pretender_to);
         flag(ar, p.nomadic);
         ar.u32(p.overlord);
         u8(ar, p.bond);

@@ -331,8 +331,10 @@ TEST(polity_provinces_governors_and_revolts) {
             const Polity& rebel = s.polities[pv.became];
             CHECK_EQ(rebel.parent, pv.polity);
             // Founded by its governor, or by the leader of a peasant uprising.
+            // (or a claimant to the throne, whose party took the province).
             CHECK(rebel.founder == pv.governor ||
-                  (rebel.founder != 0 && (s.figures[rebel.founder].roles & kRoleRebel)));
+                  (rebel.founder != 0 && (s.figures[rebel.founder].roles & kRoleRebel)) || rebel.pretender_to == pv.polity ||
+                  (rebel.founder != 0 && (s.figures[rebel.founder].roles & kRoleClaimant)));
             // The governor reigned, unless he died before his first year.
             if (rebel.ruler != 0 && rebel.founder != 0 && s.rulers[rebel.ruler].figure == rebel.founder) {
                 CHECK(s.figures[rebel.founder].roles & kRoleRuler);
