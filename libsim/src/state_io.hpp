@@ -449,6 +449,11 @@ void serialize(Ar& ar, SimState& s) {
         ar.i64(r.withheld);
         ar.u32(r.withheld_by);
     });
+    vec(ar, s.settling, [&](SimState::Settling& x) {
+        ar.u32(x.from);
+        ar.u32(x.to);
+        ar.u32(x.polity);
+    });
     vec(ar, s.claims, [&](Claim& c) {
         ar.u32(c.cell);
         ar.u32(c.by);

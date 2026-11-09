@@ -207,6 +207,11 @@ public:
     static constexpr double kWanderRoam = 0.006;
     static constexpr double kWanderRoamMobility = 0.4;
     static constexpr double kWanderThreatSpan = 6.0;  // to the rulers of land the newcomers take
+    // Herders follow their horde: when a nomad confederation takes land in
+    // war, next year kSettleShare x mobility of the largest group of its own
+    // people in the cell it struck from move into it (filling it to at most
+    // (kTrekRoom + kTrekRoomMobile x mobility) x what it feeds).
+    static constexpr double kSettleShare = 0.3;
     // Folk migrations of at least this many people are recorded.
     static constexpr std::int64_t kFolkRecordPeople = 1000;
 };

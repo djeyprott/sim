@@ -36,6 +36,7 @@ constexpr std::uint32_t kColonizeEntity = 0x40000000u;
 constexpr std::uint32_t kExodusEntity = 0x50000000u;
 constexpr std::uint32_t kWanderEntity = 0x60000000u;
 constexpr std::uint32_t kTrekEntity = 0x70000000u;
+constexpr std::uint32_t kSettleEntity = 0x80000000u;
 
 double crowding_of(const SimState& s, CellId c) {
     const double k = s.env.capacity[c];
@@ -479,6 +480,29 @@ void MigrationSystem::step(StepContext& ctx) {
         s.last_arrival_tick[band.cell] = ctx.tick;
         return id;
     };
+    // ---- Herders follow their horde into the land it took in war.
+    for (const SimState::Settling& st : s.settling) {
+        if (st.polity == 0 || st.polity >= s.polities.size() || st.from >= n || st.to >= n) continue;
+        const Polity& horde = s.polities[st.polity];
+        if (horde.ended != kNever || s.polity_of.size() != n || s.polity_of[st.to] != st.polity) continue;
+        const std::uint32_t root = s.cultures[horde.culture].root;
+        Cohort* herd = nullptr;
+        for (auto i = s.cohort_begin[st.from]; i < s.cohort_begin[st.from + 1]; ++i) {
+            Cohort& co = s.cohorts[i];
+            if (s.cultures[co.culture].root == root && co.total() > 0 && (herd == nullptr || co.total() > herd->total())) herd = &co;
+        }
+        if (herd == nullptr) continue;
+        const double mob = i_mobility < kMaxTraits ? herd->traits[i_mobility] : 0.5;
+        const double room = (kTrekRoom + kTrekRoomMobile * mob) * s.env.capacity[st.to] - static_cast<double>(s.cell_population[st.to]);
+        if (room < 1.0) continue;
+        RngStream rng = ctx.rng(Stream::Migration, kSettleEntity | st.to);
+        Cohort band = split_off(*herd, st.to, std::min(kSettleShare * mob, room / static_cast<double>(herd->total())), rng);
+        if (band.total() <= 0) continue;
+        arrivals.push_back(band);
+        moved += band.total();
+        record(st.from, band, MigrationCause::Conquest, 0);
+    }
+    s.settling.clear();
     for (CellId c = 0; c < n; ++c) {
         if (s.cell_population[c] < kFolkMinPeople) continue;
         const std::uint8_t strife = s.strife.size() == n ? s.strife[c] : 0;

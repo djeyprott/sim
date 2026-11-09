@@ -527,6 +527,7 @@ enum class MigrationCause : std::uint8_t {
     Raid = 2,       // nomads raided them
     Displaced = 3,  // a stronger people arrived and pushed them out (a chain reaction)
     Wandering = 4,  // a tribe or confederation moved as a whole, rulers and all
+    Conquest = 5,   // herders following their horde into land it took in war
 };
 
 // A folk migration: a people moving in a body to land further off.
@@ -796,6 +797,13 @@ struct SimState {
     std::vector<Army> armies;           // index = id; armies[0] is none
     std::vector<Relation> relations;    // sorted by (a, b)
     std::vector<Claim> claims;
+    // Land a nomad confederation took in war this year, which its herders
+    // move into next year (MigrationSystem): from the cell it struck from.
+    struct Settling {
+        CellId from = kInvalidCell, to = kInvalidCell;
+        std::uint32_t polity = 0;
+    };
+    std::vector<Settling> settling;
     std::vector<Battle> battles;
 
     // Religions (entry 0 a placeholder) and each cell's faith (0 = none yet).
