@@ -285,7 +285,7 @@ public:
     static constexpr double kAutonomyBelow = 0.45;
     static constexpr double kAutonomousLevy = 0.3;
     static constexpr double kRecallStability = 0.6;
-    static constexpr double kRecall = 0.1;
+    static constexpr double kRecall = 0.0;
     static constexpr double kDefiant = 0.7;
     // When a state breaks up, its heir at the old capital keeps the core (or,
     // with provinces, the loyal ones) with chance kHeirHolds (always after a

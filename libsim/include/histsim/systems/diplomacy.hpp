@@ -148,7 +148,7 @@ struct Diplomacy {
     static constexpr double kInfamous = 0.3;
     // Restoration.
     static constexpr double kRestoreYears = 200.0;
-    static constexpr double kRestoreInfamy = 0.25;
+    static constexpr double kRestoreInfamy = 1.0;
     static constexpr double kRivalHeirs = 0.2;
 };
 
