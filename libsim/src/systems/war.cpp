@@ -181,10 +181,15 @@ Armies raise_armies(const World& w, const SimState& s, const RuleField* given = 
         const double control = polity_control(rule.km(w, s, id, c), reach[id]);
         // A province gone its own way in all but name sends few soldiers.
         const std::uint32_t v = s.province_of.size() == w.cell_count() ? s.province_of[c] : 0;
-        const double sent = v != 0 && v < s.provinces.size() && s.provinces[v].polity == id && s.provinces[v].ended == kNever &&
-                                    s.provinces[v].loyalty >= 0.0 && s.provinces[v].loyalty < PolitySystem::kAutonomyBelow
-                                ? PolitySystem::kAutonomousLevy
-                                : 1.0;
+        double sent = 1.0;
+        if (v != 0 && v < s.provinces.size() && s.provinces[v].polity == id && s.provinces[v].ended == kNever) {
+            const Province& pv = s.provinces[v];
+            if (pv.loyalty >= 0.0 && pv.loyalty < PolitySystem::kAutonomyBelow) sent = PolitySystem::kAutonomousLevy;
+            // The army law: a royal army raises them whatever the governor
+            // keeps back; levies come through him; private armies are his.
+            const std::uint8_t law = s.polities[id].laws[Laws::Army];
+            if (law >= 1) sent *= (1.0 - pv.held_back) * (law == 2 ? Laws::kPrivateLevy : 1.0);
+        }
         a.levy[id] += sent * static_cast<double>(s.cell_population[c]) * control * WarSystem::kLevy *
                       (0.5 + cell_trait(s, c, i_warfare)) * (p.nomadic ? WarSystem::kNomadLevy : 1.0);
     }

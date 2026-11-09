@@ -1477,7 +1477,9 @@ std::vector<Row> describe_cell_rows(const Simulation& sim, CellId c,
                     who = ", governor " + g.name + fmt(" (ambition %.0f%%)", 100.0 * g.ambition);
                 }
                 f.push_back({"Province", pv.name + who + fmt("; loyalty %.0f%%", 100.0 * pv.loyalty) +
-                                             (pv.loyalty < PolitySystem::kRevoltBelow ? " (may break away)" : ""),
+                                             (pv.loyalty < PolitySystem::kRevoltBelow ? " (may break away)" : "") +
+                                             (pv.held_back >= 0.01 ? fmt("; keeps %.0f%% of its grain and soldiers back", 100.0 * pv.held_back)
+                                                                   : std::string()),
                              gov});
                 f.push_back({"Unrest", fmt("%.0f%%", 100.0 * pv.unrest) + (pv.unrest > PolitySystem::kRiseAbove ? " (the people may rise)" : "")});
             } else {
@@ -1489,6 +1491,15 @@ std::vector<Row> describe_cell_rows(const Simulation& sim, CellId c,
                     f.push_back({"Unrest", fmt("%.0f%%", 100.0 * u) + (u > PolitySystem::kRiseAbove ? " (the people may rise)" : "")});
                 }
             }
+        }
+        {
+            std::string laws;
+            for (std::size_t k = 0; k < 4; ++k) {
+                const auto law = static_cast<Laws::Law>(k);
+                laws += (laws.empty() ? "" : "; ") + std::string(law_name(law)) + " " +
+                        (law == Laws::Succession ? "by " : "") + law_level_name(law, pol.laws[k]);
+            }
+            f.push_back({"Laws", laws});
         }
         if (pol.institutions != 0) {
             std::string list;

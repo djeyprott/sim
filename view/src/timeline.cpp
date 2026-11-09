@@ -63,6 +63,9 @@ const char* event_kind(EventType type) {
         case EventType::TributeWithheld:
         case EventType::Abandoned:
         case EventType::Betrayal:
+        case EventType::LawChanged:
+        case EventType::GovernorsRise:
+        case EventType::RealmDivided:
         case EventType::Absorbed:
         case EventType::ConquestDynasty:
         case EventType::CityFounded:
@@ -214,6 +217,20 @@ std::string describe_event(const Simulation& sim, const Event& e) {
         case EventType::TributeWithheld:
             return polity_name(s, static_cast<std::int64_t>(static_cast<std::uint64_t>(v) >> 32)) + " withholds its tribute from " +
                    polity_name(s, static_cast<std::int64_t>(static_cast<std::uint64_t>(v) & 0xffffffffu));
+        case EventType::LawChanged: {
+            const auto law = static_cast<Laws::Law>((static_cast<std::uint64_t>(v) >> 8) & 0xffu);
+            const auto level = static_cast<std::uint8_t>(static_cast<std::uint64_t>(v) & 0xffu);
+            return polity_name(s, static_cast<std::int64_t>(static_cast<std::uint64_t>(v) >> 16)) + ": " + law_name(law) +
+                   " now " + (law == Laws::Succession ? "by " : "") + law_level_name(law, level);
+        }
+        case EventType::GovernorsRise:
+            return index < s.polities.size() ? "Governors of " + polity_name(s, s.polities[index].parent) +
+                                                   " rise together as " + s.polities[index].name
+                                             : "";
+        case EventType::RealmDivided:
+            return index < s.polities.size() ? polity_name(s, s.polities[index].parent) + " is shared out among the sons: " +
+                                                   s.polities[index].name + " goes to a younger son"
+                                             : "";
         case EventType::Betrayal:
             return polity_name(s, static_cast<std::int64_t>(static_cast<std::uint64_t>(v) >> 32)) +
                    " makes a separate peace, abandoning " +
@@ -399,6 +416,9 @@ bool event_involves(const SimState& s, const Event& e, std::uint32_t p) {
         case EventType::Abandoned:
         case EventType::Betrayal:
             return static_cast<std::uint64_t>(v) >> 32 == p || (static_cast<std::uint64_t>(v) & 0xffffffffu) == p;
+        case EventType::LawChanged: return static_cast<std::uint64_t>(v) >> 16 == p;
+        case EventType::GovernorsRise:
+        case EventType::RealmDivided: return v == p || (index < s.polities.size() && s.polities[index].parent == p);
         case EventType::WarBegan:
         case EventType::WarEnded:
             if (index < s.wars.size()) {

@@ -326,6 +326,8 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(p.ruler);
         ar.u8(p.institutions);
         flag(ar, p.contested);
+        for (std::uint8_t& l : p.laws) ar.u8(l);
+        flag(ar, p.divide);
         ar.u32(p.trek_to);
         ar.u32(p.trek_record);
         ar.u32(p.founder);
@@ -420,6 +422,7 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(v.governor);
         ar.i64(v.governor_since);
         ar.f64(v.loyalty);
+        ar.f64(v.held_back);
         ar.f64(v.unrest);
         ar.i64(v.founded);
         ar.i64(v.ended);

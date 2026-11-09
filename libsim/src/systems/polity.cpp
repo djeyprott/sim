@@ -37,6 +37,7 @@ constexpr std::uint32_t kGeneralEntity = 0x04000000u;   // Stream::Figures
 constexpr std::uint32_t kPriestEntity = 0x02000000u;    // Stream::Figures
 constexpr std::uint32_t kCoupEntity = 0xD0000000u;
 constexpr std::uint32_t kRecallEntity = 0xE0000000u;
+constexpr std::uint32_t kLawEntity = 0xF0000000u;
 
 std::size_t trait_index(const Content& c, const char* id) {
     for (std::size_t t = 0; t < c.traits.size(); ++t) {
@@ -390,6 +391,8 @@ void PolitySystem::step(StepContext& ctx) {
         if (parent != 0 && parent < s.polities.size()) {
             p.institutions = s.polities[parent].institutions &
                              static_cast<std::uint8_t>(~(1u << static_cast<int>(Institution::Army)));
+            p.laws = s.polities[parent].laws;
+            if (p.laws[Laws::Army] == 0) p.laws[Laws::Army] = 1;  // no royal army without the army
         }
         // Named after its capital city if it has one, else coined.
         const std::uint32_t city = s.city_of[capital];
@@ -750,6 +753,41 @@ void PolitySystem::step(StepContext& ctx) {
             const std::uint32_t q = s.polity_of[c];
             if (q == 0 || q >= np || !provincial[q]) s.province_of[c] = 0;
         }
+        // A partible inheritance: the provinces farther from the capital go
+        // to a younger son, as a realm of his own.
+        for (std::size_t id = 1; id < np; ++id) {
+            Polity& pol = s.polities[id];
+            if (!pol.divide) continue;
+            pol.divide = false;
+            if (!provincial[id] || pol.ended != kNever) continue;
+            std::vector<std::uint32_t> live;
+            for (std::uint32_t v : seats_of[id]) {
+                if (s.provinces[v].ended == kNever) live.push_back(v);
+            }
+            if (live.size() < 2) continue;
+            const CellId capital = pol.capital;
+            std::stable_sort(live.begin(), live.end(), [&](std::uint32_t a, std::uint32_t b) {
+                return w.grid.distance_km(capital, s.provinces[a].seat) > w.grid.distance_km(capital, s.provinces[b].seat);
+            });
+            live.resize(live.size() / 2);
+            const std::uint32_t realm = static_cast<std::uint32_t>(id);
+            const std::uint32_t son = found(s.provinces[live.front()].seat, realm, pol.nomadic);
+            s.polities[son].pretender_to = realm;  // the brothers' realms are rival heirs
+            s.polities[son].stability = s.polities[id].stability;
+            for (CellId c : held[id]) {
+                const std::uint32_t v = s.province_of[c];
+                if (s.polity_of[c] == realm && v != 0 && std::find(live.begin(), live.end(), v) != live.end()) {
+                    s.polity_of[c] = son;
+                    s.province_of[c] = 0;
+                }
+            }
+            for (std::uint32_t v : live) {
+                s.provinces[v].ended = ctx.tick;
+                s.provinces[v].became = son;
+                if (s.provinces[v].loyalty < 0.0) s.provinces[v].loyalty = kStayLoyal;  // new this year: never governed
+            }
+            s.events.push_back({ctx.tick, EventType::RealmDivided, s.polities[son].capital, static_cast<std::int64_t>(son)});
+        }
         // Governors, loyalty and revolts. How the war each crown leads is
         // going for it (its war score against it, 0-1).
         std::vector<double> losing(np, 0.0), crown_at_war(np, 0.0);
@@ -785,10 +823,20 @@ void PolitySystem::step(StepContext& ctx) {
                         }
                     }
                 }
+                const std::uint8_t tenure = crown.laws[Laws::Tenure];
+                // Appointed governors serve a term; then another is sent.
+                if (tenure == 0 && pv.governor != 0 && ctx.tick - pv.governor_since >= Laws::kTermYears * kTicksPerYear) {
+                    pv.governor = 0;
+                    pv.held_back = 0.0;
+                }
                 if (pv.governor == 0 || !figure_alive(s.figures[pv.governor], ctx.tick)) {
+                    const bool heir = tenure == 2 && pv.governor != 0;  // the office passes to his heir
                     RngStream fr = ctx.rng(Stream::Figures, kGovernorEntity | v);
-                    pv.governor = record_person(s, content, pv.seat, ctx.tick, 30, 55, kRoleGovernor, fr);
-                    pv.governor_since = ctx.tick;
+                    pv.governor = record_person(s, content, pv.seat, ctx.tick, heir ? 20 : 30, 55, kRoleGovernor, fr);
+                    if (!heir) {
+                        pv.governor_since = ctx.tick;
+                        pv.held_back = 0.0;
+                    }
                     s.figures[pv.governor].polity = static_cast<std::uint32_t>(id);
                 }
                 if (new_reign && pv.loyalty >= 0.0) pv.loyalty = std::max(0.0, pv.loyalty - kNewReignLoyalty);
@@ -803,8 +851,139 @@ void PolitySystem::step(StepContext& ctx) {
                                       kLoyaltyAbility * ((king != nullptr ? king->ability : 0.5) - 0.5) -
                                       kLoyaltyDefeat * std::clamp(losing[id], 0.0, 1.0) -
                                       kLoyaltyTenure * std::min(1.0, static_cast<double>(ctx.tick - pv.governor_since) /
-                                                                         (kTenureYears * kTicksPerYear));
+                                                                         (kTenureYears * kTicksPerYear)) +
+                                      (tenure == 0 ? Laws::kAppointedLoyalty : tenure == 2 ? -Laws::kHereditaryLoyalty : 0.0);
                 pv.loyalty = std::clamp(pv.loyalty < 0.0 ? target : pv.loyalty + kLoyaltyRate * (target - pv.loyalty), 0.0, 1.0);
+                // What the governor keeps back for himself.
+                const double hold = std::clamp(gov.ambition - pv.loyalty, 0.0, Laws::kHoldCap[std::min<std::uint8_t>(crown.laws[Laws::Taxes], 2)]);
+                pv.held_back += Laws::kHoldRate * (hold - pv.held_back);
+            }
+        }
+        // ---- Laws: the crown reforms, concedes, and faces its governors' pacts.
+        std::size_t writing_t = content.techniques.size(), scribes_t = content.techniques.size();
+        for (std::size_t k = 0; k < content.techniques.size(); ++k) {
+            if (content.techniques[k].id == "writing") writing_t = k;
+            if (content.techniques[k].id == "bureaucracy") scribes_t = k;
+        }
+        for (std::size_t id = 1; id < np; ++id) {
+            Polity& crown = s.polities[id];
+            if (crown.ended != kNever) continue;
+            const std::uint64_t known = techniques_in(s, crown.capital);
+            // Can a law stand at `level`?
+            auto allowed = [&](std::size_t law, std::uint8_t level) {
+                if (law == Laws::Tenure && level == 0) return writing_t < 64 && ((known >> writing_t) & 1u) != 0;
+                if (law == Laws::Taxes && level == 0) return scribes_t < 64 && ((known >> scribes_t) & 1u) != 0;
+                if (law == Laws::Army && level == 0) return has_institution(crown.institutions, Institution::Army);
+                if (law == Laws::Succession && level == 1) return has_institution(crown.institutions, Institution::Council);
+                return true;
+            };
+            auto change = [&](std::size_t law, std::uint8_t level) {
+                crown.laws[law] = level;
+                s.events.push_back({ctx.tick, EventType::LawChanged, crown.capital,
+                                    static_cast<std::int64_t>((static_cast<std::uint64_t>(id) << 16) | (law << 8) | level)});
+            };
+            // A law whose prerequisite is gone falls back (noted only in states).
+            const bool state = polity_has_writing(w, s, static_cast<std::uint32_t>(id));
+            for (std::size_t law = 0; law < 4; ++law) {
+                if (allowed(law, crown.laws[law])) continue;
+                const auto to = static_cast<std::uint8_t>(law == Laws::Succession ? 0 : crown.laws[law] + 1);
+                if (state) {
+                    change(law, to);
+                } else {
+                    crown.laws[law] = to;
+                }
+            }
+            if (!provincial[id]) continue;
+            // One step toward the centre or away from it, if any law can move.
+            auto centralize = [&]() {
+                for (std::size_t law : {std::size_t{Laws::Taxes}, std::size_t{Laws::Army}, std::size_t{Laws::Tenure}, std::size_t{Laws::Succession}}) {
+                    const std::uint8_t now = crown.laws[law];
+                    if (now == 0) continue;
+                    const std::uint8_t to = law == Laws::Succession ? 0 : static_cast<std::uint8_t>(now - 1);
+                    if (!allowed(law, to)) continue;
+                    change(law, to);
+                    return true;
+                }
+                return false;
+            };
+            auto decentralize = [&]() {
+                for (std::size_t law : {std::size_t{Laws::Tenure}, std::size_t{Laws::Taxes}, std::size_t{Laws::Army}, std::size_t{Laws::Succession}}) {
+                    const std::uint8_t now = crown.laws[law];
+                    if (now == 2) continue;
+                    std::uint8_t to = static_cast<std::uint8_t>(now + 1);
+                    if (!allowed(law, to)) to = 2;  // no council to elect: the sons share it out
+                    change(law, to);
+                    return true;
+                }
+                return false;
+            };
+            auto sway = [&](double by, const std::vector<std::uint32_t>& who) {
+                for (std::uint32_t v : who) {
+                    Province& pv = s.provinces[v];
+                    if (pv.ended == kNever && pv.loyalty >= 0.0) pv.loyalty = std::clamp(pv.loyalty + by, 0.0, 1.0);
+                }
+            };
+            RngStream rng = ctx.rng(Stream::Polity, kLawEntity | static_cast<std::uint32_t>(id));
+            const Ruler* king = crown.ruler != 0 && crown.ruler < s.rulers.size() ? &s.rulers[crown.ruler] : nullptr;
+            const bool child = king != nullptr && ruler_age(*king, ctx.tick) < RulerSystem::kAdultAge;
+            // The governors' pact, against the rest of the realm.
+            std::vector<double> people_of(s.provinces.size(), 0.0);
+            double crown_people = 0.0, pact_people = 0.0;
+            for (CellId c : held[id]) {
+                if (s.polity_of[c] != id) continue;
+                const std::uint32_t v = s.province_of[c];
+                if (v != 0 && v < people_of.size()) people_of[v] += static_cast<double>(s.cell_population[c]);
+            }
+            std::vector<std::uint32_t> pact;
+            for (CellId c : held[id]) {
+                if (s.polity_of[c] == id) crown_people += static_cast<double>(s.cell_population[c]);
+            }
+            for (std::uint32_t v : seats_of[id]) {
+                const Province& pv = s.provinces[v];
+                if (pv.ended != kNever || pv.governor == 0 || pv.loyalty < 0.0) continue;
+                if (pv.loyalty < Laws::kPactLoyalty && s.figures[pv.governor].ambition >= Laws::kPactAmbition) {
+                    pact.push_back(v);
+                    pact_people += people_of[v] * (0.5 + pv.held_back);
+                    crown_people -= people_of[v];
+                }
+            }
+            const double draw = rng.uniform();
+            if (pact.size() >= 2 && pact_people >= Laws::kPactRatio * crown_people && draw < Laws::kPactAct) {
+                if (pact_people >= crown_people || rng.uniform() < Laws::kYield) {
+                    if (decentralize()) sway(Laws::kConcessionLoyalty, pact);
+                } else {
+                    // Refused, they rise together under the boldest of them.
+                    std::uint32_t lead = pact.front();
+                    for (std::uint32_t v : pact) {
+                        if (s.figures[s.provinces[v].governor].ambition > s.figures[s.provinces[lead].governor].ambition) lead = v;
+                    }
+                    const std::uint32_t league = found(s.provinces[lead].seat, static_cast<std::uint32_t>(id), crown.nomadic);
+                    s.polities[league].founder = s.provinces[lead].governor;
+                    for (CellId c : held[id]) {
+                        const std::uint32_t v = s.province_of[c];
+                        if (s.polity_of[c] == id && std::find(pact.begin(), pact.end(), v) != pact.end()) {
+                            s.polity_of[c] = league;
+                            s.province_of[c] = 0;
+                        }
+                    }
+                    for (std::uint32_t v : pact) {
+                        s.provinces[v].ended = ctx.tick;
+                        s.provinces[v].became = league;
+                    }
+                    s.events.push_back({ctx.tick, EventType::GovernorsRise, s.provinces[lead].seat, static_cast<std::int64_t>(league)});
+                    start_war(w, s, ctx.tick, league, static_cast<std::uint32_t>(id), WarGoal::Independence);
+                    s.polities[id].stability = std::max(0.0, s.polities[id].stability - kRevoltShock);
+                }
+                continue;
+            }
+            // A weak crown concedes; a strong one at peace reforms.
+            const double weakness = std::max({child ? 1.0 : 0.0, std::clamp(losing[id], 0.0, 1.0),
+                                              std::clamp((Laws::kWeakStability - crown.stability) / Laws::kWeakStability, 0.0, 1.0)});
+            if (weakness > 0.0 && draw < Laws::kPactAct + Laws::kConcede * weakness) {
+                if (decentralize()) sway(Laws::kConcessionLoyalty, seats_of[id]);
+            } else if (king != nullptr && !child && crown_at_war[id] == 0.0 && crown.stability >= Laws::kReformStability &&
+                       rng.uniform() < Laws::kReform * king->ability * crown.stability) {
+                if (centralize()) sway(-Laws::kReformLoyalty, seats_of[id]);
             }
         }
         for (std::size_t id = 1; id < np; ++id) {
@@ -1427,6 +1606,26 @@ void PolitySystem::step(StepContext& ctx) {
 
 // ------------------------------------------------------------------ rulers
 
+const char* law_name(Laws::Law law) {
+    switch (law) {
+        case Laws::Tenure: return "governors";
+        case Laws::Taxes: return "taxes";
+        case Laws::Army: return "army";
+        case Laws::Succession: return "succession";
+    }
+    return "";
+}
+
+const char* law_level_name(Laws::Law law, std::uint8_t level) {
+    static constexpr const char* names[4][3] = {
+        {"appointed for a term", "for life", "hereditary"},
+        {"collected by the crown", "collected and sent on by governors", "kept by governors"},
+        {"a royal army", "governors' levies", "governors' private armies"},
+        {"an heir", "elected by the council", "shared among the sons"},
+    };
+    return law < 4 && level < 3 ? names[law][level] : "";
+}
+
 const char* institution_name(Institution i) {
     switch (i) {
         case Institution::Temple: return "temple priesthood";
@@ -1728,13 +1927,18 @@ void RulerSystem::step(StepContext& ctx) {
         const std::uint32_t old_id = old.id;
         if (old_figure != 0) s.figures[old_figure].died = tick;
         RngStream fr = ctx.rng(Stream::Figures, old_id | 0x80000000u);
-        const int heir_age = std::max(0, age - 20 - static_cast<int>(rng.uniform() * 15.0));
+        int heir_age = std::max(0, age - 20 - static_cast<int>(rng.uniform() * 15.0));
+        // An elected ruler is a grown man of the house.
+        if (pol.laws[Laws::Succession] == 1) heir_age = std::max(heir_age, kAdultAge + 4);
         const bool child = heir_age < kAdultAge;
         // Priests lend the heir legitimacy; a council sees the throne passed
         // in good order.
         const double settled = (has_institution(pol.institutions, Institution::Temple) ? Institutions::kTempleDispute : 1.0) *
                                (has_institution(pol.institutions, Institution::Council) ? Institutions::kCouncilDispute : 1.0);
-        const double disputed = std::min(1.0, kDispute * (1.5 - pol.stability) * (child ? 2.0 : 1.0) * settled);
+        const double disputed = std::min(1.0, kDispute * (1.5 - pol.stability) * (child ? 2.0 : 1.0) * settled *
+                                                  (pol.laws[Laws::Succession] == 1 ? Laws::kElectiveDispute : 1.0));
+        // A partible inheritance: the realm may be shared out among the sons.
+        if (pol.laws[Laws::Succession] == 2 && rng.uniform() < Laws::kPartition) pol.divide = true;
         if (rng.uniform() < disputed) {
             // Disputed. The claimant: the heir's most ambitious grown sibling,
             // else a kinsman. The more ambitious the claimant, the likelier
