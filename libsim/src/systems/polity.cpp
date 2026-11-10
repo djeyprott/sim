@@ -114,6 +114,30 @@ void hinterland_people(const World& w, const SimState& s, std::vector<double>& p
     }, 256);
 }
 
+namespace {
+
+// Per km^2 of land over each cell's hinterland (the cell itself at level 5):
+// sum of value / sum of area. Towns and states answer to how crowded a
+// region about a level-5 cell in size is, so a finer grid's small fertile
+// cells do not raise them sooner than the same land would at level 5.
+void hinterland_per_km2(const World& w, const std::vector<double>& value, std::vector<double>& out) {
+    const std::size_t n = w.cell_count();
+    out.assign(n, 0.0);
+    parallel_for(n, [&](std::size_t c_begin, std::size_t c_end) {
+        for (std::size_t c = c_begin; c < c_end; ++c) {
+            double v = 0.0, a = 0.0;
+            w.for_hinterland(static_cast<CellId>(c), [&](CellId h) {
+                if (!w.is_land[h]) return;
+                v += value[h];
+                a += w.grid.area_km2(h);
+            });
+            out[c] = a > 0.0 ? v / a : 0.0;
+        }
+    }, 256);
+}
+
+}  // namespace
+
 double polity_reach_km(const World& w, const SimState& s, CellId capital) {
     const TechEffects e = technique_effects(w, capital, techniques_in(s, capital));
     return PolitySystem::kBaseReachKm * (1.0 + e.administration) * (1.0 + 0.3 * e.contact);
@@ -323,14 +347,21 @@ void SettlementSystem::step(StepContext& ctx) {
     SimState& s = ctx.state;
     const std::size_t n = w.cell_count();
     ensure(s, n);
+    // People fed per km^2 by farmland, and by food brought in last year,
+    // over the hinterland.
+    std::vector<double> food(n, 0.0), fed_per_km2;
+    for (CellId c = 0; c < n; ++c) {
+        if (s.cell_population[c] == 0) continue;
+        const double farmed = s.env.farm_capacity.empty() ? 0.0 : s.env.farm_capacity[c] * s.env.farming[c];
+        const double imported = s.food_import.empty() ? 0.0 : std::max(0.0, s.food_import[c]);
+        food[c] = farmed + imported;
+    }
+    hinterland_per_km2(w, food, fed_per_km2);
     for (CellId c = 0; c < n; ++c) {
         if (s.cell_population[c] == 0) {
             s.urban[c] = 0.0;
         } else {
-            // People fed per km^2 by farmland, and by food brought in last year.
-            const double farmed = s.env.farm_capacity.empty() ? 0.0 : s.env.farm_capacity[c] * s.env.farming[c];
-            const double imported = s.food_import.empty() ? 0.0 : std::max(0.0, s.food_import[c]);
-            const double fed = (farmed + imported) / w.grid.area_km2(c);
+            const double fed = fed_per_km2[c];
             double target = std::clamp(kPerSurplus * (fed - kThreshold), 0.0, kMax);
             const std::uint32_t p = s.polity_of[c];
             if (target > 0.0 && p != 0 && s.polities[p].capital == c) target += kCapital;
@@ -1831,10 +1862,14 @@ void PolitySystem::step(StepContext& ctx) {
             }
         }
         std::vector<CellId> in_reach;
+        // People per km^2 over each hinterland.
+        std::vector<double> people(n), crowding;
+        for (CellId c = 0; c < n; ++c) people[c] = static_cast<double>(s.cell_population[c]);
+        hinterland_per_km2(w, people, crowding);
         for (CellId c = 0; c < n; ++c) {
             if (s.polity_of[c] != 0 || s.cell_population[c] == 0) continue;
             const double farming = s.env.farming.empty() ? 0.0 : s.env.farming[c];
-            const double density = static_cast<double>(s.cell_population[c]) / w.grid.area_km2(c);
+            const double density = crowding[c];
             const double hierarchy = cell_trait(s, c, i_hierarchy);
             RngStream rng = ctx.rng(Stream::Polity, kFormationEntity | c);
             if (herders_at(c)) {
