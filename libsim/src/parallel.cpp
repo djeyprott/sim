@@ -48,7 +48,9 @@ public:
             return;
         }
         start(threads - 1);
-        const std::size_t chunks_wanted = static_cast<std::size_t>(threads) * 4;
+        // Many small chunks: people crowd into a few regions, so equal ranges of
+        // cells are far from equal work.
+        const std::size_t chunks_wanted = static_cast<std::size_t>(threads) * 64;
         chunk_ = std::max(grain, (n + chunks_wanted - 1) / chunks_wanted);
         n_ = n;
         body_ = &body;

@@ -98,13 +98,20 @@ void hinterland_people(const World& w, const SimState& s, std::vector<double>& p
     people.assign(n, 0.0);
     town.assign(n, 0.0);
     const bool towns = s.urban.size() == n;
-    for (CellId c = 0; c < n; ++c) {
-        w.for_hinterland(c, [&](CellId h) {
-            const double pop = static_cast<double>(s.cell_population[h]);
-            people[c] += pop;
-            if (towns) town[c] += s.urban[h] * pop;
-        });
-    }
+    // Each cell sums its own hinterland in a fixed order: the same with any
+    // number of threads.
+    parallel_for(n, [&](std::size_t c_begin, std::size_t c_end) {
+        for (std::size_t c = c_begin; c < c_end; ++c) {
+            double p = 0.0, t = 0.0;
+            w.for_hinterland(static_cast<CellId>(c), [&](CellId h) {
+                const double pop = static_cast<double>(s.cell_population[h]);
+                p += pop;
+                if (towns) t += s.urban[h] * pop;
+            });
+            people[c] = p;
+            town[c] = t;
+        }
+    }, 256);
 }
 
 double polity_reach_km(const World& w, const SimState& s, CellId capital) {
@@ -337,6 +344,7 @@ void SettlementSystem::step(StepContext& ctx) {
     for (CellId c = 0; c < n; ++c) {
         const double town = around_town[c];
         std::uint32_t& city = s.city_of[c];
+        if (city == 0 && town < kCityPeople) continue;  // no city, and none to found
         bool centre = true, taken = false;
         if (w.hinterland_steps() > 0) {
             w.for_hinterland(c, [&](CellId h) {
