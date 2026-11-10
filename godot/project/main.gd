@@ -279,7 +279,6 @@ func _update_charts() -> void:
 	var marks: PackedInt64Array = world.get_event_years("intervention")
 	marks.append_array(world.get_event_years("domestication"))
 	population_chart.markers = marks
-	climate_chart.markers = world.get_event_years("eruption")
 	climate_chart.spans = world.get_bond_spans()
 	climate_chart.set_data(h["year"], [
 		{"name": "Global", "values": h["anomaly"], "color": Color("#d95926")},
