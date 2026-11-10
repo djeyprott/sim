@@ -38,6 +38,7 @@ constexpr std::uint32_t kPriestEntity = 0x02000000u;    // Stream::Figures
 constexpr std::uint32_t kCoupEntity = 0xD0000000u;
 constexpr std::uint32_t kRecallEntity = 0xE0000000u;
 constexpr std::uint32_t kLawEntity = 0xF0000000u;
+constexpr std::uint32_t kFactionEntity = 0x01000000u;  // Stream::Figures
 
 std::size_t trait_index(const Content& c, const char* id) {
     for (std::size_t t = 0; t < c.traits.size(); ++t) {
@@ -1207,6 +1208,28 @@ void PolitySystem::step(StepContext& ctx) {
         }
     }
 
+    // ---- Civil wars: over when one side alone is left, or the wars among them are.
+    for (std::size_t i = 1; i < s.civil_wars.size(); ++i) {
+        CivilWar& cw = s.civil_wars[i];
+        if (cw.outcome != CivilWarOutcome::Ongoing || cw.started == ctx.tick) continue;
+        std::vector<std::uint32_t> sides{cw.realm};
+        sides.insert(sides.end(), cw.factions.begin(), cw.factions.end());
+        std::vector<std::uint32_t> left;
+        for (std::uint32_t p : sides) {
+            if (p < s.polities.size() && s.polities[p].ended == kNever) left.push_back(p);
+        }
+        bool fighting = false;
+        for (std::size_t a = 0; a < left.size() && !fighting; ++a) {
+            for (std::size_t b = a + 1; b < left.size() && !fighting; ++b) fighting = war_between(s, left[a], left[b]) != 0;
+        }
+        if (left.size() > 1 && fighting) continue;
+        cw.ended = ctx.tick;
+        cw.outcome = left.size() == 1 ? CivilWarOutcome::Reunified : CivilWarOutcome::Divided;
+        cw.victor = left.size() == 1 ? left.front() : 0;
+        const std::uint32_t at = left.empty() ? cw.realm : left.front();
+        s.events.push_back({ctx.tick, EventType::CivilWarEnded, s.polities[at].capital, static_cast<std::int64_t>(i)});
+    }
+
     // ---- Break-up of fragile polities, and succession disputes.
     std::size_t writing_k = 64, bureaucracy_k = 64;
     for (std::size_t k = 0; k < content.techniques.size() && k < 64; ++k) {
@@ -1296,6 +1319,119 @@ void PolitySystem::step(StepContext& ctx) {
             for (std::size_t k = 0; k < kPressureCount; ++k) {
                 const double weight = kPressureWeight[k] * s.polities[id].pressure[k];
                 if (weight > worst) worst = weight, cause = static_cast<std::uint8_t>(k);
+            }
+        }
+        // A great realm's crisis is fought out among factions.
+        if (cause != kSuccessionCrisis && s.polities[id].bond == Bond::None) {
+            const std::uint32_t realm = static_cast<std::uint32_t>(id);
+            std::vector<CellId> land;
+            for (CellId c = 0; c < n; ++c) {
+                if (s.polity_of[c] == realm) land.push_back(c);
+            }
+            if (provincial[id] || land.size() >= std::max<std::size_t>(3, w.cells_for(kCivilWarMinCells))) {
+                const CellId seat0 = s.polities[id].capital;
+                const double core_control = cause == static_cast<std::uint8_t>(Pressure::Epidemic) ? kEpidemicCore : kCivilCore;
+                struct Faction {
+                    CellId seat;
+                    std::uint32_t province;  // 0 if none
+                    double weight;
+                };
+                std::vector<Faction> sides;
+                if (provincial[id]) {
+                    std::vector<double> people(s.provinces.size(), 0.0);
+                    for (CellId c : land) {
+                        const std::uint32_t v = s.province_of[c];
+                        if (v != 0 && v < people.size()) people[v] += static_cast<double>(s.cell_population[c]);
+                    }
+                    for (const Province& pv : s.provinces) {
+                        if (pv.id == 0 || pv.polity != realm || pv.ended != kNever || pv.loyalty >= kStayLoyal) continue;
+                        sides.push_back({pv.seat, pv.id, people[pv.id] * (0.5 + pv.held_back)});
+                    }
+                } else {
+                    for (CellId c : land) {
+                        if (c == seat0 || control_of(id, c) >= core_control) continue;
+                        sides.push_back({c, 0, static_cast<double>(s.cell_population[c])});
+                    }
+                }
+                std::stable_sort(sides.begin(), sides.end(), [](const Faction& a, const Faction& b) {
+                    return a.weight > b.weight || (a.weight == b.weight && a.seat < b.seat);
+                });
+                std::vector<Faction> chosen;
+                for (const Faction& f : sides) {
+                    if (chosen.size() >= kMaxFactions || f.weight <= 0.0) break;
+                    bool apart = f.province != 0;
+                    if (!apart) {
+                        apart = true;
+                        for (const Faction& g : chosen) apart = apart && w.grid.distance_km(g.seat, f.seat) >= kFactionSpacingKm;
+                    }
+                    if (apart) chosen.push_back(f);
+                }
+                if (!chosen.empty()) {
+                    CivilWar cw;
+                    cw.id = static_cast<std::uint32_t>(std::max<std::size_t>(1, s.civil_wars.size()));
+                    if (s.civil_wars.empty()) s.civil_wars.emplace_back();
+                    cw.realm = realm;
+                    cw.cause = cause;
+                    cw.started = ctx.tick;
+                    const bool nomads = s.polities[id].nomadic;
+                    std::vector<std::uint32_t> faction(chosen.size());
+                    for (std::size_t i = 0; i < chosen.size(); ++i) {
+                        faction[i] = found(chosen[i].seat, realm, nomads);
+                        Polity& f = s.polities[faction[i]];
+                        f.pretender_to = realm;
+                        f.stability = kSuccessorStability;
+                        if (chosen[i].province != 0 && s.provinces[chosen[i].province].governor != 0) {
+                            f.founder = s.provinces[chosen[i].province].governor;
+                        } else {
+                            RngStream fr = ctx.rng(Stream::Figures, kFactionEntity | (faction[i] & 0x00ffffffu));
+                            const bool rebel = i == 0 && cause == static_cast<std::uint8_t>(Pressure::Famine);
+                            f.founder = record_person(s, content, chosen[i].seat, ctx.tick, 25, 50, rebel ? kRoleRebel : kRoleClaimant, fr);
+                            s.figures[f.founder].polity = faction[i];
+                        }
+                        cw.factions.push_back(faction[i]);
+                    }
+                    // The land: the crown keeps what it holds firmly and its
+                    // loyal provinces; the rest goes to the nearest side that
+                    // reaches it, or falls away.
+                    for (CellId c : land) {
+                        const std::uint32_t v = s.province_of.size() == n ? s.province_of[c] : 0;
+                        if (provincial[id]) {
+                            std::size_t side = chosen.size();
+                            for (std::size_t i = 0; i < chosen.size(); ++i) {
+                                if (v != 0 && v == chosen[i].province) side = i;
+                            }
+                            if (side < chosen.size()) {
+                                s.polity_of[c] = faction[side];
+                                s.province_of[c] = 0;
+                            }
+                            continue;
+                        }
+                        if (c == seat0 || control_of(id, c) >= core_control) continue;
+                        std::size_t side = chosen.size();
+                        double best = kMinControl;
+                        for (std::size_t i = 0; i < chosen.size(); ++i) {
+                            const double ctl = polity_control(w.grid.distance_km(chosen[i].seat, c),
+                                                              std::max(polity_reach_km(w, s, chosen[i].seat), kProvinceReachKm));
+                            if (ctl >= best) best = ctl, side = i;
+                        }
+                        s.polity_of[c] = side < chosen.size() ? faction[side] : 0;  // local strongmen go their own way
+                    }
+                    for (Province& pv : s.provinces) {
+                        if (pv.id == 0 || pv.polity != realm || pv.ended != kNever) continue;
+                        for (std::size_t i = 0; i < chosen.size(); ++i) {
+                            if (pv.id == chosen[i].province) {
+                                pv.ended = ctx.tick;
+                                pv.became = faction[i];
+                                if (pv.loyalty < 0.0) pv.loyalty = 0.0;
+                            }
+                        }
+                    }
+                    s.polities[id].stability = kCivilWarStability;
+                    for (std::uint32_t f : faction) start_war(w, s, ctx.tick, f, realm, WarGoal::Succession);
+                    s.civil_wars.push_back(cw);
+                    s.events.push_back({ctx.tick, EventType::CivilWarBegan, seat0, static_cast<std::int64_t>(cw.id)});
+                    continue;
+                }
             }
         }
         const CellId capital = s.polities[id].capital;

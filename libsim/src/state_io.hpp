@@ -453,6 +453,16 @@ void serialize(Ar& ar, SimState& s) {
         ar.i64(r.withheld);
         ar.u32(r.withheld_by);
     });
+    vec(ar, s.civil_wars, [&](CivilWar& c) {
+        ar.u32(c.id);
+        ar.u32(c.realm);
+        ar.u8(c.cause);
+        ar.i64(c.started);
+        ar.i64(c.ended);
+        vec(ar, c.factions, [&](std::uint32_t& f) { ar.u32(f); });
+        u8(ar, c.outcome);
+        ar.u32(c.victor);
+    });
     vec(ar, s.settling, [&](SimState::Settling& x) {
         ar.u32(x.from);
         ar.u32(x.to);

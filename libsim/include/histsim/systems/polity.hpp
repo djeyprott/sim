@@ -364,6 +364,29 @@ public:
     // disputed succession: a claimant holds the capital); otherwise the old
     // capital is one claimant among the rest, with its own reach.
     static constexpr double kHeirHolds = 0.5;
+    // Civil war: a free realm with provinces, or of at least
+    // kCivilWarMinCells (level-5) cells, that a crisis (not a disputed
+    // succession) would break up splits into factions instead. The crown
+    // keeps the land it holds firmly (control at least kCivilCore; after
+    // an epidemic, which thins its army, at least kEpidemicCore). Up to
+    // kMaxFactions rise against it: in a realm with provinces, its disloyal
+    // provinces (below kStayLoyal) by people x (0.5 + held back), under
+    // their governors; otherwise the most populous outlying towns at least
+    // kFactionSpacingKm apart, under claimants (after a famine the first of
+    // them a rebel), each reaching at least a province's reach. The rest of
+    // the land goes to the nearest faction within reach, else falls away to
+    // local strongmen. Each faction fights the crown for the
+    // throne (WarGoal::Succession): the victor rules the whole realm. The
+    // factions are rival claimants to each other (diplomacy.hpp). The crown
+    // is left at kCivilWarStability. A civil war ends when one side alone is
+    // left of them (reunified) or every war among them is over with two or
+    // more left (divided).
+    static constexpr std::size_t kCivilWarMinCells = 6;
+    static constexpr std::size_t kMaxFactions = 3;
+    static constexpr double kCivilCore = 0.7;
+    static constexpr double kEpidemicCore = 0.85;
+    static constexpr double kFactionSpacingKm = 300.0;
+    static constexpr double kCivilWarStability = 0.3;
     // In a break-up (where no heir keeps the capital), each would-be seat's
     // score is x kFallenCapital at the old capital (the fallen court is
     // discredited, its city sacked or deserted) and x a random factor

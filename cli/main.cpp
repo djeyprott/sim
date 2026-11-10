@@ -901,6 +901,21 @@ int wars(const Options& o) {
                 const histsim::War& war = s.wars[i];
                 backed += war.patron != 0 ? 1 : 0;
             }
+            {
+                std::size_t civil = 0, reunified = 0, divided = 0, factions = 0;
+                double years = 0.0;
+                for (std::size_t i = 1; i < s.civil_wars.size(); ++i) {
+                    const histsim::CivilWar& cw = s.civil_wars[i];
+                    ++civil;
+                    factions += cw.factions.size();
+                    reunified += cw.outcome == histsim::CivilWarOutcome::Reunified ? 1 : 0;
+                    divided += cw.outcome == histsim::CivilWarOutcome::Divided ? 1 : 0;
+                    if (cw.ended != histsim::kNever) years += static_cast<double>(cw.ended - cw.started) / histsim::kTicksPerYear;
+                }
+                std::printf("Civil wars: %zu (%zu factions), %zu reunified, %zu left divided, %zu under way; mean %.0f years\n", civil,
+                            factions, reunified, divided, civil - reunified - divided,
+                            reunified + divided > 0 ? years / static_cast<double>(reunified + divided) : 0.0);
+            }
             std::printf("Subjects together: %zu leagues rose, %zu overlords let a league go, %zu risings had a foreign backer, "
                         "%zu wars between subjects ended by their overlord\n",
                         leagues, yields, backed, arbitrations);
