@@ -361,6 +361,7 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(w.wins_a);
         ar.u32(w.wins_d);
         ar.f64(w.score);
+        ar.u32(w.patron);
         u8(ar, w.terms);
     });
     vec(ar, s.alliances, [&](Alliance& a) {

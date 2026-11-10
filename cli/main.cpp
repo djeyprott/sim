@@ -891,6 +891,19 @@ int wars(const Options& o) {
                         "%zu annexed, %zu independence, %zu dynasties, %zu other; %zu separate peaces (betrayals)\n",
                         terms[1], terms[2], terms[3], terms[4], terms[5], terms[6], terms[7], terms[8], terms[0], betrayals);
             std::printf("Wars of succession: %zu won outright, %zu left the realm divided\n", terms[9], terms[10]);
+            std::size_t leagues = 0, yields = 0, arbitrations = 0, backed = 0;
+            for (const histsim::Event& e : s.events) {
+                leagues += e.type == histsim::EventType::SubjectsRise ? 1 : 0;
+                yields += e.type == histsim::EventType::OverlordYields ? 1 : 0;
+                arbitrations += e.type == histsim::EventType::Arbitration ? 1 : 0;
+            }
+            for (std::size_t i = 1; i < s.wars.size(); ++i) {
+                const histsim::War& war = s.wars[i];
+                backed += war.patron != 0 ? 1 : 0;
+            }
+            std::printf("Subjects together: %zu leagues rose, %zu overlords let a league go, %zu risings had a foreign backer, "
+                        "%zu wars between subjects ended by their overlord\n",
+                        leagues, yields, backed, arbitrations);
         }
         std::printf("\nField armies: %zu raised, %zu broken in the field; %zu battles. Bloodiest:\n", raised, broke, s.battles.size());
         for (std::size_t i = 0; i < by_dead.size() && i < 10; ++i) {

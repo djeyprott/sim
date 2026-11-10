@@ -69,6 +69,23 @@
 // stronger at all (not only kThreat times stronger), with the chance of
 // finding an ally x (1 + infamy).
 //
+// Subjects together (war.cpp). Subjects of one overlord that resent it
+// (opinion below kLeagueOpinion) and are at least kLeagueShare as strong as
+// its hold on them band together; two or more whose strength together is
+// that of its hold on the strongest of them (kRebelHold) rise together
+// (kLeagueRise a year x unrest) in one war of independence, unless the
+// overlord, faced with kLeagueYieldRatio times its hold, lets them go
+// (kLeagueYield). Any rising (a subject's, a province's or a league's) is
+// backed by the realm in touch with the overlord that thinks worst of it,
+// below kBackOpinion, or at war with it already: it joins the rebels, and
+// if they win it may take them as tributaries (kPatronTribute).
+// A tributary may make war on a neighbouring subject (of any overlord) as a
+// free realm would on any neighbour, unless its own overlord's hold on it is kArbiter times
+// its strength (it forbids it); a subject's overlord does not defend it
+// against another of its subjects, and imposes peace on them (kArbitrate a
+// year). A subject that takes another's capital takes it whole only if it
+// is small; it makes no vassals of its own.
+//
 // Restoration: for kRestoreYears after a realm falls, the realms that rose
 // from it (its successors, and provinces that broke away from it) are rival
 // heirs: each has cause for war on the others (to restore the realm), they
@@ -148,6 +165,16 @@ struct Diplomacy {
     static constexpr double kInfamyDecay = 0.05;
     static constexpr double kInfamyOpinion = 0.5;
     static constexpr double kInfamous = 0.3;
+    // Subjects together.
+    static constexpr double kLeagueOpinion = 0.1;
+    static constexpr double kLeagueShare = 0.25;
+    static constexpr double kLeagueRise = 0.1;
+    static constexpr double kLeagueYieldRatio = 1.5;
+    static constexpr double kLeagueYield = 0.3;
+    static constexpr double kBackOpinion = -0.3;
+    static constexpr double kPatronTribute = 0.5;
+    static constexpr double kArbiter = 5.0;
+    static constexpr double kArbitrate = 0.2;
     // Restoration.
     static constexpr double kRestoreYears = 200.0;
     static constexpr double kRestoreInfamy = 1.0;

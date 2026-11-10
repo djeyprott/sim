@@ -451,3 +451,30 @@ TEST(diplomacy_heirs_of_a_fallen_realm_fight_to_restore_it_for_two_centuries) {
     s.tick += static_cast<Tick>(Diplomacy::kRestoreYears + 1) * kTicksPerYear;
     CHECK(!restoration(s, 1, 2));
 }
+
+static bool on_side(const std::vector<std::uint32_t>& v, std::uint32_t p) { return std::find(v.begin(), v.end(), p) != v.end(); }
+
+TEST(diplomacy_an_overlord_stands_aside_from_its_subjects_quarrels_and_rivals_back_risings) {
+    Setup x = two_polities();
+    SimState& s = x.s;
+    const World& w = x.sim.world();
+    // 1 and 2 pay tribute to 3; 4 hates 3.
+    s.polities.resize(5);
+    for (std::uint32_t id = 3; id <= 4; ++id) {
+        s.polities[id].id = id;
+        s.polities[id].name = id == 3 ? "Lord" : "Rival";
+        s.polities[id].capital = x.heart;
+    }
+    for (std::uint32_t id : {1u, 2u}) {
+        s.polities[id].overlord = 3;
+        s.polities[id].bond = Bond::Tributary;
+    }
+    const std::uint32_t quarrel = start_war(w, s, s.tick, 1, 2, WarGoal::Conquest);
+    CHECK(!on_side(s.wars[quarrel].defenders, 3));
+    CHECK_EQ(s.wars[quarrel].patron, 0u);
+    s.wars[quarrel].ended = s.tick;
+    relation_of(s, 4, 3, s.tick).opinion = -0.6;
+    const std::uint32_t rising = start_war(w, s, s.tick, 1, 3, WarGoal::Independence);
+    CHECK_EQ(s.wars[rising].patron, 4u);
+    CHECK(on_side(s.wars[rising].attackers, 4));
+}
