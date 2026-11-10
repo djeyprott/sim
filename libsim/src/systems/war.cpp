@@ -191,6 +191,7 @@ Armies raise_armies(const World& w, const SimState& s, const RuleField* given = 
             const std::uint8_t law = s.polities[id].laws[Laws::Army];
             if (law >= 1) sent *= (1.0 - pv.held_back) * (law == 2 ? Laws::kPrivateLevy : 1.0);
         }
+        sent *= Authority::kAuthorityLevy + (1.0 - Authority::kAuthorityLevy) * s.polities[id].authority;
         a.levy[id] += sent * static_cast<double>(s.cell_population[c]) * control * WarSystem::kLevy *
                       (0.5 + cell_trait(s, c, i_warfare)) * (p.nomadic ? WarSystem::kNomadLevy : 1.0);
     }
@@ -915,6 +916,12 @@ void WarSystem::step(StepContext& ctx) {
             return return_war_gains(s, war.started, to, from);
         };
         war.terms = capital_fell ? PeaceTerms::None : PeaceTerms::LandKept;
+        // The crowns' standing: a defeat costs, more if the capital fell.
+        if (outcome != WarOutcome::Stalemate) {
+            const double margin = std::max(std::abs(war.score), capital_fell ? 1.0 : 0.0);
+            lose_authority(s, loser, Authority::kAuthorityDefeat * margin + (capital_fell ? Authority::kAuthorityCapital : 0.0));
+            lose_authority(s, winner, -Authority::kAuthorityVictory);
+        }
         if (outcome == WarOutcome::Stalemate) {
             give_back(war.defenders, war.attackers);
             give_back(war.attackers, war.defenders);
@@ -974,7 +981,10 @@ void WarSystem::step(StepContext& ctx) {
                     // All who rose with it go free; a foreign backer may ask its price.
                     for (std::uint32_t q : war.attackers) {
                         Polity& rebel = s.polities[q];
-                        if (rebel.overlord == lead_d) rebel.overlord = 0, rebel.bond = Bond::None;
+                        if (rebel.overlord == lead_d) {
+                            rebel.overlord = 0, rebel.bond = Bond::None;
+                            lose_authority(s, lead_d, Authority::kAuthoritySubject);
+                        }
                     }
                     war.terms = PeaceTerms::Independence;
                     if (alive(s, war.patron) && s.polities[war.patron].bond == Bond::None && rng.uniform() < Diplomacy::kPatronTribute) {
@@ -984,7 +994,9 @@ void WarSystem::step(StepContext& ctx) {
                             }
                         }
                     }
-                } else if (own_cells(lead_a) <= w.cells_for(kAnnexBelowCells)) {
+                } else if (own_cells(lead_a) <= w.cells_for(kAnnexBelowCells) ||
+                           (s.polities[lead_a].bond == Bond::None && s.polities[lead_a].parent == lead_d)) {
+                    // A small rebel, or a province that broke away, is taken back whole.
                     annex(lead_a, lead_d);
                     war.terms = PeaceTerms::Annexed;
                 } else {
@@ -1050,7 +1062,8 @@ void WarSystem::step(StepContext& ctx) {
         const double rival = power[lord] - (p.overlord == lord && p.bond == Bond::Vassal ? kVassalShare * armies.strength[id] : 0.0);
         const bool distracted = fighting[lord] && war_between(s, id, lord) == 0;
         return rival * std::clamp(control_of(lord, p.capital) / Diplomacy::kProjection, Diplomacy::kMinHold, 1.0) *
-               (distracted ? Diplomacy::kDistracted : 1.0) * (0.5 + trust_between(s, id, lord));
+               (distracted ? Diplomacy::kDistracted : 1.0) * (0.5 + trust_between(s, id, lord)) *
+               (0.5 + 0.5 * s.polities[lord].authority);
     };
     auto new_reign = [&](std::uint32_t id) {
         const std::uint32_t k = s.polities[id].ruler;
@@ -1097,6 +1110,7 @@ void WarSystem::step(StepContext& ctx) {
                     s.polities[q].overlord = 0;
                     s.polities[q].bond = Bond::None;
                     risen[q] = 1;
+                    lose_authority(s, lord, Authority::kAuthoritySubject);
                 }
                 s.events.push_back({tick, EventType::OverlordYields, s.polities[lord].capital,
                                     static_cast<std::int64_t>((static_cast<std::uint64_t>(lord) << 32) | lead)});
@@ -1154,6 +1168,7 @@ void WarSystem::step(StepContext& ctx) {
                 r.opinion = std::max(-1.0, r.opinion - Diplomacy::kWithheldShock);
                 p.overlord = 0;
                 p.bond = Bond::None;
+                lose_authority(s, lord, Authority::kAuthoritySubject);
                 s.events.push_back({tick, EventType::TributeWithheld, p.capital,
                                     static_cast<std::int64_t>((static_cast<std::uint64_t>(id) << 32) | lord)});
             }

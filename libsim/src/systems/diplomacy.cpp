@@ -79,6 +79,11 @@ bool restoration(const SimState& s, std::uint32_t a, std::uint32_t b) {
         (y.pretender_to == a && static_cast<double>(s.tick - y.founded) < Diplomacy::kRestoreYears * kTicksPerYear)) {
         return true;
     }
+    // Rival claimants to the same throne.
+    if (x.pretender_to != 0 && x.pretender_to == y.pretender_to &&
+        static_cast<double>(s.tick - std::max(x.founded, y.founded)) < Diplomacy::kRestoreYears * kTicksPerYear) {
+        return true;
+    }
     const std::uint32_t pa = s.polities[a].parent, pb = s.polities[b].parent;
     if (pa == 0 || pa != pb || pa >= s.polities.size()) return false;
     const Tick fell = s.polities[pa].ended;

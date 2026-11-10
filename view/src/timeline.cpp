@@ -69,6 +69,9 @@ const char* event_kind(EventType type) {
         case EventType::SubjectsRise:
         case EventType::OverlordYields:
         case EventType::Arbitration:
+        case EventType::CivilWarBegan:
+        case EventType::CivilWarEnded:
+        case EventType::Denounced:
         case EventType::Absorbed:
         case EventType::ConquestDynasty:
         case EventType::CityFounded:
@@ -226,6 +229,31 @@ std::string describe_event(const Simulation& sim, const Event& e) {
             return polity_name(s, static_cast<std::int64_t>(static_cast<std::uint64_t>(v) >> 16)) + ": " + law_name(law) +
                    " now " + (law == Laws::Succession ? "by " : "") + law_level_name(law, level);
         }
+        case EventType::Denounced: {
+            const auto accuser = static_cast<std::size_t>(static_cast<std::uint64_t>(v) >> 32);
+            const auto accused = static_cast<std::size_t>(static_cast<std::uint64_t>(v) & 0xffffffffu);
+            if (accuser >= s.provinces.size() || accused >= s.provinces.size()) return "";
+            return "The governor of " + s.provinces[accuser].name + " denounces his rival in " + s.provinces[accused].name +
+                   " at the court of " + polity_name(s, s.provinces[accused].polity);
+        }
+        case EventType::CivilWarBegan:
+            if (index < s.civil_wars.size()) {
+                const CivilWar& cw = s.civil_wars[index];
+                std::string who;
+                for (std::uint32_t f : cw.factions) who += (who.empty() ? "" : ", ") + polity_name(s, f);
+                return "Civil war in " + polity_name(s, cw.realm) + ": " + who + (cw.factions.size() == 1 ? " rises" : " rise") +
+                       " for the throne";
+            }
+            return "";
+        case EventType::CivilWarEnded:
+            if (index < s.civil_wars.size()) {
+                const CivilWar& cw = s.civil_wars[index];
+                return cw.outcome == CivilWarOutcome::Reunified
+                           ? "The civil war in " + polity_name(s, cw.realm) + " ends: " + polity_name(s, cw.victor) +
+                                 " holds the realm whole again"
+                           : "The civil war in " + polity_name(s, cw.realm) + " ends with the realm divided";
+            }
+            return "";
         case EventType::SubjectsRise:
             return index < s.wars.size() ? "Subjects of " + polity_name(s, s.wars[index].defenders.front()) +
                                                " rise together: the " + s.wars[index].name
@@ -434,6 +462,17 @@ bool event_involves(const SimState& s, const Event& e, std::uint32_t p) {
         case EventType::LawChanged: return static_cast<std::uint64_t>(v) >> 16 == p;
         case EventType::OverlordYields:
             return static_cast<std::uint64_t>(v) >> 32 == p || (static_cast<std::uint64_t>(v) & 0xffffffffu) == p;
+        case EventType::Denounced: {
+            const auto accused = static_cast<std::size_t>(static_cast<std::uint64_t>(v) & 0xffffffffu);
+            return accused < s.provinces.size() && s.provinces[accused].polity == p;
+        }
+        case EventType::CivilWarBegan:
+        case EventType::CivilWarEnded:
+            if (index < s.civil_wars.size()) {
+                const CivilWar& cw = s.civil_wars[index];
+                return cw.realm == p || std::find(cw.factions.begin(), cw.factions.end(), p) != cw.factions.end();
+            }
+            return false;
         case EventType::SubjectsRise:
         case EventType::Arbitration:
             if (index < s.wars.size()) {
