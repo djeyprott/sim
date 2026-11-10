@@ -66,6 +66,9 @@ const char* event_kind(EventType type) {
         case EventType::LawChanged:
         case EventType::GovernorsRise:
         case EventType::RealmDivided:
+        case EventType::SubjectsRise:
+        case EventType::OverlordYields:
+        case EventType::Arbitration:
         case EventType::Absorbed:
         case EventType::ConquestDynasty:
         case EventType::CityFounded:
@@ -223,6 +226,18 @@ std::string describe_event(const Simulation& sim, const Event& e) {
             return polity_name(s, static_cast<std::int64_t>(static_cast<std::uint64_t>(v) >> 16)) + ": " + law_name(law) +
                    " now " + (law == Laws::Succession ? "by " : "") + law_level_name(law, level);
         }
+        case EventType::SubjectsRise:
+            return index < s.wars.size() ? "Subjects of " + polity_name(s, s.wars[index].defenders.front()) +
+                                               " rise together: the " + s.wars[index].name
+                                         : "";
+        case EventType::OverlordYields:
+            return polity_name(s, static_cast<std::int64_t>(static_cast<std::uint64_t>(v) >> 32)) +
+                   " lets a league of its subjects led by " +
+                   polity_name(s, static_cast<std::int64_t>(static_cast<std::uint64_t>(v) & 0xffffffffu)) + " go";
+        case EventType::Arbitration:
+            return index < s.wars.size() ? polity_name(s, s.polities[s.wars[index].attackers.front()].overlord) +
+                                               " makes its subjects end the " + s.wars[index].name
+                                         : "";
         case EventType::GovernorsRise:
             return index < s.polities.size() ? "Governors of " + polity_name(s, s.polities[index].parent) +
                                                    " rise together as " + s.polities[index].name
@@ -417,6 +432,16 @@ bool event_involves(const SimState& s, const Event& e, std::uint32_t p) {
         case EventType::Betrayal:
             return static_cast<std::uint64_t>(v) >> 32 == p || (static_cast<std::uint64_t>(v) & 0xffffffffu) == p;
         case EventType::LawChanged: return static_cast<std::uint64_t>(v) >> 16 == p;
+        case EventType::OverlordYields:
+            return static_cast<std::uint64_t>(v) >> 32 == p || (static_cast<std::uint64_t>(v) & 0xffffffffu) == p;
+        case EventType::SubjectsRise:
+        case EventType::Arbitration:
+            if (index < s.wars.size()) {
+                const War& war = s.wars[index];
+                return std::find(war.attackers.begin(), war.attackers.end(), p) != war.attackers.end() ||
+                       std::find(war.defenders.begin(), war.defenders.end(), p) != war.defenders.end();
+            }
+            return false;
         case EventType::GovernorsRise:
         case EventType::RealmDivided: return v == p || (index < s.polities.size() && s.polities[index].parent == p);
         case EventType::WarBegan:

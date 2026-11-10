@@ -494,6 +494,7 @@ struct War {
     std::uint32_t cells_a = 0, cells_d = 0;  // the leaders' cells when it began
     std::uint32_t wins_a = 0, wins_d = 0;    // battles won by each side's field army
     double score = 0.0;                      // -1 (defenders prevail) .. 1 (attackers prevail)
+    std::uint32_t patron = 0;                // a foreign realm backing a rising, if any
     PeaceTerms terms = PeaceTerms::None;
 };
 
@@ -620,6 +621,10 @@ enum class EventType : std::uint32_t {
                               // value = polity << 16 | law << 8 | new level (Laws::Law)
     GovernorsRise = 41,       // disloyal governors rose together as one realm; cell = its seat; value = its id
     RealmDivided = 42,        // a realm was shared out among a ruler's sons; cell = the new realm's seat; value = its id
+    SubjectsRise = 43,        // subjects of one overlord rose together; cell = their leader's capital; value = the war
+    OverlordYields = 44,      // an overlord let a league of its subjects go; cell = its capital;
+                              // value = overlord << 32 | the league's leader
+    Arbitration = 45,         // an overlord imposed peace on two of its subjects; cell = its capital; value = the war
 };
 
 struct Event {

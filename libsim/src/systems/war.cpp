@@ -20,6 +20,7 @@ constexpr std::uint32_t kDiplomacyEntity = 0x30000000u;
 constexpr std::uint32_t kRaidEntity = 0x40000000u;
 constexpr std::uint32_t kAllianceEntity = 0x50000000u;
 constexpr std::uint32_t kArmyEntity = 0x60000000u;
+constexpr std::uint32_t kLeagueEntity = 0x70000000u;
 
 std::size_t trait_index(const Content& c, const char* id) {
     for (std::size_t t = 0; t < c.traits.size(); ++t) {
@@ -333,7 +334,7 @@ std::uint32_t start_war(const World&, SimState& s, Tick tick, std::uint32_t atta
     // The defender's overlord, allies and vassals stand with it; the
     // attacker's vassals with the attacker. An overlord already at war
     // elsewhere leaves its subject to fend for itself, and is not forgiven.
-    if (alive(s, d.overlord) && d.overlord != attacker) {
+    if (alive(s, d.overlord) && d.overlord != attacker && d.overlord != s.polities[attacker].overlord) {
         bool elsewhere = false;
         for (std::size_t i = 1; i < s.wars.size() && !elsewhere; ++i) {
             const War& other = s.wars[i];
@@ -364,6 +365,25 @@ std::uint32_t start_war(const World&, SimState& s, Tick tick, std::uint32_t atta
     for (std::uint32_t o : s.polity_of) {
         war.cells_a += o == attacker ? 1 : 0;
         war.cells_d += o == defender ? 1 : 0;
+    }
+    // A rising finds a foreign backer: the free realm in touch with the
+    // overlord that thinks worst of it, if badly enough (or at war with it).
+    if (goal == WarGoal::Independence) {
+        std::uint32_t backer = 0;
+        double worst = Diplomacy::kBackOpinion;
+        for (const Relation& r : s.relations) {
+            if (r.a != defender && r.b != defender) continue;
+            const std::uint32_t q = r.a == defender ? r.b : r.a;
+            if (q == attacker || !alive(s, q) || s.polities[q].bond != Bond::None || on(war.defenders, q) || on(war.attackers, q)) {
+                continue;
+            }
+            const double grudge = war_between(s, q, defender) != 0 ? -2.0 : r.opinion;
+            if (grudge < worst || (grudge == worst && backer != 0 && q < backer)) worst = grudge, backer = q;
+        }
+        if (backer != 0) {
+            war.patron = backer;
+            add_to(war.attackers, war.defenders, backer);
+        }
     }
     const std::string& a = s.polities[attacker].name;
     war.name = goal == WarGoal::Independence ? a + " War of Independence"
@@ -812,6 +832,13 @@ void WarSystem::step(StepContext& ctx) {
         } else if (side[s.polity_of[cap_a]] == 2) {
             outcome = WarOutcome::DefendersWon;
             capital_fell = true;
+        } else if (const std::uint32_t lord = s.polities[lead_a].overlord;
+                   s.polities[lead_a].bond != Bond::None && lord != 0 && lord == s.polities[lead_d].overlord &&
+                   s.polities[lead_d].bond != Bond::None && alive(s, lord) && war.goal != WarGoal::Independence &&
+                   rng.uniform() < Diplomacy::kArbitrate) {
+            // Their overlord makes them keep the peace.
+            outcome = WarOutcome::Stalemate;
+            s.events.push_back({tick, EventType::Arbitration, s.polities[lord].capital, static_cast<std::int64_t>(war.id)});
         } else {
             // The war score: land, battles, and armies at the gates.
             const double gained = static_cast<double>(war.cells_taken) - static_cast<double>(war.cells_lost);
@@ -944,9 +971,19 @@ void WarSystem::step(StepContext& ctx) {
                 war.terms = PeaceTerms::Throne;
             } else if (war.goal == WarGoal::Independence) {
                 if (winner == lead_a) {
-                    Polity& rebel = s.polities[lead_a];
-                    if (rebel.overlord == lead_d) rebel.overlord = 0, rebel.bond = Bond::None;
+                    // All who rose with it go free; a foreign backer may ask its price.
+                    for (std::uint32_t q : war.attackers) {
+                        Polity& rebel = s.polities[q];
+                        if (rebel.overlord == lead_d) rebel.overlord = 0, rebel.bond = Bond::None;
+                    }
                     war.terms = PeaceTerms::Independence;
+                    if (alive(s, war.patron) && s.polities[war.patron].bond == Bond::None && rng.uniform() < Diplomacy::kPatronTribute) {
+                        for (std::uint32_t q : war.attackers) {
+                            if (q != war.patron && alive(s, q) && s.polities[q].bond == Bond::None && q != lead_d) {
+                                subjugate(s, q, war.patron, Bond::Tributary, tick);
+                            }
+                        }
+                    }
                 } else if (own_cells(lead_a) <= w.cells_for(kAnnexBelowCells)) {
                     annex(lead_a, lead_d);
                     war.terms = PeaceTerms::Annexed;
@@ -977,6 +1014,12 @@ void WarSystem::step(StepContext& ctx) {
                     if (subjugate(s, lead_d, lead_a, bond, tick)) {
                         war.terms = bond == Bond::Vassal ? PeaceTerms::Vassalage : PeaceTerms::Tribute;
                     }
+                }
+            } else if (winner == lead_a && capital_fell && s.polities[winner].bond != Bond::None) {
+                // A subject makes no vassals of its own: a small realm it takes whole.
+                if (own_cells(loser) <= w.cells_for(kAnnexBelowCells)) {
+                    annex(loser, winner);
+                    war.terms = PeaceTerms::Annexed;
                 }
             } else if (winner == lead_a && capital_fell) {
                 if (own_cells(loser) <= w.cells_for(kAnnexBelowCells)) {
@@ -1013,9 +1056,64 @@ void WarSystem::step(StepContext& ctx) {
         const std::uint32_t k = s.polities[id].ruler;
         return k != 0 && k < s.rulers.size() && s.rulers[k].reign_start + kTicksPerYear > tick;
     };
+    auto unrest_of = [&](std::uint32_t id, std::uint32_t lord) {
+        const Polity& p = s.polities[id];
+        const Polity& o = s.polities[lord];
+        return std::clamp((1.0 - opinion_between(s, id, lord)) *
+                              (s.cultures[p.culture].root != s.cultures[o.culture].root ? Diplomacy::kForeign : 1.0) *
+                              (p.religion != o.religion ? Diplomacy::kForeign : 1.0) *
+                              (new_reign(id) || new_reign(lord) ? Diplomacy::kNewReign : 1.0),
+                          Diplomacy::kMinUnrest, Diplomacy::kMaxUnrest);
+    };
+    // Leagues: subjects of one overlord who resent it rise together.
+    std::vector<std::uint8_t> risen(np, 0);
+    {
+        std::vector<std::vector<std::uint32_t>> restive(np);
+        for (std::uint32_t id = 1; id < np; ++id) {
+            const Polity& p = s.polities[id];
+            if (!alive(s, id) || p.bond == Bond::None || !alive(s, p.overlord) || war_between(s, id, p.overlord) != 0) continue;
+            if (opinion_between(s, id, p.overlord) < Diplomacy::kLeagueOpinion &&
+                armies.strength[id] >= Diplomacy::kLeagueShare * hold_over(p.overlord, id)) {
+                restive[p.overlord].push_back(id);
+            }
+        }
+        for (std::uint32_t lord = 1; lord < np; ++lord) {
+            const auto& league = restive[lord];
+            if (league.size() < 2 || !alive(s, lord)) continue;
+            std::uint32_t lead = league.front();
+            double together = 0.0, unrest = 0.0;
+            for (std::uint32_t q : league) {
+                together += armies.strength[q];
+                unrest += unrest_of(q, lord);
+                if (armies.strength[q] > armies.strength[lead]) lead = q;
+            }
+            unrest /= static_cast<double>(league.size());
+            const double hold = hold_over(lord, lead);
+            if (together < Diplomacy::kRebelHold * hold) continue;
+            RngStream rng = ctx.rng(Stream::War, kLeagueEntity | lord);
+            if (together >= Diplomacy::kLeagueYieldRatio * hold && rng.uniform() < Diplomacy::kLeagueYield) {
+                // The overlord lets them go rather than fight them all.
+                for (std::uint32_t q : league) {
+                    s.polities[q].overlord = 0;
+                    s.polities[q].bond = Bond::None;
+                    risen[q] = 1;
+                }
+                s.events.push_back({tick, EventType::OverlordYields, s.polities[lord].capital,
+                                    static_cast<std::int64_t>((static_cast<std::uint64_t>(lord) << 32) | lead)});
+                continue;
+            }
+            if (rng.uniform() >= Diplomacy::kLeagueRise * unrest) continue;
+            const std::uint32_t wid = start_war(w, s, tick, lead, lord, WarGoal::Independence);
+            for (std::uint32_t q : league) {
+                risen[q] = 1;
+                if (q != lead) add_to(s.wars[wid].attackers, s.wars[wid].defenders, q);
+            }
+            s.events.push_back({tick, EventType::SubjectsRise, s.polities[lead].capital, static_cast<std::int64_t>(wid)});
+        }
+    }
     for (std::uint32_t id = 1; id < np; ++id) {
         Polity& p = s.polities[id];
-        if (!alive(s, id) || p.bond == Bond::None || !alive(s, p.overlord)) continue;
+        if (!alive(s, id) || p.bond == Bond::None || !alive(s, p.overlord) || risen[id]) continue;
         const std::uint32_t lord = p.overlord;
         if (have_stocks) {
             const CellId from = p.capital, to = s.polities[lord].capital;
@@ -1163,7 +1261,13 @@ void WarSystem::step(StepContext& ctx) {
     std::sort(truced.begin(), truced.end());
     for (std::uint32_t id = 1; id < np; ++id) {
         const Polity& p = s.polities[id];
-        if (!alive(s, id) || p.bond != Bond::None || busy[id] || borders[id].empty()) continue;
+        if (!alive(s, id) || busy[id] || borders[id].empty()) continue;
+        // A tributary may fight another subject, if its overlord lets it.
+        const bool subject = p.bond != Bond::None;
+        if (subject && (p.bond != Bond::Tributary || !alive(s, p.overlord) ||
+                        hold_over(p.overlord, id) >= Diplomacy::kArbiter * armies.strength[id])) {
+            continue;
+        }
         RngStream rng = ctx.rng(Stream::War, kDeclareEntity | id);
         const double warfare = cell_trait(s, p.capital, i_warfare);
         for (std::uint32_t b : borders[id]) {
@@ -1171,9 +1275,10 @@ void WarSystem::step(StepContext& ctx) {
                 std::binary_search(truced.begin(), truced.end(), std::pair{std::min(id, b), std::max(id, b)})) {
                 continue;
             }
+            if (subject && (s.polities[b].bond == Bond::None || b == p.overlord)) continue;
             const Polity& q = s.polities[b];
             double defence = power[b];
-            if (alive(s, q.overlord)) defence += kAllyShare * power[q.overlord];
+            if (alive(s, q.overlord) && q.overlord != p.overlord) defence += kAllyShare * power[q.overlord];
             for (std::uint32_t i : allies.of[b]) {
                 const Alliance& al = s.alliances[i];
                 defence += kAllyShare * power[al.a == b ? al.b : al.a];
