@@ -353,7 +353,8 @@ void SettlementSystem::step(StepContext& ctx) {
                 if (s.city_of[h] != 0) taken = true;
             });
         }
-        if (city == 0 && town >= kCityPeople && centre && !taken) {
+        // (On fine grids a hinterland's centre can be an empty cell: no city.)
+        if (city == 0 && town >= kCityPeople && centre && !taken && s.cell_population[c] > 0) {
             const Cohort* lead = lead_cohort(s, c);
             const Language& lang = s.languages[lead->language];
             RngStream rng = ctx.rng(Stream::Settlement, kNameEntity | c);
@@ -743,6 +744,8 @@ void PolitySystem::step(StepContext& ctx) {
                     pv.name = s.cities[city].name;
                 } else {
                     const Cohort* lead = lead_cohort(s, c);
+                    if (lead == nullptr) lead = lead_cohort(s, s.polities[id].capital);  // an empty seat
+                    if (lead == nullptr && !s.cohorts.empty()) lead = &s.cohorts.front();
                     RngStream nr = ctx.rng(Stream::Polity, kProvinceNameEntity | c);
                     pv.name = coin_name(content, s.languages[lead->language], nr, [](const std::string&) { return false; });
                 }
