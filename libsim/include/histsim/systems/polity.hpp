@@ -178,6 +178,65 @@ struct Laws {
     static constexpr double kYield = 0.5;
 };
 
+// Authority (Polity::authority): the crown's standing. It falls by
+// kAuthorityProvince for each province or faction that breaks away, by
+// kAuthorityDefeat x the war score for a war its realm leads and loses (and
+// kAuthorityCapital more if its capital fell), and by kAuthoritySubject for
+// each subject that goes free; it grows by kAuthorityVictory for a war won,
+// and recovers kAuthorityRecover x (0.5 + the ruler's ability) a year. A
+// crown low in authority is weaker in every way: each province's loyalty
+// target - kAuthorityLoyalty x (1 - authority); its levies x
+// (kAuthorityLevy + (1 - kAuthorityLevy) x authority); its hold on subjects
+// x (0.5 + 0.5 x authority). So losses compound.
+struct Authority {
+    static constexpr double kAuthorityProvince = 0.12;
+    static constexpr double kAuthorityDefeat = 0.2;
+    static constexpr double kAuthorityCapital = 0.2;
+    static constexpr double kAuthoritySubject = 0.05;
+    static constexpr double kAuthorityVictory = 0.05;
+    static constexpr double kAuthorityRecover = 0.01;
+    static constexpr double kAuthorityLoyalty = 0.4;
+    static constexpr double kAuthorityLevy = 0.5;
+};
+void lose_authority(SimState& state, std::uint32_t polity, double by);
+
+// Governors' politics (SimState::governor_ties). Each pair of governors in
+// a realm has an opinion of each other that moves kTieRate of the way to a
+// target: + kTieNear if their seats are within kTieNearKm, + kTieKin if their
+// seats' peoples share a culture root, + kTieCause if both are disloyal
+// (below Laws::kPactLoyalty), - kTieRivals if both are ambitious (at least
+// kTieAmbition). A new governor starts at the target.
+//   Pacts are made among friends: a disloyal, ambitious governor (Laws) and
+//   the governors who think well of him (at least kPactTie) and waver
+//   (loyalty below kWaver), and their friends in turn.
+//   Rivals (opinion below kRivalTie) intrigue: the more ambitious denounces
+//   the other at court (kDenounce x ambition a year); a crown at least
+//   kDenounceStability stable whose governors are not hereditary removes
+//   the accused, whose province loses kDenounceLoyalty, unless he is
+//   ambitious and disloyal (above PolitySystem::kDefiant, below kStayLoyal)
+//   and breaks away instead.
+//   Foreign courting: a governor whose seat lies within kCourtKm of the
+//   capital of a realm that thinks ill of his crown (below kCourtOpinion) is
+//   courted by it: his province's loyalty target - kCourted x ambition.
+struct GovernorPolitics {
+    static constexpr double kTieRate = 0.1;
+    static constexpr double kTieNear = 0.15;
+    static constexpr double kTieNearKm = 1200.0;
+    static constexpr double kTieKin = 0.15;
+    static constexpr double kTieCause = 0.35;
+    static constexpr double kTieRivals = 0.6;
+    static constexpr double kTieAmbition = 0.6;
+    static constexpr double kPactTie = 0.3;
+    static constexpr double kWaver = 0.65;
+    static constexpr double kRivalTie = -0.2;
+    static constexpr double kDenounce = 0.05;
+    static constexpr double kDenounceStability = 0.4;
+    static constexpr double kDenounceLoyalty = 0.1;
+    static constexpr double kCourtKm = 1500.0;
+    static constexpr double kCourtOpinion = -0.3;
+    static constexpr double kCourted = 0.2;
+};
+
 // "governors appointed" etc.: a law's level in words.
 const char* law_name(Laws::Law law);
 const char* law_level_name(Laws::Law law, std::uint8_t level);

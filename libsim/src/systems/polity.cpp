@@ -1,4 +1,5 @@
 #include "histsim/systems/polity.hpp"
+#include "histsim/systems/diplomacy.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -39,6 +40,8 @@ constexpr std::uint32_t kCoupEntity = 0xD0000000u;
 constexpr std::uint32_t kRecallEntity = 0xE0000000u;
 constexpr std::uint32_t kLawEntity = 0xF0000000u;
 constexpr std::uint32_t kFactionEntity = 0x01000000u;  // Stream::Figures
+constexpr std::uint32_t kIntrigueEntity = 0x0C000000u;
+constexpr std::uint32_t kReplaceEntity = 0x00800000u;  // Stream::Figures
 
 std::size_t trait_index(const Content& c, const char* id) {
     for (std::size_t t = 0; t < c.traits.size(); ++t) {
@@ -807,6 +810,13 @@ void PolitySystem::step(StepContext& ctx) {
             const Polity& crown = s.polities[id];
             const Ruler* king = crown.ruler != 0 && crown.ruler < s.rulers.size() ? &s.rulers[crown.ruler] : nullptr;
             const bool new_reign = king != nullptr && king->reign_start + kTicksPerYear > ctx.tick && king->reign_start <= ctx.tick;
+            // Foreign realms that think ill of the crown court its governors.
+            std::vector<CellId> courting;
+            for (const Relation& r : s.relations) {
+                if ((r.a != id && r.b != id) || r.opinion >= GovernorPolitics::kCourtOpinion) continue;
+                const std::uint32_t q = r.a == id ? r.b : r.a;
+                if (q < s.polities.size() && s.polities[q].ended == kNever && s.polities[q].overlord != id) courting.push_back(s.polities[q].capital);
+            }
             for (std::uint32_t v : seats_of[id]) {
                 Province& pv = s.provinces[v];
                 if (pv.ended != kNever) continue;
@@ -848,7 +858,12 @@ void PolitySystem::step(StepContext& ctx) {
                 const bool same_faith = !s.faith_of.empty() && s.faith_of[pv.seat] == pol.religion;
                 const double target = kLoyaltyBase + kLoyaltyStability * pol.stability + kLoyaltyControl * control_of(id, pv.seat) +
                                       (same_people ? kLoyaltyPeople : 0.0) + (same_faith ? kLoyaltyFaith : 0.0) +
-                                      kLoyaltyAmbition * (0.5 - gov.ambition) +
+                                      kLoyaltyAmbition * (0.5 - gov.ambition) -
+                                      Authority::kAuthorityLoyalty * (1.0 - pol.authority) -
+                                      (std::any_of(courting.begin(), courting.end(),
+                                                   [&](CellId cap) { return w.grid.distance_km(cap, pv.seat) <= GovernorPolitics::kCourtKm; })
+                                           ? GovernorPolitics::kCourted * gov.ambition
+                                           : 0.0) +
                                       kLoyaltyAbility * ((king != nullptr ? king->ability : 0.5) - 0.5) -
                                       kLoyaltyDefeat * std::clamp(losing[id], 0.0, 1.0) -
                                       kLoyaltyTenure * std::min(1.0, static_cast<double>(ctx.tick - pv.governor_since) /
@@ -859,6 +874,87 @@ void PolitySystem::step(StepContext& ctx) {
                 const double hold = std::clamp(gov.ambition - pv.loyalty, 0.0, Laws::kHoldCap[std::min<std::uint8_t>(crown.laws[Laws::Taxes], 2)]);
                 pv.held_back += Laws::kHoldRate * (hold - pv.held_back);
             }
+        }
+        // ---- The crown's authority recovers, the more under an able ruler.
+        for (std::size_t id = 1; id < np; ++id) {
+            Polity& pol = s.polities[id];
+            if (pol.ended != kNever) continue;
+            const double ability = pol.ruler != 0 && pol.ruler < s.rulers.size() ? s.rulers[pol.ruler].ability : 0.5;
+            pol.authority = std::min(1.0, pol.authority + Authority::kAuthorityRecover * (0.5 + ability));
+        }
+        // ---- Governors' politics: what they think of each other, and intrigue.
+        {
+            std::vector<SimState::GovernorTie> ties;
+            auto old_tie = [&](std::uint32_t a, std::uint32_t b) -> const SimState::GovernorTie* {
+                const auto it = std::lower_bound(s.governor_ties.begin(), s.governor_ties.end(), std::pair{a, b},
+                                                 [](const SimState::GovernorTie& t, const std::pair<std::uint32_t, std::uint32_t>& k) {
+                                                     return t.a != k.first ? t.a < k.first : t.b < k.second;
+                                                 });
+                return it != s.governor_ties.end() && it->a == a && it->b == b ? &*it : nullptr;
+            };
+            for (std::size_t id = 1; id < np; ++id) {
+                if (!provincial[id] || s.polities[id].ended != kNever) continue;
+                std::vector<std::uint32_t> live;
+                for (std::uint32_t v : seats_of[id]) {
+                    if (s.provinces[v].ended == kNever && s.provinces[v].governor != 0 && s.provinces[v].loyalty >= 0.0) live.push_back(v);
+                }
+                std::sort(live.begin(), live.end());
+                for (std::size_t i = 0; i < live.size(); ++i) {
+                    for (std::size_t j = i + 1; j < live.size(); ++j) {
+                        const Province& pa = s.provinces[live[i]];
+                        const Province& pb = s.provinces[live[j]];
+                        const Figure& ga = s.figures[pa.governor];
+                        const Figure& gb = s.figures[pb.governor];
+                        const Cohort* ca = lead_cohort(s, pa.seat);
+                        const Cohort* cb = lead_cohort(s, pb.seat);
+                        const bool kin = ca != nullptr && cb != nullptr && s.cultures[ca->culture].root == s.cultures[cb->culture].root;
+                        const double target = std::clamp(
+                            (w.grid.distance_km(pa.seat, pb.seat) <= GovernorPolitics::kTieNearKm ? GovernorPolitics::kTieNear : 0.0) +
+                                (kin ? GovernorPolitics::kTieKin : 0.0) +
+                                (pa.loyalty < Laws::kPactLoyalty && pb.loyalty < Laws::kPactLoyalty ? GovernorPolitics::kTieCause : 0.0) -
+                                (ga.ambition >= GovernorPolitics::kTieAmbition && gb.ambition >= GovernorPolitics::kTieAmbition
+                                     ? GovernorPolitics::kTieRivals
+                                     : 0.0),
+                            -1.0, 1.0);
+                        SimState::GovernorTie t{live[i], live[j], pa.governor, pb.governor, target};
+                        const SimState::GovernorTie* was = old_tie(live[i], live[j]);
+                        if (was != nullptr && was->gov_a == pa.governor && was->gov_b == pb.governor) {
+                            t.opinion = was->opinion + GovernorPolitics::kTieRate * (target - was->opinion);
+                        }
+                        ties.push_back(t);
+                    }
+                }
+                // Rivals intrigue at court.
+                const Polity& crown = s.polities[id];
+                if (crown.stability < GovernorPolitics::kDenounceStability || crown.laws[Laws::Tenure] == 2) continue;
+                RngStream rng = ctx.rng(Stream::Polity, kIntrigueEntity | static_cast<std::uint32_t>(id));
+                for (const SimState::GovernorTie& t : ties) {
+                    if (s.provinces[t.a].polity != id || t.opinion >= GovernorPolitics::kRivalTie) continue;
+                    Province& pa = s.provinces[t.a];
+                    Province& pb = s.provinces[t.b];
+                    if (pa.ended != kNever || pb.ended != kNever) continue;
+                    const bool a_accuses = s.figures[pa.governor].ambition >= s.figures[pb.governor].ambition;
+                    Province& accuser = a_accuses ? pa : pb;
+                    Province& accused = a_accuses ? pb : pa;
+                    if (rng.uniform() >= GovernorPolitics::kDenounce * s.figures[accuser.governor].ambition) continue;
+                    s.events.push_back({ctx.tick, EventType::Denounced, accused.seat,
+                                        static_cast<std::int64_t>((static_cast<std::uint64_t>(accuser.id) << 32) | accused.id)});
+                    if (s.figures[accused.governor].ambition > kDefiant && accused.loyalty < kStayLoyal) {
+                        defiant.push_back(accused.id);  // he will not go quietly
+                        continue;
+                    }
+                    RngStream fr = ctx.rng(Stream::Figures, kReplaceEntity | (accused.id & 0x007fffffu));
+                    accused.governor = record_person(s, content, accused.seat, ctx.tick, 30, 55, kRoleGovernor, fr);
+                    s.figures[accused.governor].polity = static_cast<std::uint32_t>(id);
+                    accused.governor_since = ctx.tick;
+                    accused.held_back = 0.0;
+                    accused.loyalty = std::max(0.0, accused.loyalty - GovernorPolitics::kDenounceLoyalty);
+                }
+            }
+            std::sort(ties.begin(), ties.end(), [](const SimState::GovernorTie& x, const SimState::GovernorTie& y) {
+                return x.a != y.a ? x.a < y.a : x.b < y.b;
+            });
+            s.governor_ties.swap(ties);
         }
         // ---- Laws: the crown reforms, concedes, and faces its governors' pacts.
         std::size_t writing_t = content.techniques.size(), scribes_t = content.techniques.size();
@@ -939,14 +1035,45 @@ void PolitySystem::step(StepContext& ctx) {
             for (CellId c : held[id]) {
                 if (s.polity_of[c] == id) crown_people += static_cast<double>(s.cell_population[c]);
             }
-            for (std::uint32_t v : seats_of[id]) {
-                const Province& pv = s.provinces[v];
-                if (pv.ended != kNever || pv.governor == 0 || pv.loyalty < 0.0) continue;
-                if (pv.loyalty < Laws::kPactLoyalty && s.figures[pv.governor].ambition >= Laws::kPactAmbition) {
-                    pact.push_back(v);
-                    pact_people += people_of[v] * (0.5 + pv.held_back);
-                    crown_people -= people_of[v];
+            // A pact is made among friends: from each disloyal, ambitious
+            // governor, those who think well of him and waver, and theirs in
+            // turn. The largest such circle presses the crown.
+            {
+                auto tie = [&](std::uint32_t a, std::uint32_t b) {
+                    const auto [x, y] = a < b ? std::pair{a, b} : std::pair{b, a};
+                    const auto it = std::lower_bound(s.governor_ties.begin(), s.governor_ties.end(), std::pair{x, y},
+                                                     [](const SimState::GovernorTie& t, const std::pair<std::uint32_t, std::uint32_t>& k) {
+                                                         return t.a != k.first ? t.a < k.first : t.b < k.second;
+                                                     });
+                    return it != s.governor_ties.end() && it->a == x && it->b == y ? it->opinion : 0.0;
+                };
+                std::vector<std::uint32_t> live;
+                for (std::uint32_t v : seats_of[id]) {
+                    const Province& pv = s.provinces[v];
+                    if (pv.ended == kNever && pv.governor != 0 && pv.loyalty >= 0.0) live.push_back(v);
                 }
+                std::vector<std::uint8_t> in_circle(live.size(), 0);
+                double best = 0.0;
+                for (std::size_t i = 0; i < live.size(); ++i) {
+                    const Province& seed = s.provinces[live[i]];
+                    if (in_circle[i] || seed.loyalty >= Laws::kPactLoyalty || s.figures[seed.governor].ambition < Laws::kPactAmbition) continue;
+                    std::vector<std::uint32_t> circle{live[i]};
+                    in_circle[i] = 1;
+                    for (std::size_t k = 0; k < circle.size(); ++k) {
+                        for (std::size_t j = 0; j < live.size(); ++j) {
+                            if (in_circle[j] || s.provinces[live[j]].loyalty >= GovernorPolitics::kWaver) continue;
+                            if (tie(circle[k], live[j]) >= GovernorPolitics::kPactTie) {
+                                in_circle[j] = 1;
+                                circle.push_back(live[j]);
+                            }
+                        }
+                    }
+                    double weight = 0.0;
+                    for (std::uint32_t v : circle) weight += people_of[v] * (0.5 + s.provinces[v].held_back);
+                    if (weight > best) best = weight, pact = circle;
+                }
+                pact_people = best;
+                for (std::uint32_t v : pact) crown_people -= people_of[v];
             }
             const double draw = rng.uniform();
             if (pact.size() >= 2 && pact_people >= Laws::kPactRatio * crown_people && draw < Laws::kPactAct) {
@@ -972,6 +1099,7 @@ void PolitySystem::step(StepContext& ctx) {
                         s.provinces[v].became = league;
                     }
                     s.events.push_back({ctx.tick, EventType::GovernorsRise, s.provinces[lead].seat, static_cast<std::int64_t>(league)});
+                    lose_authority(s, static_cast<std::uint32_t>(id), Authority::kAuthorityProvince * static_cast<double>(pact.size()));
                     start_war(w, s, ctx.tick, league, static_cast<std::uint32_t>(id), WarGoal::Independence);
                     s.polities[id].stability = std::max(0.0, s.polities[id].stability - kRevoltShock);
                 }
@@ -1010,6 +1138,7 @@ void PolitySystem::step(StepContext& ctx) {
                 s.events.push_back({ctx.tick, EventType::ProvinceRevolt, pv.seat, static_cast<std::int64_t>(v)});
                 start_war(w, s, ctx.tick, rebel, static_cast<std::uint32_t>(id), WarGoal::Independence);
                 // The realm is shaken, and the other governors take note.
+                lose_authority(s, static_cast<std::uint32_t>(id), Authority::kAuthorityProvince);
                 Polity& realm = s.polities[id];
                 realm.stability = std::max(0.0, realm.stability - kRevoltShock);
                 for (std::uint32_t o : seats_of[id]) {
@@ -1427,6 +1556,7 @@ void PolitySystem::step(StepContext& ctx) {
                         }
                     }
                     s.polities[id].stability = kCivilWarStability;
+                    lose_authority(s, realm, Authority::kAuthorityProvince * static_cast<double>(faction.size()));
                     for (std::uint32_t f : faction) start_war(w, s, ctx.tick, f, realm, WarGoal::Succession);
                     s.civil_wars.push_back(cw);
                     s.events.push_back({ctx.tick, EventType::CivilWarBegan, seat0, static_cast<std::int64_t>(cw.id)});
@@ -1741,6 +1871,12 @@ void PolitySystem::step(StepContext& ctx) {
 }
 
 // ------------------------------------------------------------------ rulers
+
+void lose_authority(SimState& s, std::uint32_t id, double by) {
+    if (id == 0 || id >= s.polities.size()) return;
+    Polity& p = s.polities[id];
+    p.authority = std::clamp(p.authority - by, 0.0, 1.0);
+}
 
 const char* law_name(Laws::Law law) {
     switch (law) {

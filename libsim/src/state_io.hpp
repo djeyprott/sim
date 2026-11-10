@@ -328,6 +328,7 @@ void serialize(Ar& ar, SimState& s) {
         flag(ar, p.contested);
         for (std::uint8_t& l : p.laws) ar.u8(l);
         flag(ar, p.divide);
+        ar.f64(p.authority);
         ar.u32(p.trek_to);
         ar.u32(p.trek_record);
         ar.u32(p.founder);
@@ -462,6 +463,13 @@ void serialize(Ar& ar, SimState& s) {
         vec(ar, c.factions, [&](std::uint32_t& f) { ar.u32(f); });
         u8(ar, c.outcome);
         ar.u32(c.victor);
+    });
+    vec(ar, s.governor_ties, [&](SimState::GovernorTie& g) {
+        ar.u32(g.a);
+        ar.u32(g.b);
+        ar.u32(g.gov_a);
+        ar.u32(g.gov_b);
+        ar.f64(g.opinion);
     });
     vec(ar, s.settling, [&](SimState::Settling& x) {
         ar.u32(x.from);

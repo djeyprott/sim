@@ -1479,7 +1479,18 @@ std::vector<Row> describe_cell_rows(const Simulation& sim, CellId c,
                 f.push_back({"Province", pv.name + who + fmt("; loyalty %.0f%%", 100.0 * pv.loyalty) +
                                              (pv.loyalty < PolitySystem::kRevoltBelow ? " (may break away)" : "") +
                                              (pv.held_back >= 0.01 ? fmt("; keeps %.0f%% of its grain and soldiers back", 100.0 * pv.held_back)
-                                                                   : std::string()),
+                                                                   : std::string()) +
+                                             [&]() {
+                                                 std::string friends, rivals;
+                                                 for (const SimState::GovernorTie& t : s.governor_ties) {
+                                                     if (t.a != pv.id && t.b != pv.id) continue;
+                                                     const Province& o = s.provinces[t.a == pv.id ? t.b : t.a];
+                                                     if (t.opinion >= GovernorPolitics::kPactTie) friends += (friends.empty() ? "" : ", ") + o.name;
+                                                     if (t.opinion < GovernorPolitics::kRivalTie) rivals += (rivals.empty() ? "" : ", ") + o.name;
+                                                 }
+                                                 return (friends.empty() ? std::string() : "; friends with " + friends) +
+                                                        (rivals.empty() ? std::string() : "; rivals of " + rivals);
+                                             }(),
                              gov});
                 f.push_back({"Unrest", fmt("%.0f%%", 100.0 * pv.unrest) + (pv.unrest > PolitySystem::kRiseAbove ? " (the people may rise)" : "")});
             } else {
@@ -1500,6 +1511,9 @@ std::vector<Row> describe_cell_rows(const Simulation& sim, CellId c,
                         (law == Laws::Succession ? "by " : "") + law_level_name(law, pol.laws[k]);
             }
             f.push_back({"Laws", laws});
+        }
+        if (pol.authority < 0.95) {
+            f.push_back({"Authority", fmt("%.0f%%", 100.0 * pol.authority) + " (shaken by defeats and losses)"});
         }
         if (pol.institutions != 0) {
             std::string list;

@@ -276,6 +276,7 @@ struct Polity {
     // succession, 0 (most central) to 2. New realms start at {1, 1, 1, 0}.
     std::array<std::uint8_t, 4> laws{1, 1, 1, 0};
     bool divide = false;            // a partible inheritance: the realm is shared out next year
+    double authority = 1.0;         // 0-1: the crown's standing after its defeats and losses (PolitySystem)
     CellId trek_to = kInvalidCell;  // where it is going, while on the move
     std::uint32_t trek_record = 0;  // its movement in SimState::migrations (index + 1)
     std::uint32_t founder = 0;      // a figure who founds its first house (a governor who broke away), 0 if none
@@ -644,6 +645,8 @@ enum class EventType : std::uint32_t {
     Arbitration = 45,         // an overlord imposed peace on two of its subjects; cell = its capital; value = the war
     CivilWarBegan = 46,       // a great realm in crisis split into factions; cell = its capital; value = index into civil_wars
     CivilWarEnded = 47,       // cell = the victor's (or the realm's) capital; value = index into civil_wars
+    Denounced = 48,           // a governor brought down a rival at court; cell = the rival's seat;
+                              // value = accuser's province << 32 | the rival's province
 };
 
 struct Event {
@@ -837,6 +840,14 @@ struct SimState {
         std::uint32_t polity = 0;
     };
     std::vector<Settling> settling;
+    // What governors of one realm think of each other (PolitySystem): one per
+    // pair of its living provinces, sorted by (a, b), province ids.
+    struct GovernorTie {
+        std::uint32_t a = 0, b = 0;            // provinces, a < b
+        std::uint32_t gov_a = 0, gov_b = 0;    // their governors when the tie formed
+        double opinion = 0.0;                  // -1..1
+    };
+    std::vector<GovernorTie> governor_ties;
     // Civil wars: a great realm's crisis fought out among factions.
     std::vector<CivilWar> civil_wars;  // index 0 unused
     std::vector<Battle> battles;
