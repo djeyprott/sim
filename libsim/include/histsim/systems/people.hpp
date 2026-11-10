@@ -65,7 +65,7 @@ public:
     static constexpr double kExploratoryRate = 0.005;
     static constexpr double kRateAtCapacity = 0.04;
     static constexpr double kMaxRate = 0.15;
-    // On finer grids the rates scale up (see World::per_step_diffusion), to
+    // On finer grids the rates scale up (see World::per_step), to
     // at most this share a year.
     static constexpr double kMaxGridRate = 0.5;
     // Strength of mobility's effect (see mobility_factor) on wandering (only

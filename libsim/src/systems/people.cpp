@@ -256,11 +256,13 @@ void MigrationSystem::step(StepContext& ctx) {
         const double crowding = crowding_of(s, c);
         const bool starving = s.env.capacity[c] <= 0.0;
         // Rates are for level-5 cells; smaller cells trade people faster, for
-        // the same spread in km.
+        // the same pace in km a year. (Not for the same diffusion: that
+        // churns a fine grid's people so much that cells settle well below
+        // their capacity and dialects blur into each other.)
         const double rate =
             starving ? 1.0
                      : std::min(kMaxGridRate,
-                                w.per_step_diffusion(std::min(kMaxRate, kExploratoryRate + kRateAtCapacity * crowding * crowding)));
+                                w.per_step(std::min(kMaxRate, kExploratoryRate + kRateAtCapacity * crowding * crowding)));
 
         // Destinations: land neighbors that can feed someone, by spare
         // capacity (plus a little for any capacity) over the cost of climbing.
