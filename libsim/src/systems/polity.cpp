@@ -101,10 +101,13 @@ void hinterland_people(const World& w, const SimState& s, std::vector<double>& p
     const double k = w.hinterland_weight();  // as if a level-5 cell's
     // Each cell sums its own hinterland in a fixed order: the same with any
     // number of threads.
-    parallel_for(n, [&](std::size_t c_begin, std::size_t c_end) {
-        for (std::size_t c = c_begin; c < c_end; ++c) {
+    // Only land: no one lives at sea, so a sea cell's sums stay 0 and
+    // leaving the sea out of a sum changes nothing.
+    parallel_for(w.land_cells.size(), [&](std::size_t l_begin, std::size_t l_end) {
+        for (std::size_t l = l_begin; l < l_end; ++l) {
+            const CellId c = w.land_cells[l];
             double p = 0.0, t = 0.0;
-            w.for_hinterland(static_cast<CellId>(c), [&](CellId h) {
+            w.for_land_hinterland(c, [&](CellId h) {
                 const double pop = static_cast<double>(s.cell_population[h]);
                 p += pop;
                 if (towns) t += s.urban[h] * pop;
@@ -124,11 +127,11 @@ namespace {
 void hinterland_per_km2(const World& w, const std::vector<double>& value, std::vector<double>& out) {
     const std::size_t n = w.cell_count();
     out.assign(n, 0.0);
-    parallel_for(n, [&](std::size_t c_begin, std::size_t c_end) {
-        for (std::size_t c = c_begin; c < c_end; ++c) {
+    parallel_for(w.land_cells.size(), [&](std::size_t l_begin, std::size_t l_end) {
+        for (std::size_t l = l_begin; l < l_end; ++l) {
+            const CellId c = w.land_cells[l];
             double v = 0.0, a = 0.0;
-            w.for_hinterland(static_cast<CellId>(c), [&](CellId h) {
-                if (!w.is_land[h]) return;
+            w.for_land_hinterland(c, [&](CellId h) {
                 v += value[h];
                 a += w.grid.area_km2(h);
             });

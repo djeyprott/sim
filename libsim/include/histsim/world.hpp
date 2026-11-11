@@ -171,6 +171,13 @@ struct World {
     // (technique_place_ok). Derived from the terrain; not hashed.
     std::vector<std::uint64_t> technique_places;
     std::vector<CellId> hinterland_ids;
+    // The land cells, in order, and each land cell's hinterland without its
+    // sea (the cell itself on grids with no hinterlands); empty for sea
+    // cells. Loops over people skip the sea (two thirds of the cells) with
+    // these. Derived; not hashed.
+    std::vector<CellId> land_cells;
+    std::vector<std::uint32_t> land_hinterland_begin;
+    std::vector<CellId> land_hinterland_ids;
 
     [[nodiscard]] std::size_t cell_count() const noexcept { return grid.cell_count(); }
 
@@ -228,6 +235,10 @@ struct World {
             return;
         }
         for (std::uint32_t i = hinterland_begin[c]; i < hinterland_begin[c + 1]; ++i) f(hinterland_ids[i]);
+    }
+    template <typename F>
+    void for_land_hinterland(CellId c, F&& f) const {
+        for (std::uint32_t i = land_hinterland_begin[c]; i < land_hinterland_begin[c + 1]; ++i) f(land_hinterland_ids[i]);
     }
     [[nodiscard]] std::size_t species_count() const noexcept {
         return species_mask.empty() ? 0 : species_abundance.size() / species_mask.size();

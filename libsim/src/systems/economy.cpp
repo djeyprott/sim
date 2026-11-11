@@ -88,7 +88,9 @@ void EconomySystem::step(StepContext& ctx) {
     constexpr std::uint32_t kNone = ~0u;
     std::vector<std::uint32_t> market(n, kNone);
     std::vector<CellId> cell_of;
-    for (CellId c = 0; c < n; ++c) {
+    // Only land: no one lives at sea, and its stocks and prices never move
+    // from where they were set.
+    for (const CellId c : w.land_cells) {
         if (s.cell_population[c] > 0) {
             market[c] = static_cast<std::uint32_t>(cell_of.size());
             cell_of.push_back(c);
