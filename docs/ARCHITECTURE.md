@@ -89,20 +89,28 @@ derived per-cell totals.
 
 ### Grid scale
 
-The model is tuned at grid level 5 (cells of about 50,000 km², 225 km
-apart), but the same history should unfold at any level. Rules that act cell
-by cell therefore scale with the grid (`World::cell_scale()`, exactly
-2^(5 − level), so every factor is exactly 1 at level 5 and results there do
-not change):
+The simulation runs on grid level 7 (163,842 cells of about 3,000 km², 56
+km apart), the default of the command line and the only level the viewer
+offers: at level 5 Italy is a stub and the Levant two cells wide. The rules
+were first written for level 5 (cells of about 50,000 km², 225 km apart) and
+are still stated in level-5 terms; rules that act cell by cell scale with the
+grid (`World::cell_scale()`, exactly 2^(5 − level), so every factor is
+exactly 1 at level 5 and the golden hash, kept at level 5 for speed, does not
+change). Levels 4–6 stay for quick tests; only level 7 is calibrated (town
+growth, `SettlementSystem::kPerSurplus` 0.08: on 3 seeds over 8,000 years
+towns of 5,000 come 1,000–1,500 years after the first crop and the first
+state 6,188 years after it). A level 7 run takes about 0.2 s a year on two
+cores.
 
 | Rule | Scaled so that |
 | --- | --- |
 | Things passing to a neighbour (endemic and epidemic disease, preaching; crops, techniques and culture already scale with cell area) | they move the same km a year: chance ÷ scale |
-| Wandering bands | people spread (diffuse) as fast: rate ÷ scale², up to 50% a year |
+| Wandering bands | people move the same km a year: rate ÷ scale, up to 50% a year (as fast a diffusion, rate ÷ scale², churned a fine grid's people so that cells settled well below what they feed and dialects blurred) |
 | Colonists | they leapfrog as far as at level 5: on finer grids to land 2^(level − 5) steps away (nearer only if none there has room); on coarser grids less often |
 | Coasts and rivers (fishing, alluvium, floodplain farming, irrigation, river-loving species) | the strip along a coast and the corridor along a river are about 225 km wide at any level (`World::coast_share`, `World::river_share`) |
 | Founding chances per cell (chiefdoms, nomad confederations, universal faiths, inventions, disease emergence) | as many per area: chance × scale² |
-| Town thresholds (cities, writing and other techniques, temple and universal faiths) and population thresholds (disease critical community, forgetting) | they count a hinterland about a level-5 cell in area: the cells within 2^(level − 6) steps (`World::for_hinterland`); a city is named at the hinterland's centre |
+| Town thresholds (cities, writing and other techniques, temple and universal faiths) and population thresholds (disease critical community, forgetting) | they count a hinterland about a level-5 cell in area: the cells within 2^(level − 6) steps (`World::for_hinterland`), its sums scaled to a level-5 cell's area (`World::hinterland_weight`: 4/7 at level 6, 16/19 at level 7); a city is named at the hinterland's centre, never in an empty cell |
+| Crowding (food per km² for the size of towns, people per km² for founding chiefdoms) | it is measured over the hinterland, so a small fertile cell on a fine grid is no more crowded than the level-5 cell it lies in |
 | Annexation, conquest | the same area a year: as many attempts or pushes as cells in a level-5 cell |
 | Nomad raids | they strike the target's hinterland |
 | Thresholds in cells (civil war, schism, annexing a last province) | they mean the same area (`World::cells_for`) |

@@ -62,7 +62,12 @@ namespace {
 using histsim::Simulation;
 
 struct Options {
-    histsim::WorldParams params;
+    // Level 7 is the calibrated grid; coarser ones are for quick tests.
+    histsim::WorldParams params = [] {
+        histsim::WorldParams p;
+        p.grid_level = 7;
+        return p;
+    }();
     std::int64_t years = 100;
     std::int64_t report_every = 0;
     std::string save_path;
@@ -92,6 +97,9 @@ struct Options {
                  "  (every command that builds a world takes --earth: Earth's land and sea\n"
                  "   instead of a generated planet; the seed still places species, deposits\n"
                  "   and peoples and shapes history)\n"
+                 "  (--level picks the grid: 7, about 3,000 km^2 a cell, is the default and the\n"
+                 "   only one calibrated against history; 4-6 are coarser and only for quick\n"
+                 "   tests)\n"
                  "  histsim run    [--seed N] [--level L] [--ocean F] [--years Y]\n"
                  "                 [--report-every Y] [--save FILE] [--hash-only]\n"
                  "  histsim resume FILE [--years Y] [--report-every Y] [--save FILE] [--hash-only]\n"
@@ -1574,7 +1582,7 @@ int demo() {
     std::printf(
         "\nThis is the command-line runner; the map and globe interface is the histsim viewer.\n"
         "Run it from a terminal for more options, for example:\n"
-        "  histsim run --seed 7 --level 6 --years 2000 --report-every 200\n"
+        "  histsim run --seed 7 --years 2000 --report-every 200\n"
         "  histsim run --years 500 --save run.hsim\n"
         "  histsim resume run.hsim --years 500\n"
         "  histsim world --seed 7\n");

@@ -13,10 +13,11 @@ extends Control
 const MAP_WIDTH := 2048
 const MAP_HEIGHT := 1024
 const SPEEDS := [1, 10, 100, 1000]  # simulated years per real second
-const LEVELS := [4, 5, 6, 7]
+# The grid: level 7 (164k cells, about 3,000 km^2 each), the one calibrated
+# against history. Snapshots of other levels still load.
+const LEVEL := 7
 const WORLD_KINDS := ["generated", "earth"]
 const WORLD_KIND_NAMES := ["Generated world", "Earth"]
-const LEVEL_NAMES := ["Coarse (2.6k cells)", "Normal (10k cells)", "Fine (41k cells)", "Detailed (164k cells)"]
 const RENDER_INTERVAL := 0.1  # time between map redraws while playing
 const SUMMARY_INTERVAL := 0.1  # time between summary updates while playing
 const CHART_INTERVAL := 0.25  # chart refreshes per second while playing
@@ -67,7 +68,6 @@ var play_button: Button
 var speed_option: OptionButton
 var actual_speed_label: Label
 var seed_spin: SpinBox
-var level_option: OptionButton
 var kind_option: OptionButton
 var coastline_check: CheckBox
 var river_check: CheckBox
@@ -127,7 +127,7 @@ func _ready() -> void:
 # ---------------------------------------------------------------- simulation
 
 func _new_world() -> void:
-	var level: int = LEVELS[level_option.selected]
+	var level: int = LEVEL
 	var kind: String = WORLD_KINDS[kind_option.selected]
 	if not world.create_world_of_kind(int(seed_spin.value), level, 0.7, kind):
 		status_label.text = "Could not create world: " + world.get_last_error()
@@ -667,7 +667,6 @@ func _quickload() -> void:
 		return
 	_set_playing(false)
 	seed_spin.set_value_no_signal(world.get_seed())
-	level_option.selected = maxi(0, LEVELS.find(world.get_level()))
 	kind_option.selected = maxi(0, WORLD_KINDS.find(world.get_world_kind()))
 	_after_world_change()
 	_clear_cell_info()
@@ -1050,12 +1049,6 @@ func _build_top_bar() -> Control:
 	seed_spin.custom_minimum_size.x = 110
 	bar.add_child(seed_spin)
 
-	level_option = OptionButton.new()
-	for name in LEVEL_NAMES:
-		level_option.add_item(name)
-	level_option.selected = 1
-	level_option.tooltip_text = "Grid detail. Finer grids look better but run slower."
-	bar.add_child(level_option)
 
 	kind_option = OptionButton.new()
 	for name in WORLD_KIND_NAMES:
