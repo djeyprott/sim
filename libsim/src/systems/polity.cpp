@@ -98,6 +98,7 @@ void hinterland_people(const World& w, const SimState& s, std::vector<double>& p
     people.assign(n, 0.0);
     town.assign(n, 0.0);
     const bool towns = s.urban.size() == n;
+    const double k = w.hinterland_weight();  // as if a level-5 cell's
     // Each cell sums its own hinterland in a fixed order: the same with any
     // number of threads.
     parallel_for(n, [&](std::size_t c_begin, std::size_t c_end) {
@@ -108,8 +109,8 @@ void hinterland_people(const World& w, const SimState& s, std::vector<double>& p
                 p += pop;
                 if (towns) t += s.urban[h] * pop;
             });
-            people[c] = p;
-            town[c] = t;
+            people[c] = p * k;
+            town[c] = t * k;
         }
     }, 256);
 }
