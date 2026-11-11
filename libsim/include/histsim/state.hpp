@@ -885,6 +885,9 @@ struct SimState {
 
     // Sort and merge cohorts, drop empty ones, rebuild derived data.
     void normalize_cohorts(std::size_t cell_count);
+    // The same with `extra` (arrivals) added at the end of the list, without
+    // copying them there first.
+    void normalize_cohorts(std::size_t cell_count, const std::vector<Cohort>& extra);
     void refresh(std::size_t cell_count);
 
     [[nodiscard]] std::span<const Cohort> cohorts_in(CellId c) const noexcept {

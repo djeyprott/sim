@@ -87,7 +87,8 @@ TEST(scale_hinterland_people_sum_the_cells_around) {
         double sum = 0.0;
         for (CellId nb : w.grid.neighbors(c)) sum += static_cast<double>(s.cell_population[nb]);
         sum += static_cast<double>(s.cell_population[c]);
-        CHECK(people[c] == sum * w.hinterland_weight());
+        // Sums are kept for land cells; no one lives at sea.
+        CHECK(people[c] == (w.is_land[c] ? sum * w.hinterland_weight() : 0.0));
         CHECK(town[c] == 0.0);  // no towns yet
     }
 }

@@ -277,8 +277,10 @@ Simulation Simulation::load(const std::string& path) {
         throw std::runtime_error(path + " has trailing data");
     }
     const std::size_t n = sim.world_.cell_count();
-    for (const Cohort& c : sim.state_.cohorts) {
+    for (std::size_t i = 0; i < sim.state_.cohorts.size(); ++i) {
+        const Cohort& c = sim.state_.cohorts[i];
         if (c.cell >= n) throw std::runtime_error(path + " is corrupt (cohort outside the world)");
+        if (i > 0 && c.cell < sim.state_.cohorts[i - 1].cell) throw std::runtime_error(path + " is corrupt (cohorts out of order)");
     }
     if (sim.state_.env.capacity.size() != n || sim.state_.ever_settled.size() != n ||
         sim.state_.climate.regional_temp_anomaly.size() != sim.world_.climate_grid.cell_count()) {

@@ -3,6 +3,7 @@
 #include "histsim/parallel.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <cmath>
 #include <mutex>
@@ -15,6 +16,7 @@
 #include "histsim/systems/technology.hpp"
 #include "histsim/systems/war.hpp"
 #include "vital_rates.inc"
+
 
 namespace histsim {
 
@@ -340,6 +342,7 @@ void MigrationSystem::step(StepContext& ctx) {
         carried.insert(carried.end(), out.carried.begin(), out.carried.end());
         moved += out.moved;
     }
+
 
     // A group of `share` of a cohort's people, in its age structure, bound
     // for `to`. The cohort keeps the rest.
@@ -849,9 +852,9 @@ void MigrationSystem::step(StepContext& ctx) {
 
     for (CellId c = 0; c < n; ++c) s.usual_capacity[c] += kUsualRate * (s.env.capacity[c] - s.usual_capacity[c]);
 
-    s.cohorts.insert(s.cohorts.end(), arrivals.begin(), arrivals.end());
-    s.normalize_cohorts(n);
+    s.normalize_cohorts(n, arrivals);
     s.ledger.migrants += moved;
+
     for (const auto& [to, known] : carried) {
         std::uint32_t usable = 0;
         for (std::size_t sp = 0; sp < w.content->species.size(); ++sp) {
@@ -865,8 +868,10 @@ void MigrationSystem::step(StepContext& ctx) {
     // Small groups join the largest group in their cell: a band of a few
     // dozen arriving among many takes up their language and customs at once.
     // (Larger minorities shift gradually; see CultureSystem.)
-    bool merged_any = false;
-    for (CellId c = 0; c < n; ++c) {
+    // Each cell on its own, in parallel.
+    std::atomic<bool> merged_any{false};
+    parallel_for(n, [&](std::size_t c_begin, std::size_t c_end) {
+    for (std::size_t c = c_begin; c < c_end; ++c) {
         const auto first = s.cohort_begin[c], last = s.cohort_begin[c + 1];
         if (last - first < 2) continue;
         auto largest = first;
@@ -895,10 +900,12 @@ void MigrationSystem::step(StepContext& ctx) {
                 s.cohorts[i].female[b] = 0;
                 s.cohorts[i].male[b] = 0;
             }
-            merged_any = true;
+            merged_any.store(true, std::memory_order_relaxed);
         }
     }
-    if (merged_any) s.normalize_cohorts(n);
+    }, 256);
+    if (merged_any.load()) s.normalize_cohorts(n);
+
 
     for (CellId c = 0; c < n; ++c) {
         if (s.cell_population[c] > 0 && !s.ever_settled[c]) {

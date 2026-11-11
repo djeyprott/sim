@@ -277,3 +277,41 @@ TEST(migration_a_wandering_tribe_goes_step_by_step) {
     CHECK_EQ(s.ledger.deaths - deaths, s.march_deaths);
     CHECK_EQ(s.total_population(), people - s.march_deaths);
 }
+
+TEST(normalize_with_arrivals_matches_adding_them_first) {
+    // Arrivals passed alongside give exactly what adding them to the list
+    // and normalizing does: same order, same merged traits, empties dropped.
+    WorldParams p;
+    p.grid_level = 4;
+    Simulation sim = Simulation::create(p);
+    const std::size_t n = sim.world().cell_count();
+    SimState a = sim.state();
+    std::vector<Cohort> arrivals;
+    for (std::size_t i = 0; i < a.cohorts.size(); i += 3) {
+        Cohort band = a.cohorts[i];
+        band.cell = static_cast<CellId>((band.cell + 7) % n);
+        if (i % 2 == 0) band.language += 1;
+        for (auto& t : band.traits) t += 0.125;
+        for (int b = 0; b < kAgeBins; ++b) {
+            band.female[b] /= 3;
+            band.male[b] = i % 9 == 0 ? 0 : band.male[b] / 3;
+            if (i % 9 == 0) band.female[b] = 0;  // some arrive empty
+        }
+        arrivals.push_back(band);
+    }
+    std::reverse(arrivals.begin(), arrivals.end());
+    SimState b = a;
+    a.cohorts.insert(a.cohorts.end(), arrivals.begin(), arrivals.end());
+    a.normalize_cohorts(n);
+    b.normalize_cohorts(n, arrivals);
+    CHECK(a.cohorts.size() == b.cohorts.size());
+    bool same = a.cohorts.size() == b.cohorts.size();
+    for (std::size_t i = 0; same && i < a.cohorts.size(); ++i) {
+        const Cohort &x = a.cohorts[i], &y = b.cohorts[i];
+        same = x.cell == y.cell && x.culture == y.culture && x.language == y.language && x.traits == y.traits &&
+               x.dialect == y.dialect && x.female == y.female && x.male == y.male && x.farming == y.farming;
+    }
+    CHECK(same);
+    CHECK(a.cohort_begin == b.cohort_begin);
+    CHECK(a.cell_population == b.cell_population);
+}

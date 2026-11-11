@@ -1375,6 +1375,19 @@ World generate_test_world(const WorldParams& params, const Content& content) {
             w.hinterland_begin[c + 1] = static_cast<std::uint32_t>(w.hinterland_ids.size());
         }
     }
+    // Land cells and their hinterlands' land.
+    w.land_cells.clear();
+    w.land_hinterland_begin.assign(n + 1, 0);
+    w.land_hinterland_ids.clear();
+    for (CellId c = 0; c < n; ++c) {
+        if (w.is_land[c]) {
+            w.land_cells.push_back(c);
+            w.for_hinterland(c, [&](CellId h) {
+                if (w.is_land[h]) w.land_hinterland_ids.push_back(h);
+            });
+        }
+        w.land_hinterland_begin[c + 1] = static_cast<std::uint32_t>(w.land_hinterland_ids.size());
+    }
     // Where each technique can be used (the places do not change).
     w.technique_places.assign(n, 0);
     for (CellId c = 0; c < n; ++c) {
