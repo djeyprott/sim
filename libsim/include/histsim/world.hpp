@@ -210,6 +210,16 @@ struct World {
     // Steps of a hinterland about a level-5 cell in area: 0 at level 5 and
     // coarser, else 2^(level - 6).
     [[nodiscard]] int hinterland_steps() const noexcept { return reach_steps() / 2; }
+    // A hinterland's people counted as those of a level-5 cell: level-5 cell
+    // area / hinterland area (a hinterland of r steps holds 1 + 3r(r + 1)
+    // cells; 7 at level 6, 19 at level 7), so town and community sizes do
+    // not depend on how well rings of cells fit a level-5 cell. Exactly 1 at
+    // level 5 and coarser.
+    [[nodiscard]] double hinterland_weight() const noexcept {
+        const int r = hinterland_steps();
+        if (r == 0) return 1.0;
+        return static_cast<double>(cells_for(1)) / static_cast<double>(1 + 3 * r * (r + 1));
+    }
     // Calls f(cell) for each cell of c's hinterland (just c when none is built).
     template <class F>
     void for_hinterland(CellId c, F&& f) const {

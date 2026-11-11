@@ -81,11 +81,13 @@ TEST(scale_hinterland_people_sum_the_cells_around) {
     const SimState& s = sim.state();
     std::vector<double> people, town;
     hinterland_people(w, s, people, town);
+    // Seven cells counted as a level-5 cell's area (four level-6 cells).
+    CHECK(w.hinterland_weight() == 4.0 / 7.0);
     for (CellId c = 0; c < w.cell_count(); c += 211) {
         double sum = 0.0;
         for (CellId nb : w.grid.neighbors(c)) sum += static_cast<double>(s.cell_population[nb]);
         sum += static_cast<double>(s.cell_population[c]);
-        CHECK(people[c] == sum);
+        CHECK(people[c] == sum * w.hinterland_weight());
         CHECK(town[c] == 0.0);  // no towns yet
     }
 }

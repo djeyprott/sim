@@ -77,13 +77,13 @@ ctest --test-dir build --output-on-failure
 
 ```sh
 # Describe the generated test world
-./build/cli/histsim world --seed 1 --level 5
+./build/cli/histsim world --seed 1
 
 # Simulate 1,000 years, reporting every 100
-./build/cli/histsim run --seed 1 --level 5 --years 1000 --report-every 100
+./build/cli/histsim run --seed 1 --years 1000 --report-every 100
 
 # Render every map mode to PNG after 300 years (writes map-terrain.png, ...)
-./build/cli/histsim map --seed 1 --level 6 --years 300 --out map
+./build/cli/histsim map --seed 1 --years 300 --out map
 
 # Meddle: an eruption at year 100, a plague near 2.4°N 27.7°E at year 150,
 # and a 20-year drought there at year 200 (see `histsim --help` for all)
@@ -128,10 +128,10 @@ ctest --test-dir build --output-on-failure
 ./build/cli/histsim resume run.hsim --years 600
 ```
 
-`--level` sets grid resolution: level 5 is 10,242 cells (~50,000 km² each),
-level 7 is 163,842 cells (~3,100 km²). The model is tuned at level 5 and
-scales its rules to the grid, so finer levels show the same history in more
-detail (each level up takes about four times as long to run). Time is shown
+Worlds are grid level 7: 163,842 cells of about 3,100 km² (a level 7 run
+takes about 0.2 s a simulated year on two cores). `--level` 4–6 (2,562 to
+40,962 cells) builds coarser worlds for quick tests; each level down runs
+about four times faster, but only level 7 is calibrated against history. Time is shown
 as years since the run began; the sim has no calendar years.
 
 ## Layout

@@ -98,14 +98,46 @@ void hinterland_people(const World& w, const SimState& s, std::vector<double>& p
     people.assign(n, 0.0);
     town.assign(n, 0.0);
     const bool towns = s.urban.size() == n;
-    for (CellId c = 0; c < n; ++c) {
-        w.for_hinterland(c, [&](CellId h) {
-            const double pop = static_cast<double>(s.cell_population[h]);
-            people[c] += pop;
-            if (towns) town[c] += s.urban[h] * pop;
-        });
-    }
+    const double k = w.hinterland_weight();  // as if a level-5 cell's
+    // Each cell sums its own hinterland in a fixed order: the same with any
+    // number of threads.
+    parallel_for(n, [&](std::size_t c_begin, std::size_t c_end) {
+        for (std::size_t c = c_begin; c < c_end; ++c) {
+            double p = 0.0, t = 0.0;
+            w.for_hinterland(static_cast<CellId>(c), [&](CellId h) {
+                const double pop = static_cast<double>(s.cell_population[h]);
+                p += pop;
+                if (towns) t += s.urban[h] * pop;
+            });
+            people[c] = p * k;
+            town[c] = t * k;
+        }
+    }, 256);
 }
+
+namespace {
+
+// Per km^2 of land over each cell's hinterland (the cell itself at level 5):
+// sum of value / sum of area. Towns and states answer to how crowded a
+// region about a level-5 cell in size is, so a finer grid's small fertile
+// cells do not raise them sooner than the same land would at level 5.
+void hinterland_per_km2(const World& w, const std::vector<double>& value, std::vector<double>& out) {
+    const std::size_t n = w.cell_count();
+    out.assign(n, 0.0);
+    parallel_for(n, [&](std::size_t c_begin, std::size_t c_end) {
+        for (std::size_t c = c_begin; c < c_end; ++c) {
+            double v = 0.0, a = 0.0;
+            w.for_hinterland(static_cast<CellId>(c), [&](CellId h) {
+                if (!w.is_land[h]) return;
+                v += value[h];
+                a += w.grid.area_km2(h);
+            });
+            out[c] = a > 0.0 ? v / a : 0.0;
+        }
+    }, 256);
+}
+
+}  // namespace
 
 double polity_reach_km(const World& w, const SimState& s, CellId capital) {
     const TechEffects e = technique_effects(w, capital, techniques_in(s, capital));
@@ -316,14 +348,21 @@ void SettlementSystem::step(StepContext& ctx) {
     SimState& s = ctx.state;
     const std::size_t n = w.cell_count();
     ensure(s, n);
+    // People fed per km^2 by farmland, and by food brought in last year,
+    // over the hinterland.
+    std::vector<double> food(n, 0.0), fed_per_km2;
+    for (CellId c = 0; c < n; ++c) {
+        if (s.cell_population[c] == 0) continue;
+        const double farmed = s.env.farm_capacity.empty() ? 0.0 : s.env.farm_capacity[c] * s.env.farming[c];
+        const double imported = s.food_import.empty() ? 0.0 : std::max(0.0, s.food_import[c]);
+        food[c] = farmed + imported;
+    }
+    hinterland_per_km2(w, food, fed_per_km2);
     for (CellId c = 0; c < n; ++c) {
         if (s.cell_population[c] == 0) {
             s.urban[c] = 0.0;
         } else {
-            // People fed per km^2 by farmland, and by food brought in last year.
-            const double farmed = s.env.farm_capacity.empty() ? 0.0 : s.env.farm_capacity[c] * s.env.farming[c];
-            const double imported = s.food_import.empty() ? 0.0 : std::max(0.0, s.food_import[c]);
-            const double fed = (farmed + imported) / w.grid.area_km2(c);
+            const double fed = fed_per_km2[c];
             double target = std::clamp(kPerSurplus * (fed - kThreshold), 0.0, kMax);
             const std::uint32_t p = s.polity_of[c];
             if (target > 0.0 && p != 0 && s.polities[p].capital == c) target += kCapital;
@@ -337,6 +376,7 @@ void SettlementSystem::step(StepContext& ctx) {
     for (CellId c = 0; c < n; ++c) {
         const double town = around_town[c];
         std::uint32_t& city = s.city_of[c];
+        if (city == 0 && town < kCityPeople) continue;  // no city, and none to found
         bool centre = true, taken = false;
         if (w.hinterland_steps() > 0) {
             w.for_hinterland(c, [&](CellId h) {
@@ -345,7 +385,8 @@ void SettlementSystem::step(StepContext& ctx) {
                 if (s.city_of[h] != 0) taken = true;
             });
         }
-        if (city == 0 && town >= kCityPeople && centre && !taken) {
+        // (On fine grids a hinterland's centre can be an empty cell: no city.)
+        if (city == 0 && town >= kCityPeople && centre && !taken && s.cell_population[c] > 0) {
             const Cohort* lead = lead_cohort(s, c);
             const Language& lang = s.languages[lead->language];
             RngStream rng = ctx.rng(Stream::Settlement, kNameEntity | c);
@@ -735,6 +776,8 @@ void PolitySystem::step(StepContext& ctx) {
                     pv.name = s.cities[city].name;
                 } else {
                     const Cohort* lead = lead_cohort(s, c);
+                    if (lead == nullptr) lead = lead_cohort(s, s.polities[id].capital);  // an empty seat
+                    if (lead == nullptr && !s.cohorts.empty()) lead = &s.cohorts.front();
                     RngStream nr = ctx.rng(Stream::Polity, kProvinceNameEntity | c);
                     pv.name = coin_name(content, s.languages[lead->language], nr, [](const std::string&) { return false; });
                 }
@@ -1820,10 +1863,14 @@ void PolitySystem::step(StepContext& ctx) {
             }
         }
         std::vector<CellId> in_reach;
+        // People per km^2 over each hinterland.
+        std::vector<double> people(n), crowding;
+        for (CellId c = 0; c < n; ++c) people[c] = static_cast<double>(s.cell_population[c]);
+        hinterland_per_km2(w, people, crowding);
         for (CellId c = 0; c < n; ++c) {
             if (s.polity_of[c] != 0 || s.cell_population[c] == 0) continue;
             const double farming = s.env.farming.empty() ? 0.0 : s.env.farming[c];
-            const double density = static_cast<double>(s.cell_population[c]) / w.grid.area_km2(c);
+            const double density = crowding[c];
             const double hierarchy = cell_trait(s, c, i_hierarchy);
             RngStream rng = ctx.rng(Stream::Polity, kFormationEntity | c);
             if (herders_at(c)) {
