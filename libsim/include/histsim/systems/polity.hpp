@@ -46,7 +46,7 @@ public:
     // Town share target = kPerSurplus x (people fed by farmland per km^2 -
     // kThreshold), up to kMax; capitals get kCapital more.
     static constexpr double kThreshold = 0.4;
-    static constexpr double kPerSurplus = 0.055;
+    static constexpr double kPerSurplus = 0.08;
     static constexpr double kMax = 0.35;
     static constexpr double kCapital = 0.04;
     static constexpr double kRate = 0.01;  // share of the gap closed per year
