@@ -361,14 +361,24 @@ void SettlementSystem::step(StepContext& ctx) {
         food[c] = farmed + imported;
     }
     hinterland_per_km2(w, food, fed_per_km2);
+    // The seat of a realm: its capital's hinterland (the capital cell itself
+    // at level 5), as far as the realm holds it, so a capital's court, guards
+    // and servants are as many at any grid level.
+    std::vector<char> seat(n, 0);
+    for (std::size_t p = 1; p < s.polities.size(); ++p) {
+        const Polity& pol = s.polities[p];
+        if (pol.ended != kNever || pol.capital >= n || s.polity_of[pol.capital] != p) continue;
+        w.for_hinterland(pol.capital, [&](CellId h) {
+            if (s.polity_of[h] == p) seat[h] = 1;
+        });
+    }
     for (CellId c = 0; c < n; ++c) {
         if (s.cell_population[c] == 0) {
             s.urban[c] = 0.0;
         } else {
             const double fed = fed_per_km2[c];
             double target = std::clamp(kPerSurplus * (fed - kThreshold), 0.0, kMax);
-            const std::uint32_t p = s.polity_of[c];
-            if (target > 0.0 && p != 0 && s.polities[p].capital == c) target += kCapital;
+            if (target > 0.0 && seat[c] != 0) target += kCapital;
             s.urban[c] += kRate * (target - s.urban[c]);
         }
     }

@@ -44,7 +44,8 @@ public:
     void step(StepContext& ctx) override;
 
     // Town share target = kPerSurplus x (people fed by farmland per km^2 -
-    // kThreshold), up to kMax; capitals get kCapital more.
+    // kThreshold), up to kMax; a realm's seat (its capital's hinterland, as
+    // far as it holds it: the capital cell at level 5) gets kCapital more.
     static constexpr double kThreshold = 0.4;
     static constexpr double kPerSurplus = 0.08;
     static constexpr double kMax = 0.35;
