@@ -32,8 +32,10 @@ struct Cohort {
     std::uint32_t language = 0;  // id into SimState::languages
     std::array<std::uint32_t, kAgeBins> female{};
     std::array<std::uint32_t, kAgeBins> male{};
-    std::array<double, kMaxTraits> traits{};       // 0-1 each, as in Content::traits
-    std::array<double, kDialectDims> dialect{};
+    // Stored single precision (arithmetic on them is in double): a cohort
+    // is read every year by most systems, so its size sets their speed.
+    std::array<float, kMaxTraits> traits{};       // 0-1 each, as in Content::traits
+    std::array<float, kDialectDims> dialect{};
     double farming = 0.0;  // share of its food from crops and herds (0 = foragers)
     // Share of its people held in bondage (enslaved, 0-1). Groups split off
     // carry the same share (the enslaved go with their households); merged

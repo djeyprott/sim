@@ -164,8 +164,17 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(c.language);
         for (auto& n : c.female) ar.u32(n);
         for (auto& n : c.male) ar.u32(n);
-        for (auto& t : c.traits) ar.f64(t);
-        for (auto& d : c.dialect) ar.f64(d);
+        // Stored as doubles (float -> double -> float is exact).
+        for (auto& t : c.traits) {
+            double v = t;
+            ar.f64(v);
+            t = static_cast<float>(v);
+        }
+        for (auto& d : c.dialect) {
+            double v = d;
+            ar.f64(v);
+            d = static_cast<float>(v);
+        }
         ar.f64(c.farming);
         ar.f64(c.bonded);
     });

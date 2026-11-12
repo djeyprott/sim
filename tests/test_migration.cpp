@@ -194,7 +194,7 @@ TEST(migration_a_hard_pressed_tribe_moves_as_a_whole_and_the_locals_mostly_stay)
     s.polity_of[x.home] = 1;
     std::size_t i_mobility = 0;
     while (w.content->traits[i_mobility].id != "mobility") ++i_mobility;
-    for (auto i = s.cohort_begin[x.home]; i < s.cohort_begin[x.home + 1]; ++i) s.cohorts[i].traits[i_mobility] = 0.9;
+    for (auto i = s.cohort_begin[x.home]; i < s.cohort_begin[x.home + 1]; ++i) s.cohorts[i].traits[i_mobility] = 0.9f;
     const std::int64_t people = s.total_population();
     const std::uint32_t root = s.cultures[tribe.culture].root;
     auto others = [&](CellId c) {
@@ -291,7 +291,7 @@ TEST(normalize_with_arrivals_matches_adding_them_first) {
         Cohort band = a.cohorts[i];
         band.cell = static_cast<CellId>((band.cell + 7) % n);
         if (i % 2 == 0) band.language += 1;
-        for (auto& t : band.traits) t += 0.125;
+        for (auto& t : band.traits) t += 0.125f;
         for (int b = 0; b < kAgeBins; ++b) {
             band.female[b] /= 3;
             band.male[b] = i % 9 == 0 ? 0 : band.male[b] / 3;

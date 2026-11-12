@@ -888,7 +888,7 @@ void MigrationSystem::step(StepContext& ctx) {
             const double wb = static_cast<double>(big.total()), ws = static_cast<double>(s.cohorts[i].total());
             if (wb + ws > 0.0) {
                 const double f = ws / (wb + ws);
-                for (std::size_t t = 0; t < kMaxTraits; ++t) big.traits[t] += f * (s.cohorts[i].traits[t] - big.traits[t]);
+                for (std::size_t t = 0; t < kMaxTraits; ++t) big.traits[t] = static_cast<float>(big.traits[t] + f * (s.cohorts[i].traits[t] - big.traits[t]));
                 big.farming += f * (s.cohorts[i].farming - big.farming);
                 if (s.cohorts[i].bonded != 0.0 || big.bonded != 0.0) {
                     big.bonded = (wb * big.bonded + ws * s.cohorts[i].bonded) / (wb + ws);

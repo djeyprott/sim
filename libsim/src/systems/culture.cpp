@@ -77,9 +77,14 @@ void ensure_placeholders(SimState& s) {
     if (s.cultures.empty()) s.cultures.emplace_back();
 }
 
-double dist2(const double* a, const double* b, std::size_t n) {
+// (Cohorts' points are stored as float; distances are worked in double.)
+template <typename A, typename B>
+double dist2(const A* a, const B* b, std::size_t n) {
     double d = 0.0;
-    for (std::size_t i = 0; i < n; ++i) d += (a[i] - b[i]) * (a[i] - b[i]);
+    for (std::size_t i = 0; i < n; ++i) {
+        const double x = static_cast<double>(a[i]) - static_cast<double>(b[i]);
+        d += x * x;
+    }
     return d;
 }
 
@@ -94,7 +99,7 @@ std::vector<std::uint32_t> find_split(const SimState& s, const std::vector<std::
     double total = 0.0;
     for (std::uint32_t i : members) {
         const double w = static_cast<double>(s.cohorts[i].total());
-        const double* x = point(i);
+        const float* x = point(i);
         for (std::size_t d = 0; d < dims; ++d) mean[d] += w * x[d];
         total += w;
     }
@@ -364,8 +369,8 @@ void CultureSystem::step(StepContext& ctx) {
     }, 64);
 
     // ---- Drift, contact and adaptation, computed from last year's values.
-    std::vector<std::array<double, kMaxTraits>> new_traits(count);
-    std::vector<std::array<double, kDialectDims>> new_dialect(count);
+    std::vector<std::array<float, kMaxTraits>> new_traits(count);
+    std::vector<std::array<float, kDialectDims>> new_dialect(count);
 
     std::vector<std::int64_t> pop(count);
     for (std::size_t i = 0; i < count; ++i) pop[i] = s.cohorts[i].total();
@@ -518,13 +523,13 @@ void CultureSystem::step(StepContext& ctx) {
             if (w_other > 0.0) dx += kCultureContact * (0.5 + open) * (other[t] / w_other - x);
             dx += def.adapt / 100.0 * (target[co.cell][t] - x);
             dx += noise(rng, drift_scale * def.drift / 10.0);  // per century = per year x sqrt(100)
-            new_traits[i][t] = clamp01(x + dx);
+            new_traits[i][t] = static_cast<float>(clamp01(x + dx));
         }
         // Dialect.
         for (int d = 0; d < kDialectDims; ++d) {
             double x = co.dialect[d];
             if (w_speech > 0.0) x += dialect_pull * (speech[d] / w_speech - x);
-            new_dialect[i][d] = x + noise(rng, drift_scale * kDialectDrift);
+            new_dialect[i][d] = static_cast<float>(x + noise(rng, drift_scale * kDialectDrift));
         }
 
         // Language shift: some of a minority's people take up the cell's

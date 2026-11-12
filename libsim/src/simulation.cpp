@@ -118,7 +118,7 @@ Simulation Simulation::create(const WorldParams& params) {
         }
     }
     for (Cohort& co : s.cohorts) {
-        co.traits = traits[co.culture];  // still the group number here
+        for (std::size_t t = 0; t < kMaxTraits; ++t) co.traits[t] = static_cast<float>(traits[co.culture][t]);  // still the group number here
         co.culture = cell_culture[co.cell];
         co.language = cell_language[co.cell];
     }

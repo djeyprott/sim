@@ -146,8 +146,8 @@ void SimState::normalize_cohorts(std::size_t cell_count, const std::vector<Cohor
                 if (wm + wc > 0.0) {
                     const double share = wc / (wm + wc);
                     const double f = share * share;
-                    for (std::size_t t = 0; t < kMaxTraits; ++t) m.traits[t] += f * (c.traits[t] - m.traits[t]);
-                    for (int d = 0; d < kDialectDims; ++d) m.dialect[d] += f * (c.dialect[d] - m.dialect[d]);
+                    for (std::size_t t = 0; t < kMaxTraits; ++t) m.traits[t] = static_cast<float>(m.traits[t] + f * (c.traits[t] - m.traits[t]));
+                    for (int d = 0; d < kDialectDims; ++d) m.dialect[d] = static_cast<float>(m.dialect[d] + f * (c.dialect[d] - m.dialect[d]));
                     m.farming += f * (c.farming - m.farming);
                 }
                 for (int b = 0; b < kAgeBins; ++b) {

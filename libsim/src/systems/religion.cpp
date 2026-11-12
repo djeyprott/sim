@@ -299,7 +299,7 @@ void ReligionSystem::step(StepContext& ctx) {
         const ReligionKind& kind = kinds[s.religions[f].kind];
         if (kind.pulls == 0) continue;
         for (std::size_t t = 0; t < kMaxTraits; ++t) {
-            if ((kind.pulls >> t) & 1u) co.traits[t] += kDoctrinePull * (kind.doctrine[t] - co.traits[t]);
+            if ((kind.pulls >> t) & 1u) co.traits[t] = static_cast<float>(co.traits[t] + kDoctrinePull * (kind.doctrine[t] - co.traits[t]));
         }
     }
 
