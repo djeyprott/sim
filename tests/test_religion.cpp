@@ -127,7 +127,7 @@ TEST(religion_a_ritual_minded_city_state_founds_a_temple_cult) {
     s.urban[x.home] = 6000.0 / static_cast<double>(s.cell_population[x.home]);
     for (auto i = s.cohort_begin[x.home]; i < s.cohort_begin[x.home + 1]; ++i) {
         for (std::size_t t = 0; t < w.content->traits.size(); ++t) {
-            if (w.content->traits[t].id == "ritual") s.cohorts[i].traits[t] = 0.9;
+            if (w.content->traits[t].id == "ritual") s.cohorts[i].traits[t] = 0.9f;
         }
     }
     const std::uint32_t folk = [&] {

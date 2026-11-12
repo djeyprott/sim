@@ -210,7 +210,7 @@ InterventionResult apply_command(const World& w, SimState& s, std::uint64_t seed
                                                        /*history_years=*/0.0);
             const std::uint32_t language = founded.family;
             Cohort settlers = make_stable_cohort(cmd.cell, founded.culture, language, people);
-            settlers.traits = founded.traits;
+            for (std::size_t t = 0; t < kMaxTraits; ++t) settlers.traits[t] = static_cast<float>(founded.traits[t]);
             s.cohorts.push_back(settlers);
             s.ledger.added += people;
             s.normalize_cohorts(n);
