@@ -41,7 +41,7 @@ public:
     static constexpr double kDisuse = 0.01;
     // Know-how fades over this many years without practice (e-folding), and
     // in communities under kForgetBelowPeople over kMemoryYearsSmall.
-    static constexpr double kMemoryYears = 300.0;
+    static constexpr double kMemoryYears = 1000.0;
     static constexpr double kMemoryYearsSmall = 30.0;
     // Larger communities invent more: x sqrt(people / 10,000), at most this.
     static constexpr double kMaxPeopleFactor = 4.0;
@@ -55,7 +55,7 @@ public:
     //   crowding        people / what the land feeds
     //   storing         food stored, in years per person
     //   towns           townspeople in the hinterland / kTownPeople
-    //   trade           goods traded in the hinterland / (people x kTradePerPerson)
+    //   trade           goods traded in the hinterland / kTradeVolume
     //   redistribution  (town share / kTownShare + food brought in / (people x
     //                   kImportPerPerson)) x 1 at a realm's seat (kSeatTemple
     //                   with a temple priesthood), kRuled elsewhere in a
@@ -65,7 +65,7 @@ public:
     static constexpr double kMaxPractice = 3.0;
     static constexpr double kMaxCrowding = 1.5;
     static constexpr double kTownPeople = 10000.0;
-    static constexpr double kTradePerPerson = 0.05;
+    static constexpr double kTradeVolume = 500.0;  // a twentieth of a good each for 10,000
     static constexpr double kTownShare = 0.1;
     static constexpr double kImportPerPerson = 0.02;
     static constexpr double kSeatTemple = 1.5;

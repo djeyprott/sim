@@ -128,7 +128,7 @@ std::array<double, kPracticeCount> practices(const World& w, const SimState& s, 
     set(TechPractice::Storing, std::min(TechnologySystem::kMaxPractice, at(s.env.food_store, c) / people));
     const double around = std::max(1.0, in.community);
     set(TechPractice::Towns, std::min(TechnologySystem::kMaxPractice, in.town / TechnologySystem::kTownPeople));
-    set(TechPractice::Trade, std::min(TechnologySystem::kMaxPractice, in.trade / (around * TechnologySystem::kTradePerPerson)));
+    set(TechPractice::Trade, std::min(TechnologySystem::kMaxPractice, in.trade / TechnologySystem::kTradeVolume));
     // Surplus passing through the hands of chiefs, priests and kings: the
     // share of people fed in towns and the food brought in, kept account of
     // where someone rules, most at a realm's seat (and its temple).
