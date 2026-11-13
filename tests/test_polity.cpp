@@ -174,6 +174,20 @@ void run_polities(const World& w, SimState& s, int years) {
     }
 }
 
+// A level-4 world run until states are old enough to have provinces,
+// generals and risings (writing comes some 5,000 years after the first
+// crops), shared by the tests that look at them.
+const Simulation& states_run() {
+    static const Simulation sim = [] {
+        WorldParams p;
+        p.grid_level = 4;
+        Simulation x = Simulation::create(p);
+        x.step_years(7000);
+        return x;
+    }();
+    return sim;
+}
+
 }  // namespace
 
 TEST(polity_stability_falls_in_famine_and_names_the_cause) {
@@ -303,10 +317,7 @@ TEST(polity_institutions_are_founded_and_inherited) {
 // governors are figures; provinces that broke away founded polities whose
 // first ruler was their governor.
 TEST(polity_provinces_governors_and_revolts) {
-    WorldParams p;
-    p.grid_level = 4;
-    Simulation sim = Simulation::create(p);
-    sim.step_years(5000);
+    const Simulation& sim = states_run();
     const SimState& s = sim.state();
     const World& w = sim.world();
     CHECK_EQ(s.province_of.size(), w.cell_count());
@@ -358,10 +369,7 @@ TEST(polity_provinces_governors_and_revolts) {
 // province that broke away is a polity founded by the leader; unrest
 // stays in 0-1; the dead are counted.
 TEST(polity_peasant_uprisings) {
-    WorldParams p;
-    p.grid_level = 4;
-    Simulation sim = Simulation::create(p);
-    sim.step_years(5000);
+    const Simulation& sim = states_run();
     const SimState& s = sim.state();
     CHECK(!s.uprisings.empty());
     std::size_t crushed = 0, won = 0;
@@ -390,10 +398,7 @@ TEST(polity_peasant_uprisings) {
 // a general (a figure); fame stays non-negative; a general who seized the
 // throne is the founder of a house; high priests are figures of their realm.
 TEST(polity_generals_and_high_priests) {
-    WorldParams p;
-    p.grid_level = 4;
-    Simulation sim = Simulation::create(p);
-    sim.step_years(5000);
+    const Simulation& sim = states_run();
     const SimState& s = sim.state();
     CHECK(s.commanders.size() > 1);
     std::size_t won = 0;

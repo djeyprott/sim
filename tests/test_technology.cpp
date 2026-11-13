@@ -110,6 +110,49 @@ TEST(technology_follows_farming_and_its_prerequisites) {
     }
     CHECK(with_sickles > 10);
     CHECK(s.history.back().techniques >= 8);
+    // Know-how is kept only toward techniques the people do not know, below 1.
+    const std::size_t nk = c.techniques.size();
+    CHECK_EQ(s.know_how.size(), sim.world().cell_count() * nk);
+    bool building = false;
+    for (CellId cell = 0; cell < sim.world().cell_count(); ++cell) {
+        for (std::size_t k = 0; k < nk; ++k) {
+            const float x = s.know_how[cell * nk + k];
+            CHECK(x >= 0.0f && x < 1.0f);
+            if ((s.techniques[cell] >> k) & 1u) CHECK_EQ(x, 0.0f);
+            building |= x > 0.1f;
+        }
+    }
+    CHECK(building);
+}
+
+// What people do: surplus handled is accounted for most at a realm's seat,
+// rule only within a realm.
+TEST(technology_practices_follow_what_people_do) {
+    WorldParams p;
+    p.grid_level = 4;
+    Simulation sim = Simulation::create(p);
+    const World& w = sim.world();
+    const SimState& s = sim.state();
+    CellId cell = 0;
+    while (s.cell_population[cell] == 0) ++cell;
+    auto doing = [&](bool ruled, std::uint8_t seat) {
+        return practices(w, s, cell, PracticeInputs{50000.0, 5000.0, 1000.0, 0.0, 20.0, ruled, seat});
+    };
+    const auto R = static_cast<std::size_t>(TechPractice::Redistribution);
+    const auto Rule = static_cast<std::size_t>(TechPractice::Rule);
+    const auto Towns = static_cast<std::size_t>(TechPractice::Towns);
+    const auto Trade = static_cast<std::size_t>(TechPractice::Trade);
+    const auto unruled = doing(false, 0), ruled = doing(true, 0), at_seat = doing(true, 1), temple = doing(true, 2);
+    CHECK(unruled[R] > 0.0);
+    CHECK_NEAR(ruled[R] / unruled[R], TechnologySystem::kRuled / TechnologySystem::kUnruled, 1e-9);
+    CHECK_NEAR(at_seat[R] / ruled[R], 1.0 / TechnologySystem::kRuled, 1e-9);
+    CHECK(temple[R] > at_seat[R]);
+    CHECK_EQ(unruled[Rule], 0.0);
+    CHECK_NEAR(at_seat[Rule], 20.0 / TechnologySystem::kRealmCells, 1e-12);
+    CHECK_NEAR(ruled[Rule], at_seat[Rule] * TechnologySystem::kRuled, 1e-12);
+    CHECK_NEAR(unruled[Towns], 0.5, 1e-12);
+    CHECK_NEAR(unruled[Trade], 2.0, 1e-12);
+    for (double x : at_seat) CHECK(x >= 0.0 && x <= TechnologySystem::kMaxPractice);
 }
 
 TEST(technology_riding_needs_horses_or_camels) {
