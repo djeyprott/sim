@@ -99,8 +99,16 @@ exactly 1 at level 5 and the golden hash, kept at level 5 for speed, does not
 change). Levels 4–6 stay for quick tests; only level 7 is calibrated (town
 growth, `SettlementSystem::kPerSurplus` 0.08: on 3 seeds over 8,000 years
 towns of 5,000 come 1,000–1,500 years after the first crop and the first
-state 6,188 years after it). A level 7 run takes about 0.2 s a year on two
-cores.
+state 6,188 years after it). Empires are calibrated there too: a realm's
+reach at level 7 covers about half the area it did on level-5 cells (where a
+cell taken counted whole), so writing (+0.85 administration), bureaucracy and
+roads (+1.1 each) and provincial government (+2.85) extend rule further, and
+the towns writing and its successors need are those level 7 grows (20,000 for
+writing, 15,000 for the rest). On seeds 1–3 over 11,000 years the first states
+come 6,188 and 7,035 years after the first crop (seed 3 never invents
+writing: its towns stay small), and 16 of the 18 era checks pass, the misses
+being seed 1's Persian eras (1.0 million km², with no provinces yet). A level
+7 run takes about 0.2 s a year on two cores.
 
 | Rule | Scaled so that |
 | --- | --- |
@@ -310,9 +318,9 @@ years; copper and horse riding come late.
 
 | Process | Model |
 | --- | --- |
-| Towns | Each cell's share of people in towns moves 1% a year toward 0.08 × (people fed by farmland per km² − 0.4), up to 35%, plus 4 points at a capital. A cell whose towns hold 5,000 people has a city, named in its people's language; below a third of that it is abandoned. Towns raise mortality (× 1 + 0.3 × town share) and disease contact (density × 1 + 20 × town share); crowd diseases (pox, measles) emerge only where towns hold 20,000–40,000 people. |
+| Towns | Each cell's share of people in towns moves 1% a year toward 0.08 × (people fed by farmland per km² − 0.4), up to 35%, plus 4 points over a realm's seat: its capital's hinterland as far as the realm holds it (the capital cell at level 5), so a court is as large at any grid level. A cell whose towns hold 5,000 people has a city, named in its people's language; below a third of that it is abandoned. Towns raise mortality (× 1 + 0.3 × town share) and disease contact (density × 1 + 20 × town share); crowd diseases (pox, measles) emerge only where towns hold 20,000–40,000 people. |
 | Formation | Every 5 years, a stateless cell with farming ≥ 50%, at least 0.4 people per km² and hierarchy ≥ 0.3 founds a polity with chance 1% × hierarchy × (0.5 + circumscription) × density factor, where circumscription is the share of neighbours that are sea or much poorer land (Carneiro). |
-| Reach | Control of a cell = 1 / (1 + (travel distance from the capital / reach)²), the travel distance being the cheapest route over the land, river and sea links (below); reach = 85 km × (1 + administration) × (1 + 0.3 contact). Writing (+0.5), bureaucracy (+0.8), roads (+0.8), provincial government (+2) and bronze (+0.1) add administration, so realms grow as these come in turn: a chiefdom holds a cell or a few, a state with writing a ring around its capital, an empire with provinces and roads millions of km². |
+| Reach | Control of a cell = 1 / (1 + (travel distance from the capital / reach)²), the travel distance being the cheapest route over the land, river and sea links (below); reach = 85 km × (1 + administration) × (1 + 0.3 contact). Writing (+0.85), bureaucracy (+1.1), roads (+1.1), provincial government (+2.85) and bronze (+0.1) add administration (calibrated at level 7), so realms grow as these come in turn: a chiefdom holds a cell or a few, a state with writing a ring around its capital, an empire with provinces and roads millions of km². |
 | Travel of rule | Each year each living realm finds its travel distance from its capital to the cells within 6 × its reach (`RuleField`: a shortest-path search over the trade links; beyond, the straight-line distance). Overland: km × the mean of the two cells' terrain (1 temperate and Mediterranean land and shrubland, 0.9 grassland and savanna, 1.4 boreal forest, 2 desert, tundra and rainforest, 4 ice; × (1 + metres above 1,000 ÷ 1,500)) × (1 + 0.6 × the height difference in km) ÷ (1 + half its land transport); along a navigable river 0.8 × km, by sea (with boats) the sea route's km, each ÷ (1 + half its water transport). So a realm's grip stops at mountains and deserts, runs up river valleys and along coasts. Used for expansion, strength, levies, conquest, provinces, garrisons, secession, vassal absorption, assimilation and conversion; successor seats at a collapse still use straight lines. Over seeds 1–10 at level 5 the M3 gate passes 17 of 18 eras. |
 | Direct rule | Ruling a cell directly takes 1 ÷ control of a realm's administration (in level-5 cells' worth of land), so remote cells cost far more; a realm can run at most 40 × (1 + administration) × (1 + 0.3 contact) (× 2 for nomads). At its limit it takes no more land; at 80% of it a settled realm makes war for tribute rather than land: its victories in the field win it a tributary and keep no ground. The inspector shows how much of its administration a realm uses. The M3 gate's era table counts the largest realm with its tributaries and vassals (`YearRecord::largest_sphere_km2`), since many early empires were largely tributary; over seeds 1–10 at level 5 it passes 14 of 18 eras (main measured the same way: 16), the misses being the two earliest eras, where main is at the limit too. With nomads' full reach and subjects waiting on bronze arms and writing extending rule by a quarter (it was a half), 16 of 18 (seeds 1–5 all nine; on seeds 6–10 the two earliest eras, early chiefdoms' spheres among them). |
 | Expansion | Each year a polity tries the stateless neighbouring cell it would control best (at least 30%), with chance 3% × control × (0.5 + warfare) × strength ratio. A settled realm (its capital not living mostly by herds) takes only land worth ruling: where crops (farming × (1 − herding)) are at least a quarter of the food, or trade passing through is worth at least a head's share; herders' and foragers' land, with little to tax and people who can move away from tax collectors, it leaves alone. Herding realms and nomads take pasture as before. Land changes hands between polities only in war (below). |
@@ -326,8 +334,8 @@ years; copper and horse riding come late.
 | Institutions | A polity may found (1% a year once it qualifies) a temple priesthood (rulers of an organized faith, or ritual ≥ 0.6 with a town of 5,000), a council of notables (3+ level-5 cells' worth of land, hierarchy ≥ 0.4), a law code (writing) and a standing army (writing, 300,000 people, bronze or riding). Temples add 0.05 to the stability target and make disputed successions rarer (× 0.8); councils too (× 0.6); law codes add 0.05 and cut division (× 0.7); armies add a quarter to war strength and cut overreach (× 0.7). Below 30% stability each may be lost (1% a year). A broken state's core and successors keep its institutions, but not its army. |
 | Culture | Being ruled pushes hierarchy, warfare and ritual up. |
 
-Writing needs granaries, a calendar and a town of 25,000 people to be
-invented (not to be kept); bureaucracy and roads follow it (roads need no
+Writing needs granaries, a calendar and a town of 20,000 people to be
+invented (not to be kept); bureaucracy and roads (towns of 15,000) follow it (roads need no
 wheel: the Inca built them without), and provincial government needs both. At level 5 a polity lasts about 120 years at the
 median (a quarter outlast 350). Of those that end, over half are conquered,
 about one in six collapses in famine, about one in ten in epidemics or from
