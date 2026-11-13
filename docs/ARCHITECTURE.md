@@ -301,18 +301,39 @@ before) are logged as `DiseaseEmerged` events. At level 5, disease is ~0.5% of
 deaths among foragers and ~10% where farming has spread by year 3,000.
 
 **Technology** (`data/techniques.json`, `TechnologySystem`, culture phase).
-Each cell's people know a set of techniques (a 64-bit mask). A technique can
-be invented where its prerequisites (earlier techniques), crops or herds,
-species and place (river, coast, dry land, hills, forest) allow: yearly
-chance = rate × √(people / 10,000) × (0.5 + innovation) × the culture's
-affinity. Neighbours teach (0.4% a year × (0.5 + openness) × (1 + contact));
-populations under 500 forget 1% a year, and techniques whose requirements are
-gone fade (5%). Effects: crop and herd yields (farmland), foraging and fishing
-(forager capacity), harvest buffer (part of a bad harvest made good), famine
-mortality, and contact (learning techniques and domesticates). At level 5
-forager tools (bow, nets, canoes, pottery) spread early; granaries, irrigation,
-milk and wool, polished axes and the plough follow farming over thousands of
-years; copper and horse riding come late.
+Each cell's people know a set of techniques (a 64-bit mask). Nothing is
+invented by a dice roll or at a set town size: toward each technique whose
+prerequisites (earlier techniques), crops or herds, species, goods and place
+(river, coast, dry land, hills, forest) allow, the people build know-how
+(`SimState::know_how`) by doing what it grows from. Practices
+(`practices()`): foraging, hunting (× game left), fishing (by water),
+farming, herding, crowding (people ÷ what the land feeds: Boserup), storing
+(food stored a head), towns (townspeople around, per 10,000), trade (goods
+traded around, per 500 a year), redistribution (surplus handled, the town
+share and food brought in, × 1 at a realm's seat, 1.5 with a temple, 0.4
+elsewhere in a realm, 0.15 outside one: temple and palace bookkeeping) and
+rule (realm size in level-5 cells ÷ 10). Each technique weighs them
+(`practice`); know-how grows each year by practice × √(people ÷ 10,000) (at
+most 4) × (0.5 + innovation) × affinity ÷ `practice_years`, plus 0.004 ×
+(0.5 + openness) × (1 + contact) × min(1, practice) beside neighbours who
+use it (people take up what they have use for), and fades over 1,000 years
+(30 in communities under 500). At 1 the people know it. So a technique comes
+where its practice is intense and lasting enough, after about
+`practice_years` of full practice by 10,000 people, and the chain of earlier
+techniques sets the pace: writing grows from counting tokens and then seals,
+each needing centuries of accounts kept. A technique out of use fades (1% a
+year) where practice would keep less than a quarter of the know-how it takes
+(scribes with no accounts to keep); populations under 500 forget 1% a year,
+and techniques whose requirements are gone fade (5%). Effects: crop and herd
+yields (farmland), foraging and fishing (forager capacity), harvest buffer
+(part of a bad harvest made good), famine mortality, and contact (learning
+techniques and domesticates). At level 5 over seeds 1–3 (years after the
+first crop, history in brackets): sickles 415–453 (0–500), seed selection and
+calendar 1,200–1,800 (500–1,500), irrigation 2,500–3,500 (3,500), copper
+3,100–3,900 (4,500), plough 4,400–5,200 (5,500), wheel 4,900–5,750 (6,000),
+bronze 5,000–5,500 (6,200), writing 4,600–5,900 (6,200), bureaucracy
+5,900–7,500 (7,400), roads 6,100–8,800 (8,800), provinces 6,500–8,700
+(8,750).
 
 ### Towns, cities and early states (M3)
 
@@ -334,9 +355,10 @@ years; copper and horse riding come late.
 | Institutions | A polity may found (1% a year once it qualifies) a temple priesthood (rulers of an organized faith, or ritual ≥ 0.6 with a town of 5,000), a council of notables (3+ level-5 cells' worth of land, hierarchy ≥ 0.4), a law code (writing) and a standing army (writing, 300,000 people, bronze or riding). Temples add 0.05 to the stability target and make disputed successions rarer (× 0.8); councils too (× 0.6); law codes add 0.05 and cut division (× 0.7); armies add a quarter to war strength and cut overreach (× 0.7). Below 30% stability each may be lost (1% a year). A broken state's core and successors keep its institutions, but not its army. |
 | Culture | Being ruled pushes hierarchy, warfare and ritual up. |
 
-Writing needs granaries, a calendar and a town of 20,000 people to be
-invented (not to be kept); bureaucracy and roads (towns of 15,000) follow it (roads need no
-wheel: the Inca built them without), and provincial government needs both. At level 5 a polity lasts about 120 years at the
+Writing grows from counting tokens and seals where surplus is handed out and
+accounted for (above, Technology); bureaucracy and roads follow it where
+realms are large (roads need no wheel: the Inca built them without), and
+provincial government needs both. At level 5 a polity lasts about 120 years at the
 median (a quarter outlast 350). Of those that end, over half are conquered,
 about one in six collapses in famine, about one in ten in epidemics or from
 overreach, and about one in six breaks up in a succession dispute; break-ups
