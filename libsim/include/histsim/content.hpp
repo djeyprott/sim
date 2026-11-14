@@ -201,6 +201,13 @@ inline constexpr std::size_t kMaxDiseases = 16;
 // Where a technique can be invented and works (see data/techniques.json).
 enum class TechPlace : std::uint8_t { Anywhere, River, Coast, Water, Dry, Hills, Forest };
 
+// What people do that builds know-how toward a technique (see
+// data/techniques.json and systems/technology.hpp for how each is measured).
+enum class TechPractice : std::uint8_t {
+    Foraging, Hunting, Fishing, Farming, Herding, Crowding, Storing, Towns, Trade, Redistribution, Rule
+};
+inline constexpr std::size_t kPracticeCount = 11;
+
 struct TechEffects {
     double crop_yield = 0.0;
     double herd_yield = 0.0;
@@ -223,10 +230,12 @@ struct TechniqueDef {
     bool requires_herds = false;
     std::uint32_t requires_species = 0;  // any of these domesticates (0 = none needed)
     TechPlace where = TechPlace::Anywhere;
-    double rate = 0.0;                   // inventions per year per sqrt(10,000 people)
+    // Know-how: what builds it (weight per TechPractice) and the years of
+    // full practice by an average community of 10,000 it takes to invent.
+    std::array<double, kPracticeCount> practice{};
+    double practice_years = 0.0;         // 0: never invented, only known from the start
     std::array<double, kMaxTraits> affinity{};
     double start_chance = 0.0;
-    double min_town = 0.0;               // people in towns needed in the cell
     std::uint32_t requires_goods = 0;    // goods bits: all must be on the cell's market
     TechEffects effects;
 };

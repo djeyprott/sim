@@ -789,6 +789,9 @@ struct SimState {
     // Content::techniques[t]); and where each was invented independently.
     std::vector<std::uint64_t> techniques;
     std::vector<Invention> inventions;
+    // Per cell x technique (cell * techniques + t): know-how built toward a
+    // technique its people do not know yet; they know it at 1.
+    std::vector<float> know_how;
 
     // Towns and polities. Per cell: the share of people living in towns, the
     // city there (0 = none) and the polity ruling it (0 = none). Entry 0 of

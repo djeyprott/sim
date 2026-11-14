@@ -148,7 +148,6 @@ TEST(bronze_needs_copper_and_tin_on_the_market) {
     while (!w.is_land[cell]) ++cell;
     Keeps kept;
     kept.crops = kept.herds = true;
-    kept.town = 1e9;
     const std::uint64_t copper = std::uint64_t{1} << technique_index(c, "copper");
     kept.goods = ~0u;
     CHECK(technique_usable(w, bronze, cell, copper, 0, kept));

@@ -103,11 +103,11 @@ state 6,188 years after it). Empires are calibrated there too: a realm's
 reach at level 7 covers about half the area it did on level-5 cells (where a
 cell taken counted whole), so writing (+0.85 administration), bureaucracy and
 roads (+1.1 each) and provincial government (+2.85) extend rule further, and
-the towns writing and its successors need are those level 7 grows (20,000 for
-writing, 15,000 for the rest). On seeds 1–3 over 11,000 years the first states
-come 6,188 and 7,035 years after the first crop (seed 3 never invents
-writing: its towns stay small), and 16 of the 18 era checks pass, the misses
-being seed 1's Persian eras (1.0 million km², with no provinces yet). A level
+techniques come from know-how built by practice (below, Technology). On
+seeds 1–3 over 11,000 years the first states come 4,841 and 5,708 years after
+the first crop (median 5,708; seed 3 never invents writing: its towns stay
+small), and 16 of the 18 era checks pass, the misses being the last Persian
+era (1.5 million km² against 5.5). A level
 7 run takes about 0.2 s a year on two cores.
 
 | Rule | Scaled so that |
@@ -117,7 +117,7 @@ being seed 1's Persian eras (1.0 million km², with no provinces yet). A level
 | Colonists | they leapfrog as far as at level 5: on finer grids to land 2^(level − 5) steps away (nearer only if none there has room); on coarser grids less often |
 | Coasts and rivers (fishing, alluvium, floodplain farming, irrigation, river-loving species) | the strip along a coast and the corridor along a river are about 225 km wide at any level (`World::coast_share`, `World::river_share`) |
 | Founding chances per cell (chiefdoms, nomad confederations, universal faiths, inventions, disease emergence) | as many per area: chance × scale² |
-| Town thresholds (cities, writing and other techniques, temple and universal faiths) and population thresholds (disease critical community, forgetting) | they count a hinterland about a level-5 cell in area: the cells within 2^(level − 6) steps (`World::for_hinterland`), its sums scaled to a level-5 cell's area (`World::hinterland_weight`: 4/7 at level 6, 16/19 at level 7); a city is named at the hinterland's centre, never in an empty cell |
+| Town thresholds (cities, temple and universal faiths), what techniques are practised (towns, trade, food brought in, community size) and population thresholds (disease critical community, forgetting) | they count a hinterland about a level-5 cell in area: the cells within 2^(level − 6) steps (`World::for_hinterland`), its sums scaled to a level-5 cell's area (`World::hinterland_weight`: 4/7 at level 6, 16/19 at level 7); a city is named at the hinterland's centre, never in an empty cell |
 | Crowding (food per km² for the size of towns, people per km² for founding chiefdoms) | it is measured over the hinterland, so a small fertile cell on a fine grid is no more crowded than the level-5 cell it lies in |
 | Annexation, conquest | the same area a year: as many attempts or pushes as cells in a level-5 cell |
 | Nomad raids | they strike the target's hinterland |
@@ -301,18 +301,41 @@ before) are logged as `DiseaseEmerged` events. At level 5, disease is ~0.5% of
 deaths among foragers and ~10% where farming has spread by year 3,000.
 
 **Technology** (`data/techniques.json`, `TechnologySystem`, culture phase).
-Each cell's people know a set of techniques (a 64-bit mask). A technique can
-be invented where its prerequisites (earlier techniques), crops or herds,
-species and place (river, coast, dry land, hills, forest) allow: yearly
-chance = rate × √(people / 10,000) × (0.5 + innovation) × the culture's
-affinity. Neighbours teach (0.4% a year × (0.5 + openness) × (1 + contact));
-populations under 500 forget 1% a year, and techniques whose requirements are
-gone fade (5%). Effects: crop and herd yields (farmland), foraging and fishing
-(forager capacity), harvest buffer (part of a bad harvest made good), famine
-mortality, and contact (learning techniques and domesticates). At level 5
-forager tools (bow, nets, canoes, pottery) spread early; granaries, irrigation,
-milk and wool, polished axes and the plough follow farming over thousands of
-years; copper and horse riding come late.
+Each cell's people know a set of techniques (a 64-bit mask). Nothing is
+invented by a dice roll or at a set town size: toward each technique whose
+prerequisites (earlier techniques), crops or herds, species, goods and place
+(river, coast, dry land, hills, forest) allow, the people build know-how
+(`SimState::know_how`) by doing what it grows from. Practices
+(`practices()`): foraging, hunting (× game left), fishing (by water),
+farming, herding, crowding (people ÷ what the land feeds: Boserup), storing
+(food stored a head), towns (townspeople around, per 10,000), trade (goods
+traded around, per 500 a year), redistribution (surplus handled, the town
+share and food brought in, × 1 at a realm's seat, 1.5 with a temple, 0.4
+elsewhere in a realm, 0.15 outside one: temple and palace bookkeeping) and
+rule (people the realm governs ÷ 500,000). Each technique weighs them
+(`practice`); know-how grows each year by practice × √(people ÷ 10,000) (at
+most 4) × (0.5 + innovation) × affinity ÷ `practice_years`, plus 0.004 ×
+(0.5 + openness) × (1 + contact) × min(1, practice) beside neighbours who
+use it (people take up what they have use for), and fades over 1,000 years
+(30 in communities under 500). At 1 the people know it. So a technique comes
+where its practice is intense and lasting enough, after about
+`practice_years` of full practice by 10,000 people, and the chain of earlier
+techniques sets the pace: writing grows from counting tokens and then seals,
+each needing centuries of accounts kept. A technique out of use fades (1% a
+year) where practice would keep less than a quarter of the know-how it takes
+(scribes with no accounts to keep); populations under 500 forget 1% a year,
+and techniques whose requirements are gone fade (5%). Effects: crop and herd
+yields (farmland), foraging and fishing (forager capacity), harvest buffer
+(part of a bad harvest made good), famine mortality, and contact (learning
+techniques and domesticates). Calibrated at level 7 (years after the
+first crop, history in brackets; level 7 has many more cells than level 5, so
+somewhere practice peaks sooner and the practice years are longer than a
+level-5 world would need): writing 4,840 and 5,710 on seeds 1 and 2 (6,200),
+bureaucracy 6,530 and 7,560 (7,400), roads 7,450 and 8,600 (8,800),
+provincial government 9,020 and 8,920 (8,750). Irrigation, terraces and the
+plough, which set crop yields, keep the pace town growth was tuned to (a
+thousand years or more before their dates in the Near East); at their
+historical dates towns and writing came thousands of years late.
 
 ### Towns, cities and early states (M3)
 
@@ -334,9 +357,10 @@ years; copper and horse riding come late.
 | Institutions | A polity may found (1% a year once it qualifies) a temple priesthood (rulers of an organized faith, or ritual ≥ 0.6 with a town of 5,000), a council of notables (3+ level-5 cells' worth of land, hierarchy ≥ 0.4), a law code (writing) and a standing army (writing, 300,000 people, bronze or riding). Temples add 0.05 to the stability target and make disputed successions rarer (× 0.8); councils too (× 0.6); law codes add 0.05 and cut division (× 0.7); armies add a quarter to war strength and cut overreach (× 0.7). Below 30% stability each may be lost (1% a year). A broken state's core and successors keep its institutions, but not its army. |
 | Culture | Being ruled pushes hierarchy, warfare and ritual up. |
 
-Writing needs granaries, a calendar and a town of 20,000 people to be
-invented (not to be kept); bureaucracy and roads (towns of 15,000) follow it (roads need no
-wheel: the Inca built them without), and provincial government needs both. At level 5 a polity lasts about 120 years at the
+Writing grows from counting tokens and seals where surplus is handed out and
+accounted for (above, Technology); bureaucracy and roads follow it where
+realms are large (roads need no wheel: the Inca built them without), and
+provincial government needs both. At level 5 a polity lasts about 120 years at the
 median (a quarter outlast 350). Of those that end, over half are conquered,
 about one in six collapses in famine, about one in ten in epidemics or from
 overreach, and about one in six breaks up in a succession dispute; break-ups
