@@ -60,7 +60,7 @@ public:
     //                   kImportPerPerson)) x 1 at a realm's seat (kSeatTemple
     //                   with a temple priesthood), kRuled elsewhere in a
     //                   realm, kUnruled outside one
-    //   rule            realm size in level-5 cells / kRealmCells, x kRuled
+    //   rule            people the realm governs / kRealmPeople, x kRuled
     //                   away from its seat
     static constexpr double kMaxPractice = 3.0;
     static constexpr double kMaxCrowding = 1.5;
@@ -71,7 +71,7 @@ public:
     static constexpr double kSeatTemple = 1.5;
     static constexpr double kRuled = 0.4;
     static constexpr double kUnruled = 0.15;
-    static constexpr double kRealmCells = 10.0;
+    static constexpr double kRealmPeople = 500000.0;
     // Populations smaller than this lose each technique with this chance a year.
     static constexpr double kForgetBelowPeople = 500.0;
     static constexpr double kForgetting = 0.01;
@@ -104,7 +104,7 @@ struct PracticeInputs {
     double town = 0.0;        // townspeople
     double trade = 0.0;       // value of goods traded
     double imported = 0.0;    // food brought in (people fed)
-    double realm_cells = 0.0; // its realm's land, in level-5 cells
+    double realm_people = 0.0;  // people its realm governs
     bool ruled = false;
     std::uint8_t seat = 0;    // 1 a realm's seat, 2 with a temple priesthood
 };

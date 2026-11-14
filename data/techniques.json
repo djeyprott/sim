@@ -18,7 +18,7 @@
 //   redistribution  surplus passing through the hands of chiefs, priests and
 //                   kings: towns and food brought in, kept account of at a
 //                   realm's seat (temple and palace bookkeeping led to writing)
-//   rule            the size of their realm
+//   rule            the people their realm governs, per 500,000
 // Each year know-how grows by practice x sqrt(people / 10,000) (at most 4) x
 // (0.5 + innovation) x the culture's affinity (1 + sum of weight x 2 x
 // (trait - 0.5) over `affinity`, at least 0.1) / `practice_years`, and by

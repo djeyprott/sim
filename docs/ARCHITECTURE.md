@@ -312,7 +312,7 @@ farming, herding, crowding (people ÷ what the land feeds: Boserup), storing
 traded around, per 500 a year), redistribution (surplus handled, the town
 share and food brought in, × 1 at a realm's seat, 1.5 with a temple, 0.4
 elsewhere in a realm, 0.15 outside one: temple and palace bookkeeping) and
-rule (realm size in level-5 cells ÷ 10). Each technique weighs them
+rule (people the realm governs ÷ 500,000). Each technique weighs them
 (`practice`); know-how grows each year by practice × √(people ÷ 10,000) (at
 most 4) × (0.5 + innovation) × affinity ÷ `practice_years`, plus 0.004 ×
 (0.5 + openness) × (1 + contact) × min(1, practice) beside neighbours who

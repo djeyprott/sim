@@ -136,7 +136,7 @@ TEST(technology_practices_follow_what_people_do) {
     CellId cell = 0;
     while (s.cell_population[cell] == 0) ++cell;
     auto doing = [&](bool ruled, std::uint8_t seat) {
-        return practices(w, s, cell, PracticeInputs{50000.0, 5000.0, 1000.0, 0.0, 20.0, ruled, seat});
+        return practices(w, s, cell, PracticeInputs{50000.0, 5000.0, 1000.0, 0.0, 1000000.0, ruled, seat});
     };
     const auto R = static_cast<std::size_t>(TechPractice::Redistribution);
     const auto Rule = static_cast<std::size_t>(TechPractice::Rule);
@@ -148,7 +148,7 @@ TEST(technology_practices_follow_what_people_do) {
     CHECK_NEAR(at_seat[R] / ruled[R], 1.0 / TechnologySystem::kRuled, 1e-9);
     CHECK(temple[R] > at_seat[R]);
     CHECK_EQ(unruled[Rule], 0.0);
-    CHECK_NEAR(at_seat[Rule], 20.0 / TechnologySystem::kRealmCells, 1e-12);
+    CHECK_NEAR(at_seat[Rule], 1000000.0 / TechnologySystem::kRealmPeople, 1e-12);
     CHECK_NEAR(ruled[Rule], at_seat[Rule] * TechnologySystem::kRuled, 1e-12);
     CHECK_NEAR(unruled[Towns], 0.5, 1e-12);
     CHECK_NEAR(unruled[Trade], 2.0, 1e-12);

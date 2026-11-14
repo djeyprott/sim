@@ -138,8 +138,8 @@ std::array<double, kPracticeCount> practices(const World& w, const SimState& s, 
                          : in.ruled ? TechnologySystem::kRuled
                                     : TechnologySystem::kUnruled;
     set(TechPractice::Redistribution, std::min(TechnologySystem::kMaxPractice, handled * ruled));
-    // Ruling a realm, measured in level-5 cells' worth of land, most at its seat.
-    set(TechPractice::Rule, in.ruled ? std::min(TechnologySystem::kMaxPractice, in.realm_cells / TechnologySystem::kRealmCells) *
+    // Ruling a realm: the people it governs, most at its seat.
+    set(TechPractice::Rule, in.ruled ? std::min(TechnologySystem::kMaxPractice, in.realm_people / TechnologySystem::kRealmPeople) *
                                            (in.seat != 0 ? 1.0 : TechnologySystem::kRuled)
                                      : 0.0);
     return d;
@@ -185,16 +185,15 @@ void TechnologySystem::step(StepContext& ctx) {
             }
         }, 1024);
     }
-    // Realms: their size in level-5 cells' worth of land, and their seats
+    // Realms: the people they govern, and their seats
     // (the capital's hinterland as far as the realm holds it), where the
     // ruler's household and its temple keep accounts.
     const std::size_t np = s.polities.size();
     std::vector<double> realm(np, 0.0);
     std::vector<std::uint8_t> seat(n, 0);  // 1 seat, 2 seat with a temple priesthood
     if (s.polity_of.size() == n) {
-        const double cell5 = w.per_area(1.0);
         for (CellId c = 0; c < n; ++c) {
-            if (s.polity_of[c] != 0) realm[s.polity_of[c]] += cell5;
+            if (s.polity_of[c] != 0) realm[s.polity_of[c]] += static_cast<double>(s.cell_population[c]);
         }
         for (std::size_t p = 1; p < np; ++p) {
             const Polity& pol = s.polities[p];
