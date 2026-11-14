@@ -39,11 +39,26 @@ TEST(polity_reach_grows_with_administration) {
     CHECK(polity_reach_km(w, s, c) > with_writing);
 }
 
+namespace {
+
+// A level-4 world run until states are old enough to have provinces,
+// generals and risings (writing comes some 5,000 years after the first
+// crops), shared by the tests that look at them.
+const Simulation& states_run() {
+    static const Simulation sim = [] {
+        WorldParams p;
+        p.grid_level = 4;
+        Simulation x = Simulation::create(p);
+        x.step_years(7000);
+        return x;
+    }();
+    return sim;
+}
+
+}  // namespace
+
 TEST(polity_chiefdoms_cycle_and_states_form_with_writing) {
-    WorldParams p;
-    p.grid_level = 4;
-    Simulation sim = Simulation::create(p);
-    sim.step_years(5200);
+    const Simulation& sim = states_run();
     const SimState& s = sim.state();
     const World& w = sim.world();
     // Consistency: every ruled cell is inhabited and ruled by a living
@@ -172,20 +187,6 @@ void run_polities(const World& w, SimState& s, int years) {
         polities.step(ctx);
         s.tick += kTicksPerYear;
     }
-}
-
-// A level-4 world run until states are old enough to have provinces,
-// generals and risings (writing comes some 5,000 years after the first
-// crops), shared by the tests that look at them.
-const Simulation& states_run() {
-    static const Simulation sim = [] {
-        WorldParams p;
-        p.grid_level = 4;
-        Simulation x = Simulation::create(p);
-        x.step_years(7000);
-        return x;
-    }();
-    return sim;
 }
 
 }  // namespace

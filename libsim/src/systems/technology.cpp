@@ -14,7 +14,6 @@ namespace histsim {
 
 namespace {
 
-constexpr std::uint32_t kLearnEntity = 0x40000000u;
 constexpr std::uint32_t kInventorEntity = 0x40000000u;  // Stream::Figures
 
 bool is_forest(Biome b) {

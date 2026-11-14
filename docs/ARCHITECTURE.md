@@ -103,11 +103,11 @@ state 6,188 years after it). Empires are calibrated there too: a realm's
 reach at level 7 covers about half the area it did on level-5 cells (where a
 cell taken counted whole), so writing (+0.85 administration), bureaucracy and
 roads (+1.1 each) and provincial government (+2.85) extend rule further, and
-the towns writing and its successors need are those level 7 grows (20,000 for
-writing, 15,000 for the rest). On seeds 1–3 over 11,000 years the first states
-come 6,188 and 7,035 years after the first crop (seed 3 never invents
-writing: its towns stay small), and 16 of the 18 era checks pass, the misses
-being seed 1's Persian eras (1.0 million km², with no provinces yet). A level
+techniques come from know-how built by practice (below, Technology). On
+seeds 1–3 over 11,000 years the first states come 4,841 and 5,708 years after
+the first crop (median 5,708; seed 3 never invents writing: its towns stay
+small), and 16 of the 18 era checks pass, the misses being the last Persian
+era (1.5 million km² against 5.5). A level
 7 run takes about 0.2 s a year on two cores.
 
 | Rule | Scaled so that |
@@ -117,7 +117,7 @@ being seed 1's Persian eras (1.0 million km², with no provinces yet). A level
 | Colonists | they leapfrog as far as at level 5: on finer grids to land 2^(level − 5) steps away (nearer only if none there has room); on coarser grids less often |
 | Coasts and rivers (fishing, alluvium, floodplain farming, irrigation, river-loving species) | the strip along a coast and the corridor along a river are about 225 km wide at any level (`World::coast_share`, `World::river_share`) |
 | Founding chances per cell (chiefdoms, nomad confederations, universal faiths, inventions, disease emergence) | as many per area: chance × scale² |
-| Town thresholds (cities, writing and other techniques, temple and universal faiths) and population thresholds (disease critical community, forgetting) | they count a hinterland about a level-5 cell in area: the cells within 2^(level − 6) steps (`World::for_hinterland`), its sums scaled to a level-5 cell's area (`World::hinterland_weight`: 4/7 at level 6, 16/19 at level 7); a city is named at the hinterland's centre, never in an empty cell |
+| Town thresholds (cities, temple and universal faiths), what techniques are practised (towns, trade, food brought in, community size) and population thresholds (disease critical community, forgetting) | they count a hinterland about a level-5 cell in area: the cells within 2^(level − 6) steps (`World::for_hinterland`), its sums scaled to a level-5 cell's area (`World::hinterland_weight`: 4/7 at level 6, 16/19 at level 7); a city is named at the hinterland's centre, never in an empty cell |
 | Crowding (food per km² for the size of towns, people per km² for founding chiefdoms) | it is measured over the hinterland, so a small fertile cell on a fine grid is no more crowded than the level-5 cell it lies in |
 | Annexation, conquest | the same area a year: as many attempts or pushes as cells in a level-5 cell |
 | Nomad raids | they strike the target's hinterland |
@@ -327,13 +327,15 @@ year) where practice would keep less than a quarter of the know-how it takes
 and techniques whose requirements are gone fade (5%). Effects: crop and herd
 yields (farmland), foraging and fishing (forager capacity), harvest buffer
 (part of a bad harvest made good), famine mortality, and contact (learning
-techniques and domesticates). At level 5 over seeds 1–3 (years after the
-first crop, history in brackets): sickles 415–453 (0–500), seed selection and
-calendar 1,200–1,800 (500–1,500), irrigation 2,500–3,500 (3,500), copper
-3,100–3,900 (4,500), plough 4,400–5,200 (5,500), wheel 4,900–5,750 (6,000),
-bronze 5,000–5,500 (6,200), writing 4,600–5,900 (6,200), bureaucracy
-5,900–7,500 (7,400), roads 6,100–8,800 (8,800), provinces 6,500–8,700
-(8,750).
+techniques and domesticates). Calibrated at level 7 (years after the
+first crop, history in brackets; level 7 has many more cells than level 5, so
+somewhere practice peaks sooner and the practice years are longer than a
+level-5 world would need): writing 4,840 and 5,710 on seeds 1 and 2 (6,200),
+bureaucracy 6,530 and 7,560 (7,400), roads 7,450 and 8,600 (8,800),
+provincial government 9,020 and 8,920 (8,750). Irrigation, terraces and the
+plough, which set crop yields, keep the pace town growth was tuned to (a
+thousand years or more before their dates in the Near East); at their
+historical dates towns and writing came thousands of years late.
 
 ### Towns, cities and early states (M3)
 
