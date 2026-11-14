@@ -116,7 +116,7 @@
     {"id": "seals", "name": "Seals and sealed tallies", "requires": ["tallies"], "practice": {"redistribution": 1, "trade": 0.5}, "practice_years": 7500,
      "affinity": {"hierarchy": 0.3},
      "effects": {"contact": 0.05}},
-    {"id": "writing", "name": "Writing", "requires": ["calendar", "seals"], "practice": {"redistribution": 1}, "practice_years": 12300,
+    {"id": "writing", "name": "Writing", "requires": ["calendar", "seals"], "practice": {"redistribution": 1}, "practice_years": 13300,
      "affinity": {"hierarchy": 0.6, "ritual": 0.3},
      "effects": {"administration": 0.85, "contact": 0.1}},
     {"id": "bureaucracy", "name": "Scribal bureaucracy", "requires": ["writing"], "practice": {"rule": 1, "redistribution": 0.5}, "practice_years": 10500,
