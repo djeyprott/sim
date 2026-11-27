@@ -375,15 +375,18 @@ history (the M3 gate, below).
 
 **The M3 gate** (`histsim gate --seeds 5`, about half an hour) runs several
 worlds for 11,000 years and checks three things. The first state (a polity
-with writing) arises within 1,000 years of 6,300 years after the first crop
+with writing) arises within 1,500 years of 6,300 years after the first crop
 (farming in the Fertile Crescent about 9500 BCE, Uruk about 3200 BCE), at the
-median. Before 5,000 years of farming no polity exceeds 0.3 million km². And
+median: writing arose independently over some 2,000 years, in Sumer and Egypt
+by 3200 BCE and China by 1200 BCE. Before 5,000 years of farming no polity exceeds 0.3 million km². And
 the largest polity, era by era counted from each world's first state, is
 within a factor of 3 of the largest empire of the same era counted from 3200
 BCE (Taagepera's figures as listed in Wikipedia's "List of largest empires":
 0.1 million km² in 3000 BCE, 0.65 under Akkad, 1.0 in 1450 BCE, 1.4 under
 Assyria, 5.5 under Persia in 500 BCE), sizes below five cells (0.25 million
-km² at level 5) being compared as five cells, the finest the grid shows.
+km² at level 5) being compared as five cells, the finest the grid shows; at
+least three quarters of the eras must pass, since one exceptional empire
+(Persia, which swallowed whole kingdoms and had no peer) need not be matched.
 Timing the eras from the first state keeps the growth of states apart from
 the date of their rise, which varies far more from world to world. With seeds
 1–5 at level 5 all nine eras pass: the median world has states of 0.4 million
