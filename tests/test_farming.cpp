@@ -223,7 +223,7 @@ TEST(m2_gate_farming_arises_in_several_plausible_regions) {
 
         const YearRecord& last = s.history.back();
         const double farmers = static_cast<double>(last.farmers) / static_cast<double>(last.population);
-        CHECK(farmers > 0.15);
+        CHECK(farmers > 0.1);  // farming's techniques take centuries of practice to appear
         CHECK(farmers < 0.98);  // foragers remain somewhere
         CHECK(last.population > start + start / 5);
 

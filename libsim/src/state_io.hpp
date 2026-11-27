@@ -297,6 +297,11 @@ void serialize(Ar& ar, SimState& s) {
         ar.u32(v.culture);
         ar.u32(v.figure);
     });
+    vec(ar, s.know_how, [&](float& k) {
+        double d = k;
+        ar.f64(d);
+        k = static_cast<float>(d);
+    });
     doubles(ar, s.urban);
     vec(ar, s.city_of, [&](std::uint32_t& v) { ar.u32(v); });
     vec(ar, s.cities, [&](City& c) {

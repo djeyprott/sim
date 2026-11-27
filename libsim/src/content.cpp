@@ -489,6 +489,9 @@ void resolve_good_techniques(Content& c, const std::vector<std::string>& ids,
 // ---- techniques (after species, culture and goods: they refer to them)
 
 constexpr const char* kPlacesWhere[] = {"anywhere", "river", "coast", "water", "dry", "hills", "forest"};
+constexpr const char* kPractices[] = {"foraging", "hunting", "fishing", "farming", "herding", "crowding",
+                                      "storing", "towns", "trade", "redistribution", "rule"};
+static_assert(std::size(kPractices) == kPracticeCount);
 
 void load_techniques(Content& c, std::string_view text) {
     const json::Value doc = json::parse(text, "data/techniques.json");
@@ -516,9 +519,17 @@ void load_techniques(Content& c, std::string_view text) {
             }
         }
         if (v.has("where")) t.where = static_cast<TechPlace>(pick(v.at("where"), kPlacesWhere));
-        t.rate = unit(v, "rate", 0.0);
         t.start_chance = unit(v, "start_chance", 0.0);
-        t.min_town = v.number_or("min_town", 0.0);
+        if (v.has("practice")) {
+            for (const auto& [key, val] : v.at("practice").members()) {
+                std::size_t i = 0;
+                while (i < kPracticeCount && key != kPractices[i]) ++i;
+                if (i == kPracticeCount) fail(val, "is not a practice (see data/techniques.json)");
+                t.practice[i] = val.as_number();
+            }
+            t.practice_years = v.at("practice_years").as_number();
+            if (t.practice_years <= 0.0) fail(v.at("practice_years"), "must be positive");
+        }
         if (v.has("requires_goods")) {
             for (const json::Value& g : v.at("requires_goods").as_array()) {
                 std::size_t i = 0;
