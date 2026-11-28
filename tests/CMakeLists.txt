@@ -1,5 +1,6 @@
 add_executable(histsim_tests
     main.cpp
+    test_conditions.cpp
     test_culture.cpp
     test_disease.cpp
     test_economy.cpp

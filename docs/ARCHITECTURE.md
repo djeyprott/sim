@@ -46,6 +46,7 @@ godot viewer ── view ───┘                                   │
 | `simulation.hpp` | The Sim API: create, step, save, load, read state, hash. |
 | `systems/climate.hpp` | Climate (global energy balance, regional anomalies) and environment (yearly capacity, game). |
 | `systems/people.hpp` | Cohort demography, migration and the yearly history record. |
+| `systems/conditions.hpp` | What people live through, per cell, gathered once a year for the systems that respond to it (`SimState::conditions`). |
 | `language.hpp` | Languages as objects: proto-language generation, regular sound changes, word replacement, lexical similarity, names. |
 | `systems/disease.hpp` | Endemic disease burdens and epidemics: emergence, outbreaks, immunity, spread. |
 | `systems/technology.hpp` | Techniques known per cell: invention, borrowing, forgetting, and their effects. |
@@ -79,13 +80,36 @@ Within a tick, phases run in this order:
 climate → environment → production → markets → demography → migration →
 culture and technology → polities → agents → events
 
-Systems in the same phase run in registration order. Within a system, each
+Systems in the same phase run in registration order. The conditions system
+runs first in the migration phase: it gathers what the other systems produced
+into `SimState::conditions` (below), which the systems that respond to
+people's circumstances read. Within a system, each
 cohort or cell is updated from values computed before the pass (cell
 populations, capacity) and with its own random stream, and cross-cell moves go
 to an outbox merged afterwards. So processing order does not change results,
 which leaves room to parallelize later. After any change to cohorts,
 `SimState::normalize_cohorts()` re-sorts and merges them and rebuilds the
 derived per-cell totals.
+
+### Conditions
+
+Systems respond to what people are living through rather than to thresholds of
+their own (design: the "Conditions and migration design" doc). Each year,
+after demography and before migration, `ConditionsSystem` writes per cell:
+
+| Signal | Measured as | From |
+|---|---|---|
+| food | food per head ÷ need after trade, stores and relief (1 = fed), at most 4 | economy |
+| danger | deaths in war, sacks and raids ÷ people, last year | war |
+| burden | share of the cell's own food taken from it: the annona this year and tribute grain since the last gathering | economy, war |
+| bondage | share of people held in bondage | cohorts |
+| sickness | disease deaths ÷ people, this year | demography |
+| room | people the land could feed with their own ways, minus its people | environment, economy |
+| town gap | townspeople the surplus would support (`urban_target`), minus those there | settlement |
+
+Food, danger, burden and sickness are also kept as slow averages (5% of the
+gap a year, about 20 years). Nothing reads them yet: migration, then unrest,
+stability, fertility, religion and war will move onto them in turn.
 
 ### Grid scale
 

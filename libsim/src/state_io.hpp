@@ -302,7 +302,17 @@ void serialize(Ar& ar, SimState& s) {
         ar.f64(d);
         k = static_cast<float>(d);
     });
+    for (std::vector<float>* v : {&s.conditions.food, &s.conditions.danger, &s.conditions.burden, &s.conditions.bondage,
+                                  &s.conditions.sickness, &s.conditions.room, &s.conditions.town_gap, &s.conditions.slow_food,
+                                  &s.conditions.slow_danger, &s.conditions.slow_burden, &s.conditions.slow_sickness}) {
+        vec(ar, *v, [&](float& x) {
+            double d = x;
+            ar.f64(d);
+            x = static_cast<float>(d);
+        });
+    }
     doubles(ar, s.urban);
+    doubles(ar, s.urban_target);
     vec(ar, s.city_of, [&](std::uint32_t& v) { ar.u32(v); });
     vec(ar, s.cities, [&](City& c) {
         ar.u32(c.id);
@@ -355,6 +365,7 @@ void serialize(Ar& ar, SimState& s) {
     doubles(ar, s.prices);
     vec(ar, s.goods_available, [&](std::uint32_t& v) { ar.u32(v); });
     doubles(ar, s.food_import);
+    doubles(ar, s.food_taken);
     doubles(ar, s.trade_value);
     doubles(ar, s.route_value);
     vec(ar, s.wars, [&](War& w) {
