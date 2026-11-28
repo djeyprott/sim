@@ -48,10 +48,13 @@ public:
 //
 //   push(food, danger, burden, sickness) = hunger x (1 - food) when food is
 //     short (kPlenty x (1 - food), negative, when there is more than
-//     enough: plenty holds people and draws them) + kDangerPush x danger
-//     + kBurdenPush x burden + kSicknessPush x sickness
+//     enough: plenty holds people and draws them, weakly: fed farmers stay
+//     on their land) + kDangerPush x danger + kBurdenPush x burden
+//     + kSicknessPush x outbreak, where an outbreak is disease deaths above
+//     the place's usual (its slow average: towns always bury more than
+//     villages, and what keeps them filled is not their people's choice)
 //   gain of a place = push at home - push expected there (its food per head
-//     with one more household, its own danger, burden and sickness)
+//     with one more household, its usual danger and burden, any outbreak)
 //   cost = kMoveCost per 100 km x (1 + kClimbCostPerKm x climb in km),
 //     x kSeaCost by sea
 //   want(x) = x / (x + kHalfPush) for x > 0: the share who would go
@@ -76,7 +79,8 @@ public:
     void step(StepContext& ctx) override;
 
     // Push weights, per unit of each condition (food per head below need,
-    // deaths in war, share of the harvest taken, deaths from disease), set
+    // deaths in war, share of the harvest taken, deaths from disease above
+    // the usual), set
     // so that a famine with food at 0.7 of need, a sack killing 3% or a
     // plague killing 10% each bring half the people to want to leave (push
     // = kHalfPush), and a fifth of the harvest taken a quarter of them.
@@ -137,7 +141,7 @@ public:
     // share of them, at most kMaxExodusShare, go to the most open land within
     // kExodusKm (spare capacity, less with distance; out of the realm that
     // took their land in war). The cause recorded is the largest part of
-    // the push: hunger, danger (war or raid), burden or sickness. Arrivals
+    // the push: hunger, danger (war or raid), burden or an outbreak. Arrivals
     // crowd those they join, whose own push follows next year: displacement
     // chains need no rule of their own. A people that leaves in hunger
     // within kChainYears of newcomers' arrival is counted as pushed out by
