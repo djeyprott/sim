@@ -749,6 +749,22 @@ struct SlaveRoute {
 
 // ---------------------------------------------------------------- state
 
+// What people are living through, per cell, written once a year by the
+// ConditionsSystem from what the other systems produce, for the systems that
+// respond to it (systems/conditions.hpp). Each signal is a measured quantity
+// in natural units, this year's and a slow average (about 20 years) for
+// responses to lasting conditions.
+struct Conditions {
+    std::vector<float> food;       // food per head / need (1 = fed), after trade, stores and relief
+    std::vector<float> danger;     // deaths in war, sacks and raids / people, last year
+    std::vector<float> burden;     // share of the cell's own food taken from it (annona, tribute)
+    std::vector<float> bondage;    // share of people held in bondage
+    std::vector<float> sickness;   // disease deaths / people, this year
+    std::vector<float> room;       // people the land could feed with their own ways, minus its people
+    std::vector<float> town_gap;   // townspeople the surplus would feed, minus those there
+    std::vector<float> slow_food, slow_danger, slow_burden, slow_sickness;
+};
+
 struct SimState {
     Tick tick = 0;
 
@@ -793,10 +809,13 @@ struct SimState {
     // technique its people do not know yet; they know it at 1.
     std::vector<float> know_how;
 
+    Conditions conditions;
+
     // Towns and polities. Per cell: the share of people living in towns, the
     // city there (0 = none) and the polity ruling it (0 = none). Entry 0 of
     // `cities` and `polities` is a placeholder so 0 can mean "none".
     std::vector<double> urban;
+    std::vector<double> urban_target;  // the town share the surplus would support (settlement)
     std::vector<std::uint32_t> city_of;
     std::vector<City> cities;
     std::vector<std::uint32_t> polity_of;
@@ -812,6 +831,9 @@ struct SimState {
     std::vector<double> prices;
     std::vector<std::uint32_t> goods_available;
     std::vector<double> food_import;
+    // Food taken from each cell since the conditions were last gathered:
+    // the annona this year and grain sent as tribute (people fed).
+    std::vector<double> food_taken;
     std::vector<double> trade_value;
     std::vector<double> route_value;
 

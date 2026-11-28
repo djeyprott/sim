@@ -372,13 +372,16 @@ void SettlementSystem::step(StepContext& ctx) {
             if (s.polity_of[h] == p) seat[h] = 1;
         });
     }
+    if (s.urban_target.size() != n) s.urban_target.assign(n, 0.0);
     for (CellId c = 0; c < n; ++c) {
         if (s.cell_population[c] == 0) {
             s.urban[c] = 0.0;
+            s.urban_target[c] = 0.0;
         } else {
             const double fed = fed_per_km2[c];
             double target = std::clamp(kPerSurplus * (fed - kThreshold), 0.0, kMax);
             if (target > 0.0 && seat[c] != 0) target += kCapital;
+            s.urban_target[c] = target;
             s.urban[c] += kRate * (target - s.urban[c]);
         }
     }

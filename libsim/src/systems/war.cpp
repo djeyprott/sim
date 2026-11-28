@@ -1144,6 +1144,7 @@ void WarSystem::step(StepContext& ctx) {
         if (s.env.food_store.size() == n) {
             const double q = kTribute * s.env.food_store[p.capital];
             s.env.food_store[p.capital] -= q;
+            if (s.food_taken.size() == n) s.food_taken[p.capital] += q;
             s.env.food_store[s.polities[lord].capital] += q;
         }
         RngStream rng = ctx.rng(Stream::War, kDiplomacyEntity | id);

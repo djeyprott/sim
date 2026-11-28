@@ -25,6 +25,7 @@ add_library(histsim
     src/json.cpp
     src/language.cpp
     src/parallel.cpp
+    src/systems/conditions.cpp
     src/systems/culture.cpp
     src/systems/disease.cpp
     src/systems/economy.cpp

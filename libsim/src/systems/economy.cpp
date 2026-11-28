@@ -390,6 +390,7 @@ void EconomySystem::step(StepContext& ctx) {
     // and carries it to the capital, losing kHaulLoss x (1 - control) on the
     // way. A great capital can so outgrow its own land, and starve when the
     // realm that fed it falls or loses its provinces.
+    if (s.food_taken.size() != n) s.food_taken.assign(n, 0.0);
     if (s.polity_of.size() == n && s.polities.size() > 1) {
         const std::size_t np = s.polities.size();
         std::vector<double> reach(np, -1.0), bread(np, 0.0), kept(s.provinces.size(), 0.0);
@@ -410,6 +411,7 @@ void EconomySystem::step(StepContext& ctx) {
             const double tax = kAnnona * spare * control * (law == 0 ? Laws::kDirectTax : 1.0);
             const double governor = province ? (law == 2 ? 1.0 : s.provinces[v].held_back) : 0.0;
             imported[m] -= tax;
+            if (s.food_taken.size() == n) s.food_taken[c] += tax;
             bread[p] += tax * (1.0 - governor) * (1.0 - kHaulLoss * (1.0 - control));
             if (province) kept[v] += tax * governor;
         }

@@ -9,6 +9,7 @@
 #include "histsim/hash.hpp"
 #include "histsim/systems/bondage.hpp"
 #include "histsim/systems/climate.hpp"
+#include "histsim/systems/conditions.hpp"
 #include "histsim/systems/culture.hpp"
 #include "histsim/systems/disease.hpp"
 #include "histsim/systems/economy.hpp"
@@ -43,6 +44,7 @@ void Simulation::install_systems() {
     scheduler_.add(std::make_unique<EconomySystem>());  // markets: trade, food brought in
     scheduler_.add(std::make_unique<DiseaseSystem>());  // sets this year's disease mortality
     scheduler_.add(std::make_unique<DemographySystem>());
+    scheduler_.add(std::make_unique<ConditionsSystem>());  // what people live through, before they move
     scheduler_.add(std::make_unique<MigrationSystem>());
     scheduler_.add(std::make_unique<CultureSystem>());
     scheduler_.add(std::make_unique<TechnologySystem>());
