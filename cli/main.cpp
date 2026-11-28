@@ -1030,7 +1030,7 @@ int migrations(const Options& o) {
     for (std::size_t i = 0; i < order.size(); ++i) order[i] = i;
     std::stable_sort(order.begin(), order.end(),
                      [&](auto a, auto b) { return s.migrations[a].people > s.migrations[b].people; });
-    static const char* const causes[] = {"famine", "war", "raids", "pushed on", "wandering"};
+    static const char* const causes[] = {"famine", "war", "raids", "pushed on", "wandering", "conquest", "taxes", "plague"};
     std::printf("\nLargest folk migrations (%zu in all):\n", s.migrations.size());
     for (std::size_t k = 0; k < order.size() && k < 12; ++k) {
         const histsim::FolkMovement& m = s.migrations[order[k]];
