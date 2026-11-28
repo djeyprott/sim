@@ -1361,9 +1361,15 @@ int gate(const Options& o) {
     // of that.
     constexpr double kFrontKmPerYear = 1.0, kFrontTolerance = 2.0;
     constexpr std::int64_t kFrontFrom = 1000, kFrontTo = 3000;
-    // Settled farmland in quiet times (fed, no war) should not slosh: its
-    // people change by at most this share a year on average.
-    constexpr double kMaxQuietSwing = 0.02;
+    // Settled farmland in quiet times (fed, no war) should not slosh: over
+    // kSwingYears its people change by at most this share a year on average
+    // (over a span, so that the year-to-year noise of bands coming and going
+    // averages out and what is left is people drifting off fed land).
+    constexpr double kMaxQuietSwing = 0.01;
+    constexpr std::int64_t kSwingYears = 25;
+    // The front starts from farmland within this distance of the first crop
+    // (its own cell may have gone back to foraging).
+    constexpr double kFrontStartKm = 300.0;
     const std::int64_t n = std::max<std::int64_t>(1, o.seeds);
     struct Run {
         std::int64_t first_crop = -1, first_state = -1;
@@ -1373,8 +1379,8 @@ int gate(const Options& o) {
         std::string kinds;       // per point, the largest's kind: c chiefdom, s state, e empire, n nomads
         std::vector<std::int64_t> invented;  // per kAdmin technique, years after the first crop (-1: never)
         std::array<std::int64_t, 3> town_year{-1, -1, -1};  // per kTowns, sim year first reached (-1: never)
-        double front_from = -1.0, front_to = -1.0;  // km from the first crop to the farthest connected farmland
-        double swing = 0.0, swing_n = 0.0;          // quiet farmland's yearly change in people
+        double front_from = -1.0, front_to = -1.0;  // km: radius of the farmland joined to the first crop
+        double swing = 0.0, swing_n = 0.0;          // quiet farmland's change in people a year, over kSwingYears
     };
     static const char* const kAdmin[] = {"granaries", "calendar", "writing", "bureaucracy", "roads", "provinces"};
     static const double kTowns[] = {5000.0, 10000.0, 20000.0};  // hinterland townspeople
@@ -1396,30 +1402,37 @@ int gate(const Options& o) {
             const histsim::World& world = sim.world();
             histsim::CellId origin = histsim::kInvalidCell;
             std::int64_t crop_year = -1;
-            // The farthest farmland (at least half its food from farming)
-            // joined to the first crop's cell by farmland.
+            // The farmland (at least half its food from farming) joined by
+            // farmland to that near the first crop, as the radius of a disc
+            // of its area: the front's average advance, not its fastest
+            // corridor.
             auto front_km = [&](const histsim::SimState& st) {
                 if (origin == histsim::kInvalidCell || st.env.farming.empty()) return 0.0;
                 auto farmed = [&](histsim::CellId c) { return st.env.farming[c] >= 0.5 && st.cell_population[c] > 0; };
                 std::vector<std::uint8_t> seen(world.cell_count(), 0);
                 std::vector<histsim::CellId> todo;
-                double far = 0.0;
-                if (!farmed(origin)) return 0.0;
-                todo.push_back(origin);
-                seen[origin] = 1;
+                for (histsim::CellId c = 0; c < world.cell_count(); ++c) {
+                    if (farmed(c) && world.grid.distance_km(origin, c) <= kFrontStartKm) seen[c] = 1, todo.push_back(c);
+                }
+                double area = 0.0;
                 while (!todo.empty()) {
                     const histsim::CellId c = todo.back();
                     todo.pop_back();
-                    far = std::max(far, world.grid.distance_km(origin, c));
+                    area += world.grid.area_km2(c);
                     for (histsim::CellId nb : world.grid.neighbors(c)) {
                         if (!seen[nb] && farmed(nb)) seen[nb] = 1, todo.push_back(nb);
                     }
                 }
-                return far;
+                return std::sqrt(area / 3.141592653589793);
             };
-            std::vector<std::uint32_t> before;
+            // Quiet farmland at the start of the current swing span, and its
+            // people then (0: not quiet).
+            std::vector<std::uint32_t> span_start(world.cell_count(), 0);
+            auto quiet = [&](const histsim::SimState& st, histsim::CellId c) {
+                return !st.conditions.food.empty() && !st.env.farming.empty() && st.env.farming[c] >= 0.5 &&
+                       st.cell_population[c] >= 1000 && st.conditions.food[c] >= 0.95f && st.conditions.danger[c] <= 0.0f;
+            };
             for (std::int64_t done = 0; done < o.years;) {
-                before = sim.state().cell_population;
                 sim.step_years(1);
                 ++done;
                 const histsim::SimState& st = sim.state();
@@ -1434,12 +1447,15 @@ int gate(const Options& o) {
                 }
                 if (crop_year >= 0 && sim.year() == crop_year + kFrontFrom) r.front_from = front_km(st);
                 if (crop_year >= 0 && sim.year() == crop_year + kFrontTo) r.front_to = front_km(st);
-                if (!st.conditions.food.empty() && !st.env.farming.empty()) {
+                if (done % kSwingYears == 0) {
                     for (histsim::CellId c = 0; c < world.cell_count(); ++c) {
-                        if (st.env.farming[c] < 0.5 || before[c] < 1000 || st.cell_population[c] == 0) continue;
-                        if (st.conditions.food[c] < 0.95f || st.conditions.danger[c] > 0.0f) continue;
-                        r.swing += std::fabs(static_cast<double>(st.cell_population[c]) - before[c]) / before[c];
-                        r.swing_n += 1.0;
+                        const bool now = quiet(st, c);
+                        if (span_start[c] != 0 && now) {
+                            const double was = static_cast<double>(span_start[c]);
+                            r.swing += std::fabs(static_cast<double>(st.cell_population[c]) - was) / was / static_cast<double>(kSwingYears);
+                            r.swing_n += 1.0;
+                        }
+                        span_start[c] = now ? st.cell_population[c] : 0;
                     }
                 }
                 if (done % 25 != 0 && done != o.years) continue;
@@ -1550,8 +1566,8 @@ int gate(const Options& o) {
     }
     std::printf("  (per-seed sizes below are marked c chiefdom, s state, e empire, n nomad confederation)\n");
     std::vector<double> fronts, swings;
-    std::printf("\n  Farming front (farmland joined to the first crop, %lld to %lld years after it) and quiet farmland's swing:\n",
-                static_cast<long long>(kFrontFrom), static_cast<long long>(kFrontTo));
+    std::printf("\n  Farming front (radius of the farmland joined to the first crop's, %lld to %lld years after it) and quiet farmland's swing (over %lld years):\n",
+                static_cast<long long>(kFrontFrom), static_cast<long long>(kFrontTo), static_cast<long long>(kSwingYears));
     for (std::int64_t k = 0; k < n; ++k) {
         const Run& r = runs[static_cast<std::size_t>(k)];
         const double speed = r.front_from >= 0.0 && r.front_to >= 0.0
