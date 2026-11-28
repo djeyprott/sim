@@ -148,16 +148,16 @@ TEST(migration_people_driven_out_after_newcomers_came_are_pushed_on) {
     CHECK_EQ(s.migrations[1].pushed_by, 1u);
 }
 
-TEST(migration_people_move_toward_land_that_would_feed_them_better) {
+TEST(migration_hungry_people_move_toward_land_that_would_feed_them) {
     Start x = start();
     SimState& s = x.s;
     const World& w = x.sim.world();
-    // One neighbour's land feeds twice as many as live there; the others
-    // are as full as home.
+    // Land everywhere feeds only 80% of its people, but one neighbour's
+    // feeds twice as many as live there.
     const auto nbs = w.grid.neighbors(x.home);
     const CellId rich = nbs.front();
     for (CellId c = 0; c < w.cell_count(); ++c) {
-        if (s.env.capacity[c] > 0.0) s.env.capacity[c] = static_cast<double>(std::max<std::uint32_t>(1, s.cell_population[c]));
+        if (s.env.capacity[c] > 0.0) s.env.capacity[c] = 0.8 * static_cast<double>(std::max<std::uint32_t>(1, s.cell_population[c]));
     }
     s.env.capacity[rich] = 2.0 * static_cast<double>(std::max<std::uint32_t>(1000, s.cell_population[rich]));
     std::vector<std::uint32_t> before = s.cell_population;
