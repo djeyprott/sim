@@ -551,9 +551,13 @@ void MigrationSystem::step(StepContext& ctx) {
         // largest part of it names the cause), the more for mobile peoples.
         const double people = static_cast<double>(s.cell_population[c]);
         const double food = measured ? value_at(cond.food, c) : s.env.capacity[c] / people;
+        // Sickness drives a people out only as an outbreak: deaths above
+        // those it is used to (towns always bury more than villages).
+        const double sickness = value_at(cond.sickness, c);
+        const double outbreak = std::max(0.0, sickness - value_at(cond.slow_sickness, c));
         const double parts[] = {food < 1.0 ? kHungerPush * (1.0 - food) : 0.0, kDangerPush * value_at(cond.danger, c),
-                                kBurdenPush * value_at(cond.burden, c), kSicknessPush * value_at(cond.sickness, c)};
-        const double push = push_home(c);
+                                kBurdenPush * value_at(cond.burden, c), kSicknessPush * outbreak};
+        const double push = push_home(c) - kSicknessPush * (sickness - outbreak);
         const double go = want_of(push * restless(*folk, kMobileExodus));
         if (go < kBodyShare) continue;
         std::size_t main = 0;
