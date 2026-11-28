@@ -1355,6 +1355,15 @@ int gate(const Options& o) {
     // 3200 BCE, China by 1200 BCE, Mesoamerica by 600 BCE).
     constexpr double kFirstStateWindow = 1500.0;
     constexpr double kChiefdomCeiling = 0.3;  // million km^2: largest before 5,000 years of farming
+    // Farming spread across Europe at about 1 km a year (Ammerman and
+    // Cavalli-Sforza 1971): the farmed land around the first crop must grow
+    // outward between 1,000 and 3,000 years after it at within a factor of 2
+    // of that.
+    constexpr double kFrontKmPerYear = 1.0, kFrontTolerance = 2.0;
+    constexpr std::int64_t kFrontFrom = 1000, kFrontTo = 3000;
+    // Settled farmland in quiet times (fed, no war) should not slosh: its
+    // people change by at most this share a year on average.
+    constexpr double kMaxQuietSwing = 0.02;
     const std::int64_t n = std::max<std::int64_t>(1, o.seeds);
     struct Run {
         std::int64_t first_crop = -1, first_state = -1;
@@ -1364,6 +1373,8 @@ int gate(const Options& o) {
         std::string kinds;       // per point, the largest's kind: c chiefdom, s state, e empire, n nomads
         std::vector<std::int64_t> invented;  // per kAdmin technique, years after the first crop (-1: never)
         std::array<std::int64_t, 3> town_year{-1, -1, -1};  // per kTowns, sim year first reached (-1: never)
+        double front_from = -1.0, front_to = -1.0;  // km from the first crop to the farthest connected farmland
+        double swing = 0.0, swing_n = 0.0;          // quiet farmland's yearly change in people
     };
     static const char* const kAdmin[] = {"granaries", "calendar", "writing", "bureaucracy", "roads", "provinces"};
     static const double kTowns[] = {5000.0, 10000.0, 20000.0};  // hinterland townspeople
@@ -1382,11 +1393,56 @@ int gate(const Options& o) {
                 std::string kind;
             };
             std::vector<Sample> samples;
+            const histsim::World& world = sim.world();
+            histsim::CellId origin = histsim::kInvalidCell;
+            std::int64_t crop_year = -1;
+            // The farthest farmland (at least half its food from farming)
+            // joined to the first crop's cell by farmland.
+            auto front_km = [&](const histsim::SimState& st) {
+                if (origin == histsim::kInvalidCell || st.env.farming.empty()) return 0.0;
+                auto farmed = [&](histsim::CellId c) { return st.env.farming[c] >= 0.5 && st.cell_population[c] > 0; };
+                std::vector<std::uint8_t> seen(world.cell_count(), 0);
+                std::vector<histsim::CellId> todo;
+                double far = 0.0;
+                if (!farmed(origin)) return 0.0;
+                todo.push_back(origin);
+                seen[origin] = 1;
+                while (!todo.empty()) {
+                    const histsim::CellId c = todo.back();
+                    todo.pop_back();
+                    far = std::max(far, world.grid.distance_km(origin, c));
+                    for (histsim::CellId nb : world.grid.neighbors(c)) {
+                        if (!seen[nb] && farmed(nb)) seen[nb] = 1, todo.push_back(nb);
+                    }
+                }
+                return far;
+            };
+            std::vector<std::uint32_t> before;
             for (std::int64_t done = 0; done < o.years;) {
-                const std::int64_t step = std::min<std::int64_t>(25, o.years - done);
-                sim.step_years(step);
-                done += step;
+                before = sim.state().cell_population;
+                sim.step_years(1);
+                ++done;
                 const histsim::SimState& st = sim.state();
+                if (origin == histsim::kInvalidCell) {
+                    for (const histsim::Domestication& d : st.domestications) {
+                        if (world.content->species[d.species].kind == histsim::SpeciesKind::Plant) {
+                            origin = d.cell;
+                            crop_year = d.tick / histsim::kTicksPerYear;
+                            break;
+                        }
+                    }
+                }
+                if (crop_year >= 0 && sim.year() == crop_year + kFrontFrom) r.front_from = front_km(st);
+                if (crop_year >= 0 && sim.year() == crop_year + kFrontTo) r.front_to = front_km(st);
+                if (!st.conditions.food.empty() && !st.env.farming.empty()) {
+                    for (histsim::CellId c = 0; c < world.cell_count(); ++c) {
+                        if (st.env.farming[c] < 0.5 || before[c] < 1000 || st.cell_population[c] == 0) continue;
+                        if (st.conditions.food[c] < 0.95f || st.conditions.danger[c] > 0.0f) continue;
+                        r.swing += std::fabs(static_cast<double>(st.cell_population[c]) - before[c]) / before[c];
+                        r.swing_n += 1.0;
+                    }
+                }
+                if (done % 25 != 0 && done != o.years) continue;
                 std::vector<double> area(st.polities.size(), 0.0);
                 for (histsim::CellId c = 0; c < st.polity_of.size(); ++c) area[st.polity_of[c]] += sim.world().grid.area_km2(c);
                 std::uint32_t big = 0;
@@ -1493,6 +1549,21 @@ int gate(const Options& o) {
                     r.early_kind.c_str());
     }
     std::printf("  (per-seed sizes below are marked c chiefdom, s state, e empire, n nomad confederation)\n");
+    std::vector<double> fronts, swings;
+    std::printf("\n  Farming front (farmland joined to the first crop, %lld to %lld years after it) and quiet farmland's swing:\n",
+                static_cast<long long>(kFrontFrom), static_cast<long long>(kFrontTo));
+    for (std::int64_t k = 0; k < n; ++k) {
+        const Run& r = runs[static_cast<std::size_t>(k)];
+        const double speed = r.front_from >= 0.0 && r.front_to >= 0.0
+                                 ? (r.front_to - r.front_from) / static_cast<double>(kFrontTo - kFrontFrom)
+                                 : -1.0;
+        const double swing = r.swing_n > 0.0 ? r.swing / r.swing_n : -1.0;
+        if (speed >= 0.0) fronts.push_back(speed);
+        if (swing >= 0.0) swings.push_back(swing);
+        std::printf("  %4lld  %6.0f to %6.0f km: %5.2f km a year    swing %5.2f%% a year\n",
+                    static_cast<long long>(o.params.seed) + static_cast<long long>(k), r.front_from, r.front_to, speed,
+                    100.0 * swing);
+    }
     std::printf("  (history: writing ~6200, bureaucracy ~7400, roads ~8800, provinces ~8750)\n");
     // The smallest size the grid can resolve: kFloorCells cells.
     constexpr double kFloorCells = 5.0;
@@ -1550,9 +1621,16 @@ int gate(const Options& o) {
     std::printf("  Largest polity in the first 5,000 years: median %.2f Mkm^2 (chiefdoms: at most %.1f): %s\n", largest_early,
                 kChiefdomCeiling, early_ok ? "ok" : "TOO LARGE");
     const bool eras_ok = scored > 0 && static_cast<double>(passed) >= kErasNeeded * static_cast<double>(scored);
+    const double front = median(fronts), swing = median(swings);
+    const bool front_ok = front >= kFrontKmPerYear / kFrontTolerance && front <= kFrontKmPerYear * kFrontTolerance;
+    const bool swing_ok = swing >= 0.0 && swing <= kMaxQuietSwing;
+    std::printf("\n  Farming front: median %.2f km a year (history about %.0f, within a factor of %.0f): %s\n", front,
+                kFrontKmPerYear, kFrontTolerance, front_ok ? "ok" : "OFF");
+    std::printf("  Quiet farmland's swing: median %.2f%% a year (at most %.0f%%): %s\n", 100.0 * swing, 100.0 * kMaxQuietSwing,
+                swing_ok ? "ok" : "TOO MUCH");
     std::printf("\n  %zu of %zu eras within a factor of %.0f of history (at least %.0f%% needed): %s\n", passed, scored,
                 kTolerance, 100.0 * kErasNeeded, eras_ok ? "ok" : "TOO FEW");
-    return eras_ok && states_ok && early_ok ? 0 : 3;
+    return eras_ok && states_ok && early_ok && front_ok && swing_ok ? 0 : 3;
 }
 
 int world_info(const Options& o) {
