@@ -81,7 +81,7 @@ public:
     // plague killing 10% each bring half the people to want to leave (push
     // = kHalfPush), and a fifth of the harvest taken a quarter of them.
     static constexpr double kHungerPush = 3.3;
-    static constexpr double kPlenty = 0.5;  // pull of food beyond need, per unit
+    static constexpr double kPlenty = 0.1;  // pull of food beyond need, per unit
     static constexpr double kDangerPush = 33.0;
     static constexpr double kBurdenPush = 1.7;
     static constexpr double kSicknessPush = 10.0;
