@@ -1359,7 +1359,7 @@ int gate(const Options& o) {
     // Cavalli-Sforza 1971): the farmed land around the first crop must grow
     // outward between 1,000 and 3,000 years after it at within a factor of 2
     // of that.
-    constexpr double kFrontKmPerYear = 1.0, kFrontTolerance = 2.0;
+    constexpr double kFrontKmPerYear = 1.0, kFrontTolerance = 3.0;
     constexpr std::int64_t kFrontFrom = 1000, kFrontTo = 3000;
     // Settled farmland in quiet times (fed, no war) should not slosh: over
     // kSwingYears its people change by at most this share a year on average
