@@ -255,17 +255,21 @@ void MigrationSystem::step(StepContext& ctx) {
     const bool measured = cond.food.size() == n;
     auto value_at = [](const auto& v, CellId c) { return c < v.size() ? static_cast<double>(v[c]) : 0.0; };
     auto own_food = [&](CellId c) { return std::max(0.0, s.env.capacity[c] - value_at(s.food_import, c)); };
+    // Sickness moves people only as an outbreak: deaths above those the
+    // place is used to. (Towns always bury more than villages; what keeps
+    // them filled is not their people's choice to stay.)
+    auto outbreak = [&](CellId c) { return std::max(0.0, value_at(cond.sickness, c) - value_at(cond.slow_sickness, c)); };
     auto push_home = [&](CellId c) {
         const double people = static_cast<double>(s.cell_population[c]);
         const double food = measured ? value_at(cond.food, c) : (people > 0.0 ? s.env.capacity[c] / people : ConditionsSystem::kMaxFood);
-        return push_at(food, value_at(cond.danger, c), value_at(cond.burden, c), value_at(cond.sickness, c));
+        return push_at(food, value_at(cond.danger, c), value_at(cond.burden, c), outbreak(c));
     };
     // Push expected at `d` by newcomers: its land's food shared with one
-    // more, its own danger, burden and sickness (slow averages: what it is
-    // known for, not one year's luck).
+    // more, its own danger and burden (slow averages: what it is known for,
+    // not one year's luck) and any outbreak there now.
     auto push_there = [&](CellId d, double could, double joining) {
         const double food = could / (static_cast<double>(s.cell_population[d]) + std::max(1.0, joining));
-        return push_at(food, value_at(cond.slow_danger, d), value_at(cond.slow_burden, d), value_at(cond.slow_sickness, d));
+        return push_at(food, value_at(cond.slow_danger, d), value_at(cond.slow_burden, d), outbreak(d));
     };
     auto cost_of = [&](CellId from, CellId to, bool sea) {
         const double climb_km = std::fabs(w.elevation_m[to] - w.elevation_m[from]) / 1000.0;
@@ -551,13 +555,9 @@ void MigrationSystem::step(StepContext& ctx) {
         // largest part of it names the cause), the more for mobile peoples.
         const double people = static_cast<double>(s.cell_population[c]);
         const double food = measured ? value_at(cond.food, c) : s.env.capacity[c] / people;
-        // Sickness drives a people out only as an outbreak: deaths above
-        // those it is used to (towns always bury more than villages).
-        const double sickness = value_at(cond.sickness, c);
-        const double outbreak = std::max(0.0, sickness - value_at(cond.slow_sickness, c));
         const double parts[] = {food < 1.0 ? kHungerPush * (1.0 - food) : 0.0, kDangerPush * value_at(cond.danger, c),
-                                kBurdenPush * value_at(cond.burden, c), kSicknessPush * outbreak};
-        const double push = push_home(c) - kSicknessPush * (sickness - outbreak);
+                                kBurdenPush * value_at(cond.burden, c), kSicknessPush * outbreak(c)};
+        const double push = push_home(c);
         const double go = want_of(push * restless(*folk, kMobileExodus));
         if (go < kBodyShare) continue;
         std::size_t main = 0;
@@ -797,7 +797,7 @@ void MigrationSystem::step(StepContext& ctx) {
                 food += share * here_food;
                 danger += share * value_at(cond.slow_danger, c);
                 burden += share * value_at(cond.slow_burden, c);
-                sickness += share * value_at(cond.slow_sickness, c);
+                sickness += share * outbreak(c);
             }
             // War shock and a stronger neighbour add to it.
             double push = push_at(food, danger, burden, sickness) + kHalfPush * std::min(1.0, pol.shock);
