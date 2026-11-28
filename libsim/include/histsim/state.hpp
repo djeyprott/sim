@@ -554,6 +554,8 @@ enum class MigrationCause : std::uint8_t {
     Displaced = 3,  // a stronger people arrived and pushed them out (a chain reaction)
     Wandering = 4,  // a tribe or confederation moved as a whole, rulers and all
     Conquest = 5,   // herders following their horde into land it took in war
+    Burden = 6,     // too much of their harvest was taken (tribute, the annona)
+    Plague = 7,     // they fled disease
 };
 
 // A folk migration: a people moving in a body to land further off.

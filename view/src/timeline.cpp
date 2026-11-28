@@ -48,6 +48,8 @@ const char* cause_text(MigrationCause c) {
         case MigrationCause::Displaced: return "pushed out by newcomers";
         case MigrationCause::Wandering: return "a whole people on the move";
         case MigrationCause::Conquest: return "following their horde into conquered land";
+        case MigrationCause::Burden: return "fleeing taxes and tribute";
+        case MigrationCause::Plague: return "fleeing plague";
     }
     return "";
 }

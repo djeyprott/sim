@@ -41,16 +41,32 @@ public:
     static constexpr double kMaxFertilityMultiplier = 1.5;
 };
 
-// Yearly moves between neighboring cells.
+// Yearly moves, as push and pull (design: "Conditions and migration
+// design"). People weigh what they live through at home (the conditions:
+// SimState::conditions) against what they expect elsewhere, less the cost of
+// getting there:
 //
-// Some people move every year (0.5%: bands splitting off to explore); crowded
-// cells send more (4.5% a year at capacity, rising with the square of
-// crowding); a cell with nothing to eat empties. Each cohort's
-// movers travel together, as a band, to one neighbor chosen by spare
-// capacity and ease of travel (elevation change). Young adults move most.
-// Farmers who outgrow their land also send colonists to settle land their
-// crops could fill, and peoples struck by famine, war or raids leave in a body
-// for open land further off, sometimes pushing others on (see below).
+//   push(food, danger, burden, sickness) = hunger x (1 - food) when food is
+//     short (kPlenty x (1 - food), negative, when there is more than
+//     enough: plenty holds people and draws them, weakly: fed farmers stay
+//     on their land) + kDangerPush x danger + kBurdenPush x burden
+//     + kSicknessPush x outbreak, where an outbreak is disease deaths above
+//     the place's usual (its slow average: towns always bury more than
+//     villages, and what keeps them filled is not their people's choice)
+//   gain of a place = push at home - push expected there (its food per head
+//     with one more household, its usual danger and burden, any outbreak)
+//   cost = kMoveCost per 100 km x (1 + kClimbCostPerKm x climb in km),
+//     x kSeaCost by sea
+//   want(x) = x / (x + kHalfPush) for x > 0: the share who would go
+//
+// Each year, from every cell, want(best gain - cost) x kMaxLeave of each
+// group go to its neighbours, chosen by gain - cost (plus a little
+// exchange, kExploratoryRate, of young people marrying out); a cell with
+// nothing to eat empties. Each cohort's movers travel together, as a band.
+// Young adults move most. Farmers weigh land their crops could fill a
+// level-5 spacing away (colonists, below). A people that most would leave
+// (want(push x mobility) of at least kBodyShare, with nowhere better next
+// door) goes in a body to open land further off: a folk migration.
 //
 // Afterwards, groups smaller than 20 people or 10% of their cell join the
 // cell's largest group, so arrivals into settled land are absorbed while
@@ -62,9 +78,32 @@ public:
     [[nodiscard]] Tick period() const noexcept override { return kTicksPerYear; }
     void step(StepContext& ctx) override;
 
+    // Push weights, per unit of each condition (food per head below need,
+    // deaths in war, share of the harvest taken, deaths from disease above
+    // the usual), set
+    // so that a famine with food at 0.7 of need, a sack killing 3% or a
+    // plague killing 10% each bring half the people to want to leave (push
+    // = kHalfPush), and a fifth of the harvest taken a quarter of them.
+    static constexpr double kHungerPush = 3.3;
+    static constexpr double kPlenty = 0.1;  // pull of food beyond need, per unit
+    static constexpr double kDangerPush = 33.0;
+    static constexpr double kBurdenPush = 1.7;
+    static constexpr double kSicknessPush = 10.0;
+    static constexpr double kHalfPush = 1.0;
+    // At most this share of a group a year moves to the land next door (for
+    // level-5 cells; more for finer grids, as many km a year), at full want:
+    // some 5% a year left Ireland in the famine years.
+    static constexpr double kMaxLeave = 0.1;
+    static constexpr double kMoveCost = 0.02;  // per 100 km
+    static constexpr double kSeaCost = 2.0;
+    // A group goes in a body (a folk migration) where at least this share
+    // would leave.
+    static constexpr double kBodyShare = 0.5;
+    // Young people marrying into the next band or village, a year: an
+    // exchange that changes no numbers, but carries genes, words and ways.
     static constexpr double kExploratoryRate = 0.005;
-    static constexpr double kRateAtCapacity = 0.04;
-    static constexpr double kMaxRate = 0.15;
+    // Exchange goes to neighbours alike (this weight) beside where gain leads.
+    static constexpr double kExchangeWeight = 0.05;
     // On finer grids the rates scale up (see World::per_step), to
     // at most this share a year.
     static constexpr double kMaxGridRate = 0.5;
@@ -72,25 +111,21 @@ public:
     // ever more, for the more mobile) and on folk migrations.
     static constexpr double kMobileWander = 0.5;
     static constexpr double kMobileExodus = 0.25;
-    static constexpr double kClimbCostPerKm = 2.0;  // a 500 m climb halves a destination's appeal
+    static constexpr double kClimbCostPerKm = 2.0;  // a 500 m climb doubles the cost
     static constexpr std::int64_t kMinGroupSize = 20;
     static constexpr double kMinGroupShare = 0.10;
     // ...unless they farm (by this much more of their food) and the largest
     // group does not: colonists among foragers keep their own ways.
     static constexpr double kKeepApartFarming = 0.5;
 
-    // Colonists. Farmers (or herders) at least kColonizeCrowding of their
-    // land's capacity send kColonizeRate of their people a year (scaled up to
-    // that as crowding rises by kColonizeRamp more) to the neighbouring land
-    // their crops and herds could fill best, where at least kColonizeRoom of
-    // what it could feed is still free; by sea too, for people with boats.
-    // They go as one group of the cell's largest farming people, keeping
-    // their language and customs, and bring their crops: the farming
+    // Colonists. Farmers (or herders) weigh the land their crops and herds
+    // could fill a level-5 spacing away (by sea too, for people with boats):
+    // the food per head it would give them against their own, as above.
+    // Where the gain is worth the journey, want(gain - cost) x kMaxLeave of
+    // them a year go, as one group of the cell's largest farming people,
+    // keeping their language and customs, and bring their crops: the farming
     // dispersals that spread a few language families over continents.
     static constexpr double kColonizeFarming = 0.5;
-    static constexpr double kColonizeCrowding = 0.75;
-    static constexpr double kColonizeRamp = 0.3;
-    static constexpr double kColonizeRate = 0.03;
     // Cells look for new land every kColonizeYears (in turn), sending that
     // many years' colonists at once.
     static constexpr std::int64_t kColonizeYears = 5;
@@ -99,60 +134,37 @@ public:
     // the people it leaves (in one five-yearly party).
     static constexpr double kColonyMinShare = 0.15;
     static constexpr double kColonizeMaxShare = 0.15;
-    static constexpr double kColonizeRoom = 0.3;
-    static constexpr double kSeaColonyAppeal = 0.5;  // a sea crossing halves a destination's appeal
 
-    // Folk migrations: a people leaving in a body. Each year a cell of at
-    // least kFolkMinPeople whose land was taken in war (chance kExodusWar),
-    // raided by nomads (kExodusRaid) or struck by a dearth (below) sends
-    // kExodusShare of its largest people to the most open land within
-    // kExodusKm (spare capacity, less with distance). Arriving at least
-    // kDisplaceRatio as many as the largest people there, and no less
-    // warlike, they push some of them on in turn (chain reactions): kDisplace
-    // x newcomers / locals, at most kMaxDisplace. Outnumbered locals flee;
-    // where the newcomers are few, nearly all stay and live under them.
+    // Folk migrations: a people leaving in a body. Each year in a cell of at
+    // least kFolkMinPeople, where its largest people would mostly leave
+    // (want(push x how readily they move) of at least kBodyShare), that
+    // share of them, at most kMaxExodusShare, go to the most open land within
+    // kExodusKm (spare capacity, less with distance; out of the realm that
+    // took their land in war). The cause recorded is the largest part of
+    // the push: hunger, danger (war or raid), burden or an outbreak. Arrivals
+    // crowd those they join, whose own push follows next year: displacement
+    // chains need no rule of their own. A people that leaves in hunger
+    // within kChainYears of newcomers' arrival is counted as pushed out by
+    // them.
     static constexpr std::int64_t kFolkMinPeople = 500;
-    static constexpr double kExodusWar = 0.3;
-    static constexpr double kExodusRaid = 0.1;
-    // Along a fighting front (strife 1) the mobile leave ahead of the
-    // fighting: kExodusFront x mobility^2. Those who go take kExodusShare x
-    // (1 + kMobileExodusShare x mobility) of the people, at most
-    // kMaxExodusShare.
-    static constexpr double kExodusFront = 0.1;
-    static constexpr double kMobileExodusShare = 1.0;
     static constexpr double kMaxExodusShare = 0.6;
-    // Famine: when the land has lately fed less than it usually does (capacity
-    // smoothed by kRecentRate a year, below kDearth of capacity smoothed by
-    // kUsualRate) and the people are beyond what it feeds now, chance
-    // kExodusFamine x how far the dearth goes past kDearth, over kDearthSpan.
-    // One bad harvest is weathered; a run of them, as a climate shift (Bond
-    // events, eruptions, droughts) begins, sets peoples moving.
-    static constexpr double kExodusFamine = 0.3;
-    static constexpr double kDearth = 0.85;
-    static constexpr double kDearthSpan = 0.25;
-    static constexpr double kRecentRate = 0.3;
-    static constexpr double kUsualRate = 0.02;
-    static constexpr double kExodusShare = 0.25;
     static constexpr double kExodusKm = 700.0;
     static constexpr double kExodusDistanceKm = 300.0;  // appeal / (1 + distance / this)
-    static constexpr double kDisplaceRatio = 0.3;
+    // A horde taking land drives off locals as they are outnumbered:
+    // kDisplace x newcomers / locals, at most kMaxDisplace.
     static constexpr double kDisplace = 0.15;
     static constexpr double kMaxDisplace = 0.4;
-    // A displaced people may push on others in turn, up to this many links
-    // in one year; and a people that leaves in famine within kChainYears of
-    // newcomers' arrival is counted as pushed out by them.
-    static constexpr int kMaxChainLinks = 5;
     static constexpr std::int64_t kChainYears = 30;
     // Wandering peoples: a tribe or confederation (a polity without writing;
     // literate states stay put) of at least kWanderMinPeople moves as a whole
-    // when hard pressed: pressure = the largest of its war shock, its famine,
-    // a lasting dearth on its land, land hunger (people beyond what the
-    // land feeds) and a stronger neighbour (a realm seated within
-    // kWanderThreatKm with more than kWanderThreat times its people, full at
-    // kWanderThreat + kWanderThreatSpan times); at kWanderPressure or more it sets out with chance kWander
-    // x pressure x how readily its people move (mobility_factor, strength
-    // kWanderMobility: x0.3 for settled farmers to x1.15 for nomads) a year,
-    // at most once every kWanderYears. Peoples more mobile than
+    // when its people would mostly leave: want(push over its lands, from their
+    // 20-year conditions, x how readily its people move: mobility_factor,
+    // strength kWanderMobility, x0.3 for settled farmers to x1.15 for
+    // nomads) of at least kBodyShare, the push raised by its war shock and a
+    // stronger neighbour (a realm seated within kWanderThreatKm with more
+    // than kWanderThreat times its people, a full kHalfPush at kWanderThreat
+    // + kWanderThreatSpan times); at most once every kWanderYears. Peoples
+    // more mobile than
     // kWanderRoamMobility also roam unpressed, with chance kWanderRoam a
     // year at full mobility (herders moving on to pastures new). It goes as far as kWanderKm +
     // kWanderKmMobile x mobility to the most open land (pasture for herders)
@@ -168,8 +180,6 @@ public:
     // behind is free; the locals where they arrive are pushed
     // on (as in chain reactions, by how outnumbered they are) and their
     // rulers shaken; the rest stay and live under the newcomers.
-    static constexpr double kWander = 0.03;
-    static constexpr double kWanderPressure = 0.3;
     static constexpr std::int64_t kWanderMinPeople = 5000;
     static constexpr double kWanderMobility = 0.75;
     static constexpr double kWanderKm = 600.0;

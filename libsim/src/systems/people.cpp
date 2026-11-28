@@ -9,6 +9,7 @@
 #include <mutex>
 
 #include "histsim/systems/bondage.hpp"
+#include "histsim/systems/conditions.hpp"
 #include "histsim/systems/culture.hpp"
 #include "histsim/systems/farming.hpp"
 #include "histsim/systems/polity.hpp"
@@ -39,6 +40,18 @@ constexpr std::uint32_t kExodusEntity = 0x50000000u;
 constexpr std::uint32_t kWanderEntity = 0x60000000u;
 constexpr std::uint32_t kTrekEntity = 0x70000000u;
 constexpr std::uint32_t kSettleEntity = 0x80000000u;
+
+// Push: how bad life is (positive) or how good (negative) with this food per
+// head, danger, burden and sickness (people.hpp).
+double push_at(double food, double danger, double burden, double sickness) {
+    food = std::min(food, ConditionsSystem::kMaxFood);
+    const double hunger = food < 1.0 ? MigrationSystem::kHungerPush * (1.0 - food) : MigrationSystem::kPlenty * (1.0 - food);
+    return hunger + MigrationSystem::kDangerPush * danger + MigrationSystem::kBurdenPush * burden +
+           MigrationSystem::kSicknessPush * sickness;
+}
+
+// The share who would go for a push (or gain) of x.
+double want_of(double x) { return x > 0.0 ? x / (x + MigrationSystem::kHalfPush) : 0.0; }
 
 double crowding_of(const SimState& s, CellId c) {
     const double k = s.env.capacity[c];
@@ -236,6 +249,33 @@ void MigrationSystem::step(StepContext& ctx) {
     };
     std::int64_t moved = 0;
 
+    // What people live through, from the conditions (gathered just before);
+    // without them (a test stepping migration alone), from food alone.
+    const Conditions& cond = s.conditions;
+    const bool measured = cond.food.size() == n;
+    auto value_at = [](const auto& v, CellId c) { return c < v.size() ? static_cast<double>(v[c]) : 0.0; };
+    auto own_food = [&](CellId c) { return std::max(0.0, s.env.capacity[c] - value_at(s.food_import, c)); };
+    // Sickness moves people only as an outbreak: deaths above those the
+    // place is used to. (Towns always bury more than villages; what keeps
+    // them filled is not their people's choice to stay.)
+    auto outbreak = [&](CellId c) { return std::max(0.0, value_at(cond.sickness, c) - value_at(cond.slow_sickness, c)); };
+    auto push_home = [&](CellId c) {
+        const double people = static_cast<double>(s.cell_population[c]);
+        const double food = measured ? value_at(cond.food, c) : (people > 0.0 ? s.env.capacity[c] / people : ConditionsSystem::kMaxFood);
+        return push_at(food, value_at(cond.danger, c), value_at(cond.burden, c), outbreak(c));
+    };
+    // Push expected at `d` by newcomers: its land's food shared with one
+    // more, its own danger and burden (slow averages: what it is known for,
+    // not one year's luck) and any outbreak there now.
+    auto push_there = [&](CellId d, double could, double joining) {
+        const double food = could / (static_cast<double>(s.cell_population[d]) + std::max(1.0, joining));
+        return push_at(food, value_at(cond.slow_danger, d), value_at(cond.slow_burden, d), outbreak(d));
+    };
+    auto cost_of = [&](CellId from, CellId to, bool sea) {
+        const double climb_km = std::fabs(w.elevation_m[to] - w.elevation_m[from]) / 1000.0;
+        return kMoveCost * w.grid.distance_km(from, to) / 100.0 * (1.0 + kClimbCostPerKm * climb_km) * (sea ? kSeaCost : 1.0);
+    };
+
     // ---- Everyday movement, per cell in parallel: each cell's bands are
     // gathered per chunk and added in cell order afterwards.
     struct Outbox {
@@ -249,43 +289,52 @@ void MigrationSystem::step(StepContext& ctx) {
     parallel_for(n, [&](std::size_t c_begin, std::size_t c_end) {
     Outbox out;
     out.begin = c_begin;
-    std::array<double, 8> weight{};
+    std::array<double, 8> weight{}, forage_net{}, farm_net{};
     std::array<CellId, 8> dest{};
     for (CellId c = static_cast<CellId>(c_begin); c < c_end; ++c) {
         const auto first = s.cohort_begin[c], last = s.cohort_begin[c + 1];
         if (first == last) continue;
 
-        const double crowding = crowding_of(s, c);
         const bool starving = s.env.capacity[c] <= 0.0;
-        // Rates are for level-5 cells; smaller cells trade people faster, for
-        // the same pace in km a year. (Not for the same diffusion: that
-        // churns a fine grid's people so much that cells settle well below
-        // their capacity and dialects blur into each other.)
-        const double rate =
-            starving ? 1.0
-                     : std::min(kMaxGridRate,
-                                w.per_step(std::min(kMaxRate, kExploratoryRate + kRateAtCapacity * crowding * crowding)));
-
-        // Destinations: land neighbors that can feed someone, by spare
-        // capacity (plus a little for any capacity) over the cost of climbing.
+        // Destinations: land neighbours that can feed someone, by what people
+        // would gain there over the cost of getting there, as foragers see it
+        // (the land as its people now use it) and as farmers do (what their
+        // own crops and herds would grow there); each group weighs them by
+        // how much it farms.
+        const double here = push_home(c);
+        const std::uint32_t known = s.domesticates.empty() ? 0 : s.domesticates[c];
+        const bool farmers = known != 0 && !s.env.farming.empty() && s.env.farming[c] > 0.0;
+        const std::uint64_t techs = farmers ? techniques_in(s, c) : 0;
         std::size_t count = 0;
-        double weight_sum = 0.0;
         for (CellId nb : w.grid.neighbors(c)) {
-            const double k = s.env.capacity[nb];
-            if (k <= 0.0) continue;
-            const double spare = std::max(0.0, k - static_cast<double>(s.cell_population[nb]));
-            const double climb_km = std::fabs(w.elevation_m[nb] - w.elevation_m[c]) / 1000.0;
-            weight[count] = (spare + 0.05 * k) / (1.0 + kClimbCostPerKm * climb_km);
+            if (s.env.capacity[nb] <= 0.0) continue;
+            const double cost = cost_of(c, nb, false);
+            forage_net[count] = here - push_there(nb, own_food(nb), 1.0) - cost;
+            farm_net[count] = farmers ? here - push_there(nb, farm_density(w, nb, known, techs, &s) * w.grid.area_km2(nb), 1.0) - cost
+                                      : forage_net[count];
             dest[count] = nb;
-            weight_sum += weight[count];
             ++count;
         }
-        if (count == 0 || weight_sum <= 0.0) continue;
+        if (count == 0) continue;
         // Herders move with their animals: only crop farmers are tied down.
         const double pastoral = s.env.pastoral.empty() ? 0.0 : s.env.pastoral[c];
 
         for (auto i = first; i < last; ++i) {
             Cohort& co = s.cohorts[i];
+            // What this group would gain at each neighbour, by its ways.
+            double weight_sum = 0.0, best = 0.0;
+            for (std::size_t k = 0; k < count; ++k) {
+                const double net = (1.0 - co.farming) * forage_net[k] + co.farming * farm_net[k];
+                best = std::max(best, net);
+                weight[k] = std::max(0.0, net) + kExchangeWeight;
+                weight_sum += weight[k];
+            }
+            // Rates are for level-5 cells; smaller cells trade people faster,
+            // for the same pace in km a year. (Not for the same diffusion:
+            // that churns a fine grid's people so much that cells settle well
+            // below their capacity and dialects blur into each other.)
+            const double rate =
+                starving ? 1.0 : std::min(kMaxGridRate, w.per_step(kExploratoryRate + kMaxLeave * want_of(best)));
             const double settled = co.farming * (1.0 - pastoral);
             // The most mobile wander more; settled farmers already stay put
             // (kFarmerStay).
@@ -389,46 +438,47 @@ void MigrationSystem::step(StepContext& ctx) {
         // Each cell looks for new land every kColonizeYears (staggered).
         if ((year + static_cast<std::int64_t>(c)) % period != 0) continue;
         if (s.cell_population[c] == 0 || s.env.farming.empty() || s.env.farming[c] < kColonizeFarming) continue;
-        const double crowding = crowding_of(s, c);
-        if (crowding < kColonizeCrowding) continue;
         const std::uint32_t known = s.domesticates.empty() ? 0 : s.domesticates[c];
         if (known == 0) continue;
         const std::uint64_t techs = techniques_in(s, c);
+        const double here = push_home(c);
+        // A party the size of a colony: what the land a level-5 spacing
+        // away would feed them is shared with it.
+        const double party = kColonizeMaxShare * static_cast<double>(s.cell_population[c]);
         CellId best = kInvalidCell;
         double best_appeal = 0.0, best_room = 0.0;
-        auto consider = [&](CellId nb, double factor) {
+        auto consider = [&](CellId nb, bool sea) {
             if (!w.is_land[nb]) return;
             const double could = farm_density(w, nb, known, techs, &s) * w.grid.area_km2(nb);
             const double room = could - static_cast<double>(s.cell_population[nb]);
-            if (could <= 0.0 || room < kColonizeRoom * could) return;
-            const double climb_km = std::fabs(w.elevation_m[nb] - w.elevation_m[c]) / 1000.0;
-            const double appeal = factor * room / (1.0 + kClimbCostPerKm * climb_km);
+            if (could <= 0.0 || room < 1.0) return;
+            const double appeal = here - push_there(nb, could, party) - cost_of(c, nb, sea);
             if (appeal > best_appeal || (appeal == best_appeal && nb < best)) best_appeal = appeal, best = nb, best_room = room;
         };
         if (reach == 1) {
-            for (CellId nb : w.grid.neighbors(c)) consider(nb, 1.0);
+            for (CellId nb : w.grid.neighbors(c)) consider(nb, false);
         } else {
             // Leapfrogging, as at level 5: land a level-5 spacing away first,
             // nearer land only if none there has room.
             w.grid.cells_within(c, reach, around, mark);
             for (int ring = reach; ring >= 1 && best == kInvalidCell; --ring) {
                 for (std::size_t i = 1; i < around.size(); ++i) {
-                    if (around[i].second == ring) consider(around[i].first, 1.0);
+                    if (around[i].second == ring) consider(around[i].first, false);
                 }
             }
         }
         if (technique_effects(w, c, techs).water_transport > 0.0 && !w.trade_edge_begin.empty()) {
             for (std::uint32_t e : w.trade_links(c)) {
-                if (w.trade_edges[e].modes & kTradeSea) consider(w.trade_other(e, c), kSeaColonyAppeal);
+                if (w.trade_edges[e].modes & kTradeSea) consider(w.trade_other(e, c), true);
             }
         }
         if (best == kInvalidCell) continue;
         Cohort* settlers = largest_cohort(c, true);
         if (settlers == nullptr) continue;
-        const double wanted = kColonizeRate * static_cast<double>(period) * static_cast<double>(s.cell_population[c]) *
-                              std::min(1.0, (crowding - kColonizeCrowding) / kColonizeRamp + 0.1);
-        const double here = static_cast<double>(s.cell_population[best]);
-        const double group = std::min({std::max(wanted, kColonyMinShare * here), 0.5 * best_room,
+        const double wanted = kMaxLeave * want_of(best_appeal) * static_cast<double>(period) *
+                              static_cast<double>(s.cell_population[c]);
+        const double there = static_cast<double>(s.cell_population[best]);
+        const double group = std::min({std::max(wanted, kColonyMinShare * there), 0.5 * best_room,
                                        kColonizeMaxShare * static_cast<double>(s.cell_population[c])});
         RngStream rng = ctx.rng(Stream::Migration, kColonizeEntity | c);
         Cohort band = split_off(*settlers, best, group / static_cast<double>(std::max<std::int64_t>(1, settlers->total())), rng);
@@ -440,16 +490,8 @@ void MigrationSystem::step(StepContext& ctx) {
         carried.emplace_back(best, known);
     }
 
-    // ---- Folk migrations, driven by war, raids and famine; arrivals may
-    // push others on.
+    // ---- Folk migrations: peoples that would mostly leave go in a body.
     s.folk_movers = 0;
-    const std::size_t i_warfare = [&] {
-        const auto& traits = w.content->traits;
-        for (std::size_t t = 0; t < traits.size(); ++t) {
-            if (traits[t].id == "warfare") return t;
-        }
-        return traits.size();
-    }();
     std::vector<CellId> in_reach;
     // The most open land within reach of `from`, other than `avoid`.
     auto refuge = [&](CellId from, CellId avoid, std::uint32_t not_ruled_by) {
@@ -471,9 +513,6 @@ void MigrationSystem::step(StepContext& ctx) {
         s.last_arrival.assign(n, 0);
         s.last_arrival_tick.assign(n, 0);
     }
-    if (s.usual_capacity.size() != n) s.usual_capacity = s.env.capacity;
-    if (s.recent_capacity.size() != n) s.recent_capacity = s.env.capacity;
-    for (CellId c = 0; c < n; ++c) s.recent_capacity[c] += kRecentRate * (s.env.capacity[c] - s.recent_capacity[c]);
     auto record = [&](CellId from, const Cohort& band, MigrationCause cause, std::uint32_t pushed_by) {
         const std::int64_t people = band.total();
         s.folk_movers += people;
@@ -510,27 +549,27 @@ void MigrationSystem::step(StepContext& ctx) {
     s.settling.clear();
     for (CellId c = 0; c < n; ++c) {
         if (s.cell_population[c] < kFolkMinPeople) continue;
-        const std::uint8_t strife = s.strife.size() == n ? s.strife[c] : 0;
-        double chance = 0.0;
-        MigrationCause cause = MigrationCause::Famine;
-        const double usual = s.usual_capacity[c];
-        if (usual > 0.0 && crowding_of(s, c) > 1.0) {
-            const double dearth = s.recent_capacity[c] / usual;
-            if (dearth < kDearth) chance = kExodusFamine * std::min(1.0, (kDearth - dearth) / kDearthSpan);
-        }
-        if (strife == 1 && kExodusFront > chance) chance = kExodusFront, cause = MigrationCause::War;
-        if (strife == 2 && kExodusWar > chance) chance = kExodusWar, cause = MigrationCause::War;
-        if (strife == 3 && kExodusRaid > chance) chance = kExodusRaid, cause = MigrationCause::Raid;
-        if (chance <= 0.0) continue;
         Cohort* folk = largest_cohort(c, false);
         if (folk == nullptr) continue;
-        // Mobile peoples take to the road more readily, and more of them go;
-        // only they leave ahead of the fighting.
-        const double mobile = i_mobility < kMaxTraits ? folk->traits[i_mobility] : 0.5;
-        if (strife == 1 && cause == MigrationCause::War) chance *= mobile * mobile;
-        chance = std::min(1.0, chance * restless(*folk, kMobileExodus));
+        // How many of its largest people would go: the push at home (the
+        // largest part of it names the cause), the more for mobile peoples.
+        const double people = static_cast<double>(s.cell_population[c]);
+        const double food = measured ? value_at(cond.food, c) : s.env.capacity[c] / people;
+        const double parts[] = {food < 1.0 ? kHungerPush * (1.0 - food) : 0.0, kDangerPush * value_at(cond.danger, c),
+                                kBurdenPush * value_at(cond.burden, c), kSicknessPush * outbreak(c)};
+        const double push = push_home(c);
+        const double go = want_of(push * restless(*folk, kMobileExodus));
+        if (go < kBodyShare) continue;
+        std::size_t main = 0;
+        for (std::size_t k = 1; k < 4; ++k) {
+            if (parts[k] > parts[main]) main = k;
+        }
+        const std::uint8_t strife = s.strife.size() == n ? s.strife[c] : 0;
+        MigrationCause cause = main == 0   ? MigrationCause::Famine
+                               : main == 1 ? (strife == 3 ? MigrationCause::Raid : MigrationCause::War)
+                               : main == 2 ? MigrationCause::Burden
+                                           : MigrationCause::Plague;
         RngStream rng = ctx.rng(Stream::Migration, kExodusEntity | c);
-        if (rng.uniform() >= chance) continue;
         // Driven out by hunger soon after newcomers came: pushed out by them.
         std::uint32_t pushed_by = 0;
         if (cause == MigrationCause::Famine && s.last_arrival[c] != 0 &&
@@ -542,33 +581,12 @@ void MigrationSystem::step(StepContext& ctx) {
         const std::uint32_t enemy = cause == MigrationCause::War && !s.polity_of.empty() ? s.polity_of[c] : 0;
         const CellId to = refuge(c, kInvalidCell, enemy);
         if (to == kInvalidCell) continue;
-        Cohort band = split_off(*folk, to, std::min(kMaxExodusShare, kExodusShare * (1.0 + kMobileExodusShare * mobile)), rng);
+        Cohort band = split_off(*folk, to, std::min(kMaxExodusShare, go), rng);
         if (band.total() <= 0) continue;
         arrivals.push_back(band);
         moved += band.total();
-        std::uint32_t id = record(c, band, cause, pushed_by);
+        record(c, band, cause, pushed_by);
         if (folk->farming > 0.1 && !s.domesticates.empty()) carried.emplace_back(to, s.domesticates[c]);
-        // A strong people arriving pushes the largest people there on, and
-        // they may push on others in turn.
-        CellId from = c, at = to;
-        for (int link = 0; link < kMaxChainLinks; ++link) {
-            Cohort* locals = largest_cohort(at, false);
-            if (locals == nullptr || static_cast<double>(band.total()) < kDisplaceRatio * static_cast<double>(locals->total())) {
-                break;
-            }
-            if (i_warfare < kMaxTraits && band.traits[i_warfare] < locals->traits[i_warfare]) break;
-            const CellId onward = refuge(at, from, 0);
-            if (onward == kInvalidCell) break;
-            const double outnumbered = static_cast<double>(band.total()) / static_cast<double>(std::max<std::int64_t>(1, locals->total()));
-            Cohort pushed = split_off(*locals, onward, std::min(kMaxDisplace, kDisplace * outnumbered), rng);
-            if (pushed.total() <= 0) break;
-            arrivals.push_back(pushed);
-            moved += pushed.total();
-            id = record(at, pushed, MigrationCause::Displaced, id);
-            band = pushed;
-            from = at;
-            at = onward;
-        }
     }
 
     // ---- Wandering peoples: tribes and confederations on the move, step by
@@ -769,18 +787,20 @@ void MigrationSystem::step(StepContext& ctx) {
             if (pol.bond == Bond::Vassal) continue;
             if (people[p] < static_cast<double>(kWanderMinPeople) || polity_has_writing(w, s, p)) continue;
             if (pol.wandered != kNever && ctx.tick - pol.wandered < kWanderYears * kTicksPerYear) continue;
-            // Its people: how mobile, how fed, how crowded.
+            // Its people: how mobile, and what they have lately lived through
+            // across its lands (the 20-year conditions, by people).
             const double mobility = mobility_of(p);
-            double recent = 0.0, usual = 0.0, capacity = 0.0;
+            double food = 0.0, danger = 0.0, burden = 0.0, sickness = 0.0;
             for (CellId c : held[p]) {
-                recent += s.recent_capacity[c];
-                usual += s.usual_capacity[c];
-                capacity += s.env.capacity[c];
+                const double share = static_cast<double>(s.cell_population[c]) / people[p];
+                const double here_food = measured ? value_at(cond.slow_food, c) : 1.0;
+                food += share * here_food;
+                danger += share * value_at(cond.slow_danger, c);
+                burden += share * value_at(cond.slow_burden, c);
+                sickness += share * outbreak(c);
             }
-            double pressure = std::min(1.0, pol.shock);
-            pressure = std::max(pressure, pol.pressure[static_cast<std::size_t>(Pressure::Famine)]);
-            if (usual > 0.0) pressure = std::max(pressure, std::clamp((kDearth - recent / usual) / kDearthSpan, 0.0, 1.0));
-            if (capacity > 0.0) pressure = std::max(pressure, std::clamp((people[p] / capacity - 1.05) / 0.3, 0.0, 1.0));
+            // War shock and a stronger neighbour add to it.
+            double push = push_at(food, danger, burden, sickness) + kHalfPush * std::min(1.0, pol.shock);
             // A stronger neighbour: the largest realm seated within reach.
             double threat = 0.0;
             for (std::uint32_t q : by_people) {  // largest first: the first in reach is it
@@ -790,14 +810,13 @@ void MigrationSystem::step(StepContext& ctx) {
                     break;
                 }
             }
-            pressure = std::max(pressure, std::clamp((threat / people[p] - kWanderThreat) / kWanderThreatSpan, 0.0, 1.0));
-            // Pressed hard, any tribe may go; the most mobile also roam
-            // unpressed, to pastures new.
-            double chance = pressure >= kWanderPressure ? kWander * pressure * mobility_factor(mobility, kWanderMobility) : 0.0;
-            chance += kWanderRoam * std::max(0.0, (mobility - kWanderRoamMobility) / (1.0 - kWanderRoamMobility));
-            if (chance <= 0.0) continue;
+            push += kHalfPush * std::clamp((threat / people[p] - kWanderThreat) / kWanderThreatSpan, 0.0, 1.0);
+            // A people that would mostly leave goes; the most mobile also
+            // roam unpressed, to pastures new.
             RngStream rng = ctx.rng(Stream::Migration, kWanderEntity | p);
-            if (rng.uniform() >= chance) continue;
+            const bool pressed = want_of(push * mobility_factor(mobility, kWanderMobility)) >= kBodyShare;
+            const double roam = kWanderRoam * std::max(0.0, (mobility - kWanderRoamMobility) / (1.0 - kWanderRoamMobility));
+            if (!pressed && (roam <= 0.0 || rng.uniform() >= roam)) continue;
             // Where to: the most open land within reach, not held by the strong.
             const bool herders = pol.nomadic || (!s.env.pastoral.empty() && s.env.pastoral[pol.capital] >= 0.5);
             const double range_km = kWanderKm + kWanderKmMobile * mobility;
@@ -850,7 +869,6 @@ void MigrationSystem::step(StepContext& ctx) {
         }
     }
 
-    for (CellId c = 0; c < n; ++c) s.usual_capacity[c] += kUsualRate * (s.env.capacity[c] - s.usual_capacity[c]);
 
     s.normalize_cohorts(n, arrivals);
     s.ledger.migrants += moved;

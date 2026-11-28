@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "histsim/simulation.hpp"
+#include "histsim/systems/conditions.hpp"
 #include "histsim/systems/culture.hpp"
 #include "histsim/systems/farming.hpp"
 #include "histsim/systems/people.hpp"
@@ -82,20 +83,14 @@ TEST(migration_crowded_farmers_send_colonists_who_keep_their_language) {
     CHECK(settled);
 }
 
-TEST(migration_a_lasting_dearth_sets_a_people_moving) {
+TEST(migration_a_famine_sets_a_people_moving) {
     Start x = start();
     SimState& s = x.s;
     const World& w = x.sim.world();
     const std::int64_t people = s.total_population();
-    s.usual_capacity = s.env.capacity;
-    s.recent_capacity = s.env.capacity;
-    for (int year = 0; year < 60 && s.migrations.empty(); ++year) {
-        // The land now feeds well under what it did, year after year.
-        s.env.capacity[x.home] = 0.4 * s.usual_capacity[x.home];
-        s.recent_capacity[x.home] = s.env.capacity[x.home];
-        migrate(w, s);
-        s.usual_capacity[x.home] = 2.5 * s.env.capacity[x.home];  // keep the memory of better times
-    }
+    // The land now feeds under half its people: most would leave.
+    s.env.capacity[x.home] = 0.4 * static_cast<double>(s.cell_population[x.home]);
+    migrate(w, s);
     CHECK(!s.migrations.empty());
     const FolkMovement& m = s.migrations.front();
     CHECK_EQ(m.from, x.home);
@@ -107,11 +102,30 @@ TEST(migration_a_lasting_dearth_sets_a_people_moving) {
     bool logged = false;
     for (const Event& e : s.events) logged |= e.type == EventType::FolkMigration && e.cell == x.home;
     CHECK(logged);
-    // A single bad year is weathered.
+    // A lean year is weathered: with food at 0.85 of need, fewer than half
+    // would go.
     Start y = start();
-    y.s.usual_capacity = y.s.env.capacity;
-    y.s.recent_capacity = y.s.env.capacity;
-    y.s.env.capacity[y.home] = 0.6 * y.s.usual_capacity[y.home];
+    y.s.env.capacity[y.home] = 0.85 * static_cast<double>(y.s.cell_population[y.home]);
+    migrate(y.sim.world(), y.s);
+    CHECK(y.s.migrations.empty());
+}
+
+TEST(migration_war_sends_refugees_out_of_the_conquerors_land) {
+    Start x = start();
+    SimState& s = x.s;
+    const World& w = x.sim.world();
+    ConditionsSystem conditions;
+    StepContext ctx{w, s, 5, s.tick};
+    conditions.step(ctx);
+    s.conditions.danger[x.home] = 0.05f;  // a sack: one in twenty killed
+    migrate(w, s);
+    CHECK(!s.migrations.empty());
+    CHECK(s.migrations.front().cause == MigrationCause::War);
+    // A raid's toll of one in a hundred moves fewer than half to go.
+    Start y = start();
+    StepContext ctx2{y.sim.world(), y.s, 5, y.s.tick};
+    conditions.step(ctx2);
+    y.s.conditions.danger[y.home] = 0.01f;
     migrate(y.sim.world(), y.s);
     CHECK(y.s.migrations.empty());
 }
@@ -127,17 +141,32 @@ TEST(migration_people_driven_out_after_newcomers_came_are_pushed_on) {
     s.last_arrival[x.home] = 1;
     s.last_arrival_tick[x.home] = s.tick;
     s.tick += 10 * kTicksPerYear;
-    s.usual_capacity = s.env.capacity;
-    s.recent_capacity = s.env.capacity;
-    for (int year = 0; year < 15 && s.migrations.size() == 1; ++year) {
-        s.env.capacity[x.home] = 0.4 * s.usual_capacity[x.home];
-        s.recent_capacity[x.home] = s.env.capacity[x.home];
-        migrate(w, s);
-        s.usual_capacity[x.home] = 2.5 * s.env.capacity[x.home];
-    }
+    s.env.capacity[x.home] = 0.4 * static_cast<double>(s.cell_population[x.home]);
+    migrate(w, s);
     CHECK(s.migrations.size() > 1);
     CHECK(s.migrations[1].cause == MigrationCause::Displaced);
     CHECK_EQ(s.migrations[1].pushed_by, 1u);
+}
+
+TEST(migration_hungry_people_move_toward_land_that_would_feed_them) {
+    Start x = start();
+    SimState& s = x.s;
+    const World& w = x.sim.world();
+    // Land everywhere feeds only 80% of its people, but one neighbour's
+    // feeds twice as many as live there.
+    const auto nbs = w.grid.neighbors(x.home);
+    const CellId rich = nbs.front();
+    for (CellId c = 0; c < w.cell_count(); ++c) {
+        if (s.env.capacity[c] > 0.0) s.env.capacity[c] = 0.8 * static_cast<double>(std::max<std::uint32_t>(1, s.cell_population[c]));
+    }
+    s.env.capacity[rich] = 2.0 * static_cast<double>(std::max<std::uint32_t>(1000, s.cell_population[rich]));
+    std::vector<std::uint32_t> before = s.cell_population;
+    migrate(w, s);
+    std::int64_t to_rich = static_cast<std::int64_t>(s.cell_population[rich]) - before[rich];
+    for (CellId nb : nbs) {
+        if (nb == rich) continue;
+        CHECK(to_rich > static_cast<std::int64_t>(s.cell_population[nb]) - before[nb]);
+    }
 }
 
 TEST(culture_farmers_outweigh_more_numerous_foragers_in_language_shift) {
